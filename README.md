@@ -4,9 +4,10 @@ This is a very small web sample that uses the Agora Web SDK to do 1-to-many vide
 
 ## Files
 
-- `index.html`: UI and Agora Web SDK script include.
-- `styles.css`: Minimal page styling.
-- `app.js`: Join/leave flow and local/remote track handling.
+- `frontend/index.html`: UI and Agora Web SDK script include.
+- `frontend/css/styles.css`: Minimal page styling.
+- `frontend/app.js`: Join/leave flow and local/remote track handling.
+- `frontend/assets/`: Application and role logos.
 
 ## Run
 
@@ -14,7 +15,7 @@ This is a very small web sample that uses the Agora Web SDK to do 1-to-many vide
 2. Start any static web server (example using Python):
 
 ```bash
-python -m http.server 8080
+npm start
 ```
 
 3. Open http://localhost:8080 in your browser.
