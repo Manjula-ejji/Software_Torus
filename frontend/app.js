@@ -1,32 +1,75 @@
 let doctorMqttClient = null;
 let doctorControlTopic = "";
+let pendingMqttPayloads = [];
 
 function connectDoctorMQTT(appId, channel) {
-  const cleanAppId = appId.substring(0, 8);
-  doctorControlTopic = `${channel}-control-${cleanAppId}`;
-  console.log(`Connecting to MQTT Broker for doctor on topic: ${doctorControlTopic}`);
-
-  try {
-    doctorMqttClient = mqtt.connect("wss://broker.hivemq.com:8000/mqtt");
-    
-    doctorMqttClient.on("connect", () => {
-      console.log("Doctor connected to MQTT Broker");
-    });
-    
-    doctorMqttClient.on("error", (err) => {
-      console.error("Doctor MQTT Connection error:", err);
-    });
-  } catch (e) {
-    console.error("Failed to connect to MQTT broker for doctor:", e);
+  const targetAppId = appId || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "");
+  const targetChannel = channel || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "torus");
+  
+  if (!targetAppId) {
+    console.warn("[Doctor MQTT] App ID is missing, skipping MQTT connection.");
+    return;
   }
+
+  const cleanAppId = targetAppId.substring(0, 8);
+  doctorControlTopic = `${targetChannel}-control-${cleanAppId}`;
+
+  if (doctorMqttClient && doctorMqttClient.connected) {
+    return;
+  }
+
+  const brokerUrls = [
+    "wss://broker.hivemq.com:8884/mqtt",
+    "wss://broker.emqx.io:8084/mqtt"
+  ];
+  let attempts = 0;
+
+  function tryConnectDoctor() {
+    const url = brokerUrls[attempts % brokerUrls.length];
+    console.log(`[Doctor MQTT] Connecting to ${url} on topic: ${doctorControlTopic}`);
+    try {
+      doctorMqttClient = mqtt.connect(url, { keepalive: 30, reconnectPeriod: 3000 });
+      
+      doctorMqttClient.on("connect", () => {
+        console.log(`[Doctor MQTT] Connected to ${url} on topic: ${doctorControlTopic}`);
+        // Flush any queued payloads
+        while (pendingMqttPayloads.length > 0) {
+          const payload = pendingMqttPayloads.shift();
+          doctorMqttClient.publish(doctorControlTopic, payload);
+          console.log(`[Doctor MQTT] Flushed queued control to ${doctorControlTopic}:`, payload);
+        }
+      });
+      
+      doctorMqttClient.on("error", (err) => {
+        console.error(`[Doctor MQTT] Connection error on ${url}:`, err);
+        doctorMqttClient.end();
+        attempts++;
+        if (attempts < 4) {
+          setTimeout(tryConnectDoctor, 1500);
+        }
+      });
+    } catch (e) {
+      console.error("[Doctor MQTT] Exception on connection attempt:", e);
+    }
+  }
+
+  tryConnectDoctor();
 }
 
 function sendControlCommand(name, value) {
-  if (roleInput.value === "doctor" && doctorMqttClient && doctorMqttClient.connected) {
-    const payload = JSON.stringify({ control: name, value: value });
-    doctorMqttClient.publish(doctorControlTopic, payload);
-    console.log(`Published control: ${name} = ${value} to ${doctorControlTopic}`);
+  if (roleInput.value !== "doctor") return;
+
+  const payload = JSON.stringify({ control: name, value: value });
+
+  if (!doctorMqttClient || !doctorMqttClient.connected) {
+    console.log(`[Doctor MQTT] Not connected yet. Initiating connection and queuing: ${name} = ${value}`);
+    pendingMqttPayloads.push(payload);
+    connectDoctorMQTT();
+    return;
   }
+
+  doctorMqttClient.publish(doctorControlTopic, payload);
+  console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
 }
 
 const appIdInput = document.getElementById("appId");
@@ -1525,6 +1568,7 @@ function openControls() {
     console.warn("Unauthorized access attempt to Controls.");
     return;
   }
+  connectDoctorMQTT();
   controlsModal.classList.add("active");
   const modalContent = controlsModal.querySelector(".controls-modal-content");
   if (modalContent) {
@@ -1678,25 +1722,96 @@ if (controlsModal) {
   }
 }
 
-// Acquisition controls (Start / Freeze)
-const controlStartBtn = document.getElementById("controlStartBtn");
-const controlFreezeBtn = document.getElementById("controlFreezeBtn");
-const controlStatusLabel = document.getElementById("controlStatusLabel");
+// Fetch initial parameters directly from curv_proper_code.py to sync Doctor controls
+async function syncDoctorControlsFromPatientState() {
+  try {
+    const res = await fetch("/api/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    console.log("[Doctor UI] Synced state from curv_proper_code.py:", data);
+
+    if (data.voltage !== undefined && voltageSlider && voltageValueInput) {
+      voltageSlider.value = data.voltage;
+      voltageValueInput.value = data.voltage;
+      updateSliderBackground(voltageSlider);
+    }
+
+    if (data.gain !== undefined && gainSlider && gainValueInput) {
+      gainSlider.value = data.gain;
+      gainValueInput.value = data.gain;
+      updateSliderBackground(gainSlider);
+    }
+
+    if (data.display !== undefined && displayToggle) {
+      displayToggle.checked = data.display;
+    }
+
+    if (data.status) {
+      isRunningState = (data.status === "RUNNING");
+      if (isRunningState) {
+        controlStartBtn.classList.add("active", "running-stop-btn");
+        controlFreezeBtn.classList.remove("active");
+        controlStatusLabel.textContent = "RUNNING";
+        controlStatusLabel.className = "status-val running";
+        if (startBtnText) startBtnText.textContent = "Stop";
+        if (startBtnIcon) startBtnIcon.innerHTML = `<rect x="6" y="6" width="12" height="12" fill="currentColor"/>`;
+      } else {
+        controlStartBtn.classList.remove("running-stop-btn");
+        controlStartBtn.classList.add("active");
+        controlStatusLabel.textContent = "STOPPED";
+        controlStatusLabel.className = "status-val stopped";
+        if (startBtnText) startBtnText.textContent = "Start";
+        if (startBtnIcon) startBtnIcon.innerHTML = `<path d="M8 5v14l11-7z" fill="currentColor"/>`;
+      }
+    }
+  } catch (err) {
+    console.warn("[Doctor UI] Sync state info:", err);
+  }
+}
+
+// Call state sync on page load
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(syncDoctorControlsFromPatientState, 600);
+});
+
+let isRunningState = false;
 
 if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
   controlStartBtn.addEventListener("click", () => {
-    controlStartBtn.classList.add("active");
-    controlFreezeBtn.classList.remove("active");
-    controlStatusLabel.textContent = "RUNNING";
-    controlStatusLabel.className = "status-val running";
-    sendControlCommand("start", true);
+    isRunningState = !isRunningState;
+    if (isRunningState) {
+      controlStartBtn.classList.add("active", "running-stop-btn");
+      controlFreezeBtn.classList.remove("active");
+      controlStatusLabel.textContent = "RUNNING";
+      controlStatusLabel.className = "status-val running";
+      if (startBtnText) startBtnText.textContent = "Stop";
+      if (startBtnIcon) {
+        startBtnIcon.innerHTML = `<rect x="6" y="6" width="12" height="12" fill="currentColor"/>`;
+      }
+      sendControlCommand("start", true);
+    } else {
+      controlStartBtn.classList.remove("running-stop-btn");
+      controlStartBtn.classList.add("active");
+      controlStatusLabel.textContent = "STOPPED";
+      controlStatusLabel.className = "status-val stopped";
+      if (startBtnText) startBtnText.textContent = "Start";
+      if (startBtnIcon) {
+        startBtnIcon.innerHTML = `<path d="M8 5v14l11-7z" fill="currentColor"/>`;
+      }
+      sendControlCommand("start", false);
+    }
   });
 
   controlFreezeBtn.addEventListener("click", () => {
     controlFreezeBtn.classList.add("active");
-    controlStartBtn.classList.remove("active");
+    controlStartBtn.classList.remove("active", "running-stop-btn");
     controlStatusLabel.textContent = "STOPPED";
     controlStatusLabel.className = "status-val stopped";
+    isRunningState = false;
+    if (startBtnText) startBtnText.textContent = "Start";
+    if (startBtnIcon) {
+      startBtnIcon.innerHTML = `<path d="M8 5v14l11-7z" fill="currentColor"/>`;
+    }
     sendControlCommand("freeze", true);
   });
 }
@@ -1793,6 +1908,84 @@ if (gainPlus && gainSlider) {
       gainSlider.value = val + 1;
       gainSlider.dispatchEvent(new Event("input"));
       gainSlider.dispatchEvent(new Event("change"));
+    }
+  });
+}
+
+// Log Compression Gain Slider
+const logGainSlider = document.getElementById("logGainSlider");
+const logGainValueInput = document.getElementById("logGainValueInput");
+const logGainMinus = document.getElementById("logGainMinus");
+const logGainPlus = document.getElementById("logGainPlus");
+
+if (logGainSlider && logGainValueInput) {
+  logGainSlider.addEventListener("input", () => {
+    logGainValueInput.value = logGainSlider.value;
+    updateSliderBackground(logGainSlider);
+  });
+  logGainSlider.addEventListener("change", () => {
+    sendControlCommand("log_gain", logGainSlider.value);
+  });
+  updateSliderBackground(logGainSlider);
+}
+
+if (logGainMinus && logGainSlider) {
+  logGainMinus.addEventListener("click", () => {
+    let val = parseInt(logGainSlider.value, 10);
+    if (val > parseInt(logGainSlider.min, 10)) {
+      logGainSlider.value = val - 1;
+      logGainSlider.dispatchEvent(new Event("input"));
+      logGainSlider.dispatchEvent(new Event("change"));
+    }
+  });
+}
+
+if (logGainPlus && logGainSlider) {
+  logGainPlus.addEventListener("click", () => {
+    let val = parseInt(logGainSlider.value, 10);
+    if (val < parseInt(logGainSlider.max, 10)) {
+      logGainSlider.value = val + 1;
+      logGainSlider.dispatchEvent(new Event("input"));
+      logGainSlider.dispatchEvent(new Event("change"));
+    }
+  });
+}
+
+// Dynamic Range Slider
+const dynRangeSlider = document.getElementById("dynRangeSlider");
+const dynRangeValueInput = document.getElementById("dynRangeValueInput");
+const dynRangeMinus = document.getElementById("dynRangeMinus");
+const dynRangePlus = document.getElementById("dynRangePlus");
+
+if (dynRangeSlider && dynRangeValueInput) {
+  dynRangeSlider.addEventListener("input", () => {
+    dynRangeValueInput.value = dynRangeSlider.value;
+    updateSliderBackground(dynRangeSlider);
+  });
+  dynRangeSlider.addEventListener("change", () => {
+    sendControlCommand("dynamic_range", dynRangeSlider.value);
+  });
+  updateSliderBackground(dynRangeSlider);
+}
+
+if (dynRangeMinus && dynRangeSlider) {
+  dynRangeMinus.addEventListener("click", () => {
+    let val = parseInt(dynRangeSlider.value, 10);
+    if (val > parseInt(dynRangeSlider.min, 10)) {
+      dynRangeSlider.value = val - 1;
+      dynRangeSlider.dispatchEvent(new Event("input"));
+      dynRangeSlider.dispatchEvent(new Event("change"));
+    }
+  });
+}
+
+if (dynRangePlus && dynRangeSlider) {
+  dynRangePlus.addEventListener("click", () => {
+    let val = parseInt(dynRangeSlider.value, 10);
+    if (val < parseInt(dynRangeSlider.max, 10)) {
+      dynRangeSlider.value = val + 1;
+      dynRangeSlider.dispatchEvent(new Event("input"));
+      dynRangeSlider.dispatchEvent(new Event("change"));
     }
   });
 }
