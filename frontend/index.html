@@ -208,7 +208,7 @@
           <div class="controls-grid">
             <label>
               <span>App ID</span>
-              <input id="appId" type="text" placeholder="Enter Agora App ID" value="0c7395d7882e46dcb6400d79ed3fc41c" />
+              <input id="appId" type="text" placeholder="Enter Agora App ID" value="f320d3475b6d4b70ba512b06d09849d7" />
             </label>
 
             <label>
@@ -236,7 +236,7 @@
             <label>
               <span>Token (optional)</span>
               <input id="token" type="text" placeholder="RTC Token"
-                value="007eJxTYEi/EmN2VG5/g1uQeoykwIOtXu6XDmc+srkqqJqVet9T7bsCg0GyubGlaYq5hYVRqolZSnKSmYmBQYq5ZWqKcVqyiWGy4uq6rIZARoYyoUpGRgYIBPFZGUryi0qLGRgA+PgeQA==" />
+                value="007eJxTYDCwCdn4oPNdw3dXncLMp2//OZ6d671sSc3JuN1/TH9ca/+pwJBmbGSQYmxibppklmKSZG6QlGhqaJRkYJZiYGlhYpliXnKxO6shkJHh38GTLIwMEAjiszKU5BeVFjMwAACoZyTD" />
             </label>
 
             <label>
@@ -292,13 +292,13 @@
 
             <div class="acquisition-buttons">
               <button id="controlStartBtn" class="acq-btn start-btn active" type="button">
-                <svg viewBox="0 0 24 24" class="acq-icon">
+                <svg viewBox="0 0 24 24" class="acq-icon" id="startBtnIcon">
                   <path d="M8 5v14l11-7z" fill="currentColor" />
                 </svg>
-                <span>Start</span>
+                <span id="startBtnText">Start</span>
               </button>
               <button id="controlFreezeBtn" class="acq-btn freeze-btn" type="button">
-                <svg viewBox="0 0 24 24" class="acq-icon-snowflake" fill="none" stroke="currentColor" stroke-width="2.5"
+                <svg viewBox="0 0 24 24" class="acq-icon-snowflake" fill="none" stroke="#2563eb" stroke-width="2.5"
                   stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="2" x2="12" y2="22"></line>
                   <line x1="2" y1="12" x2="22" y2="12"></line>
@@ -310,18 +310,20 @@
               </button>
             </div>
 
+            <div class="controls-divider-line"></div>
+
             <div class="slider-control-group">
               <div class="slider-label-row">
                 <span class="slider-label">Voltage</span>
                 <div class="slider-value-container">
-                  <input id="voltageValueInput" class="slider-value-box" type="text" value="38" readonly />
+                  <input id="voltageValueInput" class="slider-value-box" type="text" value="50" readonly />
                   <span class="slider-unit">V</span>
                 </div>
               </div>
               <div class="slider-input-row">
                 <button id="voltageMinus" class="slider-btn" type="button">-</button>
                 <div class="slider-track-container">
-                  <input id="voltageSlider" type="range" min="0" max="100" value="38" class="range-slider" />
+                  <input id="voltageSlider" type="range" min="0" max="50" value="50" class="range-slider" />
                 </div>
                 <button id="voltagePlus" class="slider-btn" type="button">+</button>
               </div>
@@ -331,14 +333,14 @@
               <div class="slider-label-row">
                 <span class="slider-label">Analog Gain</span>
                 <div class="slider-value-container">
-                  <input id="gainValueInput" class="slider-value-box" type="text" value="19" readonly />
+                  <input id="gainValueInput" class="slider-value-box" type="text" value="40" readonly />
                   <span class="slider-unit">dB</span>
                 </div>
               </div>
               <div class="slider-input-row">
                 <button id="gainMinus" class="slider-btn" type="button">-</button>
                 <div class="slider-track-container">
-                  <input id="gainSlider" type="range" min="0" max="40" value="19" class="range-slider" />
+                  <input id="gainSlider" type="range" min="0" max="80" value="40" class="range-slider" />
                 </div>
                 <button id="gainPlus" class="slider-btn" type="button">+</button>
               </div>
@@ -384,19 +386,19 @@
             <div class="tgc-toggle-row">
               <span class="tgc-label">TGC :</span>
               <label class="switch-toggle">
-                <input type="checkbox" id="tgcToggle" checked>
+                <input type="checkbox" id="tgcToggle">
                 <span class="switch-slider"></span>
               </label>
             </div>
 
             <!-- Vertical TGC sliders -->
-            <div class="tgc-sliders-container" id="tgcSlidersContainer">
+            <div class="tgc-sliders-container disabled" id="tgcSlidersContainer">
               <!-- Slider 1 -->
               <div class="tgc-vertical-slider-group">
                 <span class="tgc-val-label" id="tgcVal1">50</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="50" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider1" />
+                    id="tgcSlider1" disabled />
                 </div>
               </div>
               <!-- Slider 2 -->
@@ -404,7 +406,7 @@
                 <span class="tgc-val-label" id="tgcVal2">12</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="12" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider2" />
+                    id="tgcSlider2" disabled />
                 </div>
               </div>
               <!-- Slider 3 -->
@@ -412,7 +414,7 @@
                 <span class="tgc-val-label" id="tgcVal3">3</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="3" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider3" />
+                    id="tgcSlider3" disabled />
                 </div>
               </div>
               <!-- Slider 4 -->
@@ -420,7 +422,7 @@
                 <span class="tgc-val-label" id="tgcVal4">77</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="77" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider4" />
+                    id="tgcSlider4" disabled />
                 </div>
               </div>
               <!-- Slider 5 -->
@@ -428,7 +430,7 @@
                 <span class="tgc-val-label" id="tgcVal5">90</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="90" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider5" />
+                    id="tgcSlider5" disabled />
                 </div>
               </div>
               <!-- Slider 6 -->
@@ -436,7 +438,7 @@
                 <span class="tgc-val-label" id="tgcVal6">30</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="30" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider6" />
+                    id="tgcSlider6" disabled />
                 </div>
               </div>
             </div>
@@ -501,7 +503,7 @@
                 <svg class="icon-off" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                   stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <path
-                    d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10l-2.58-1.84M23 7l-7 5 7 5V7z">
+                    d="M16 16v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10l-2.58-1.84M23 7l-7 5 7 5V7z">
                   </path>
                   <line x1="1" y1="1" x2="23" y2="23"></line>
                 </svg>

@@ -1,0 +1,18 @@
+stages:
+  - validate
+
+validate_software_structure:
+  stage: validate
+  image: python:3.12-slim
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "dev"'
+
+  script:
+    - 'test -d backend || (echo "ERROR: backend directory does not exist"; exit 1)'
+    - 'test -d frontend || (echo "ERROR: frontend directory does not exist"; exit 1)'
+    - 'test -f package.json || (echo "ERROR: package.json does not exist"; exit 1)'
+    - 'test -f package-lock.json || (echo "ERROR: package-lock.json does not exist"; exit 1)'
+    - 'test -f README.md || (echo "ERROR: README.md does not exist"; exit 1)'
+    - 'echo "Software repository structure validation passed."'
