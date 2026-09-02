@@ -2054,12 +2054,21 @@ if (advancedBtn) {
 // Role Selection screen card click handlers
 const roleCards = document.querySelectorAll(".role-card-item");
 const roleSelectionScreen = document.getElementById("role-selection-screen");
+const doctorLoginScreen = document.getElementById("doctor-login-screen");
+const doctorRegisterScreen = document.getElementById("doctor-register-screen");
 const appDashboard = document.getElementById("app-dashboard");
 
 roleCards.forEach(card => {
   card.addEventListener("click", () => {
     const selectedRole = card.getAttribute("data-role");
     const selectedUid = card.getAttribute("data-uid");
+
+    if (selectedRole === "doctor") {
+      // Show Doctor Secure Login screen instead of jumping directly to dashboard
+      roleSelectionScreen.style.display = "none";
+      if (doctorLoginScreen) doctorLoginScreen.style.display = "flex";
+      return;
+    }
 
     roleInput.value = selectedRole;
     uidInput.value = selectedUid;
@@ -3273,3 +3282,890 @@ function bindHeaderLogoCardInteractions(card) {
     }, 400);
   });
 }
+
+/* ==========================================================================
+   DOCTOR AUTHENTICATION & SQLITE DATABASE SYSTEM
+   ========================================================================== */
+
+let dbInstance = null;
+let currentAuthenticatedUser = null;
+
+// Helper: SHA-256 Password Hashing via Web Crypto API
+async function hashPasswordSHA256(password) {
+  const salt = "torus_secure_salt_2026";
+  const encoder = new TextEncoder();
+  const data = encoder.encode(salt + password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Save SQLite Database state to persistent browser storage
+function saveSQLiteState() {
+  if (!dbInstance) return;
+  try {
+    const data = dbInstance.export();
+    const bufferStr = Array.from(data).join(",");
+    localStorage.setItem("torus_sqlite_db", bufferStr);
+  } catch (e) {
+    console.warn("[SQLite] Storage save warning:", e);
+  }
+}
+
+// Initialize SQLite Database Engine (sql.js)
+async function initSQLiteDatabase() {
+  try {
+    let SQL = null;
+    if (window.initSqlJs) {
+      SQL = await window.initSqlJs({
+        locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+      });
+    }
+
+    const savedDbStr = localStorage.getItem("torus_sqlite_db");
+    if (savedDbStr && SQL) {
+      try {
+        const byteArray = new Uint8Array(savedDbStr.split(",").map(Number));
+        dbInstance = new SQL.Database(byteArray);
+      } catch (dbErr) {
+        console.warn("[SQLite] Storage database parse error, clearing invalid storage:", dbErr);
+        localStorage.removeItem("torus_sqlite_db");
+        dbInstance = new SQL.Database();
+      }
+    } else if (SQL) {
+      dbInstance = new SQL.Database();
+    }
+
+    if (dbInstance) {
+      dbInstance.run(`
+        CREATE TABLE IF NOT EXISTS doctors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          uid TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'doctor',
+          mobile TEXT DEFAULT '',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Safely add mobile column if missing (for pre-existing databases)
+      try {
+        dbInstance.run("SELECT mobile FROM doctors LIMIT 1");
+      } catch (e) {
+        try {
+          dbInstance.run("ALTER TABLE doctors ADD COLUMN mobile TEXT DEFAULT ''");
+          saveSQLiteState();
+          console.log("[SQLite] Migrated: added 'mobile' column.");
+        } catch (e2) {}
+      }
+
+      // Seed default Admin Doctor if empty
+      const adminCheck = dbInstance.exec("SELECT * FROM doctors WHERE email = 'admin@gmail.com'");
+      if (!adminCheck || adminCheck.length === 0 || adminCheck[0].values.length === 0) {
+        const adminHash = await hashPasswordSHA256("admin123");
+        dbInstance.run(
+          "INSERT INTO doctors (uid, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)",
+          ["3001", "Admin Doctor", "admin@gmail.com", adminHash, "admin"]
+        );
+        saveSQLiteState();
+        console.log("[SQLite] Pre-seeded default Admin Doctor (UID: 3001, admin@gmail.com).");
+      }
+    }
+  } catch (err) {
+    console.warn("[SQLite] sql.js initialization warning (falling back to REST API):", err);
+  }
+}
+
+// Generate Unique Alphanumeric Professional ID (DOC-XXXXX format)
+function generateProfessionalId() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  
+  for (let attempt = 0; attempt < 100; attempt++) {
+    let randomPart = "";
+    for (let i = 0; i < 5; i++) {
+      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const professionalId = `DOC-${randomPart}`;
+    
+    // Check uniqueness in client-side database
+    if (dbInstance) {
+      try {
+        const checkRes = dbInstance.exec(`SELECT id FROM doctors WHERE uid = '${professionalId}'`);
+        if (!checkRes || checkRes.length === 0 || checkRes[0].values.length === 0) {
+          return professionalId;
+        }
+      } catch (e) {
+        return professionalId;
+      }
+    } else {
+      return professionalId;
+    }
+  }
+  
+  // Fallback with timestamp to guarantee uniqueness
+  return `DOC-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+}
+
+// Frontend Strong Password Validation
+function validateStrongPassword(password) {
+  if (password.length < 8) {
+    return { valid: false, error: "Password must be at least 8 characters long." };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, error: "Password must contain at least 1 uppercase letter." };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, error: "Password must contain at least 1 lowercase letter." };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, error: "Password must contain at least 1 number." };
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};:'",.<>?/\\|`~]/.test(password)) {
+    return { valid: false, error: "Password must contain at least 1 special character (e.g., @, #, $, !)." };
+  }
+  return { valid: true, error: "" };
+}
+
+// Frontend Email Validation
+function validateEmailFormat(email) {
+  const pattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return pattern.test(email.trim());
+}
+
+// Frontend Mobile Validation
+function validateMobileFormat(mobile) {
+  const cleaned = mobile.trim().replace(/[\s\-\(\)]/g, "");
+  const pattern = /^\+?[0-9]{7,15}$/;
+  return pattern.test(cleaned);
+}
+
+// Register Doctor in SQLite
+// Universal API dispatcher supporting relative routes and local backend ports
+async function callBackendAPI(endpoint, payload) {
+  const candidateUrls = [
+    endpoint,
+    `http://127.0.0.1:8000${endpoint}`,
+    `http://127.0.0.1:8080${endpoint}`,
+    `http://127.0.0.1:5000${endpoint}`,
+    `http://localhost:8000${endpoint}`,
+    `http://localhost:8080${endpoint}`,
+    `http://localhost:5000${endpoint}`
+  ];
+
+  const uniqueUrls = Array.from(new Set(candidateUrls));
+
+  for (const url of uniqueUrls) {
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (resp) {
+        const data = await resp.json();
+        return data;
+      }
+    } catch (err) {
+      // Continue to next URL candidate
+    }
+  }
+  return null;
+}
+
+// Register Doctor in SQLite
+async function registerDoctorAccount(name, email, password, mobile, uid = "") {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = name.trim();
+  const cleanMobile = mobile.trim();
+  const cleanUid = uid.trim().toUpperCase();
+  const pwdHash = await hashPasswordSHA256(password);
+
+  // 1. Try Backend REST API first
+  const apiRes = await callBackendAPI("/api/doctors/register", {
+    name: cleanName,
+    email: cleanEmail,
+    password: password,
+    mobile: cleanMobile,
+    uid: cleanUid
+  });
+  if (apiRes) return apiRes;
+
+  // 2. Client SQLite fallback
+  if (dbInstance) {
+    // Check duplicate email
+    const checkRes = dbInstance.exec(`SELECT id FROM doctors WHERE LOWER(email) = '${cleanEmail}'`);
+    if (checkRes && checkRes.length > 0 && checkRes[0].values.length > 0) {
+      return { success: false, error: "An account with this email already exists." };
+    }
+
+    // Process UID
+    let finalUid = cleanUid;
+    if (finalUid) {
+      const uidCheck = dbInstance.exec(`SELECT id FROM doctors WHERE UPPER(uid) = '${finalUid}'`);
+      if (uidCheck && uidCheck.length > 0 && uidCheck[0].values.length > 0) {
+        return { success: false, error: `Professional ID '${finalUid}' is already in use.` };
+      }
+    } else {
+      finalUid = generateProfessionalId();
+    }
+
+    dbInstance.run(
+      "INSERT INTO doctors (uid, name, email, password_hash, role, mobile) VALUES (?, ?, ?, ?, 'doctor', ?)",
+      [finalUid, cleanName, cleanEmail, pwdHash, cleanMobile]
+    );
+    saveSQLiteState();
+
+    return {
+      success: true,
+      doctor: { uid: finalUid, name: cleanName, email: cleanEmail, mobile: cleanMobile, role: "doctor" }
+    };
+  }
+
+  return { success: false, error: "Database engine unavailable. Please try again." };
+}
+
+// Authenticate Doctor against SQLite (Email OR UID)
+async function authenticateDoctorAccount(loginId, password) {
+  const cleanLogin = loginId.trim().toLowerCase();
+  const pwdHash = await hashPasswordSHA256(password);
+
+  // 1. Try Backend REST API first
+  const apiRes = await callBackendAPI("/api/doctors/login", {
+    login_id: cleanLogin,
+    password: password
+  });
+  if (apiRes) return apiRes;
+
+  // 2. Client SQLite fallback
+  if (dbInstance) {
+    const stmt = `SELECT id, uid, name, email, role FROM doctors WHERE (LOWER(email) = '${cleanLogin}' OR LOWER(uid) = '${cleanLogin}') AND password_hash = '${pwdHash}'`;
+    const res = dbInstance.exec(stmt);
+    if (res && res.length > 0 && res[0].values.length > 0) {
+      const row = res[0].values[0];
+      return {
+        success: true,
+        doctor: { id: row[0], uid: String(row[1]), name: row[2], email: row[3], role: row[4] }
+      };
+    }
+    return { success: false, error: "Invalid email/UID or password." };
+  }
+
+  return { success: false, error: "Invalid credentials." };
+}
+
+// Request Doctor Password Reset OTP (Real Backend API + SQLite)
+async function requestDoctorResetOTP(identifier) {
+  const cleanId = identifier.trim().toLowerCase();
+
+  const apiRes = await callBackendAPI("/api/doctors/forgot-password/send-otp", {
+    identifier: cleanId
+  });
+  if (apiRes) return apiRes;
+
+  return {
+    success: false,
+    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+  };
+}
+
+// Verify Doctor Password Reset OTP (Real Backend API)
+async function verifyDoctorResetOTP(identifier, otp) {
+  const cleanId = identifier.trim().toLowerCase();
+  const cleanOtp = String(otp).trim();
+
+  const apiRes = await callBackendAPI("/api/doctors/forgot-password/verify-otp", {
+    identifier: cleanId,
+    otp: cleanOtp
+  });
+  if (apiRes) return apiRes;
+
+  return {
+    success: false,
+    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+  };
+}
+
+// Reset Doctor Password with Verified Token (Real Backend API + SQLite)
+async function resetDoctorPasswordWithToken(identifier, resetToken, newPassword) {
+  const cleanId = identifier.trim().toLowerCase();
+  const pwdHash = await hashPasswordSHA256(newPassword);
+
+  const apiRes = await callBackendAPI("/api/doctors/forgot-password/reset", {
+    identifier: cleanId,
+    reset_token: resetToken,
+    new_password: newPassword
+  });
+  if (apiRes) {
+    if (apiRes.success && dbInstance) {
+      dbInstance.run(`UPDATE doctors SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
+      saveSQLiteState();
+    }
+    return apiRes;
+  }
+
+  return {
+    success: false,
+    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+  };
+}
+
+// Legacy wrapper
+async function resetDoctorPasswordAccount(email, newPassword) {
+  return resetDoctorPasswordWithToken(email, "legacy_direct", newPassword);
+}
+
+// Set Active Authenticated Doctor Session & Launch Dashboard
+function setAuthenticatedDoctorSession(doctor) {
+  currentAuthenticatedUser = doctor;
+
+  // Bind values to settings inputs
+  if (roleInput) {
+    roleInput.value = "doctor";
+    roleInput.dispatchEvent(new Event("change"));
+  }
+  if (uidInput) {
+    uidInput.value = doctor.uid;
+  }
+
+  // Update dynamic Header User Badge
+  const nameEl = document.getElementById("user-display-name");
+  const uidEl = document.getElementById("user-display-uid");
+  const badgeEl = document.getElementById("header-user-badge");
+
+  if (nameEl) {
+    nameEl.textContent = doctor.name.startsWith("Dr.") ? doctor.name : `Dr. ${doctor.name}`;
+  }
+  if (uidEl) {
+    // Display Professional ID (DOC-XXXXX) or fallback to UID format
+    uidEl.textContent = doctor.uid;
+  }
+  if (badgeEl) {
+    badgeEl.style.display = "inline-flex";
+  }
+
+  // Connect Doctor MQTT
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "f320d3475b6d4b70ba512b06d09849d7", channelInput ? channelInput.value : "torus");
+
+  // Transition UI to Dashboard
+  const doctorRegisterScreen = document.getElementById("doctor-register-screen");
+  const doctorForgotScreen = document.getElementById("doctor-forgot-screen");
+  if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
+  if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
+  if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
+  if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
+  if (appDashboard) appDashboard.style.display = "flex";
+
+  if (typeof triggerHeaderBootSequence === "function") {
+    triggerHeaderBootSequence();
+  }
+}
+
+// Show alert message in login/modal forms
+function showAlertMessage(elementId, message, type = "error") {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.textContent = message;
+  el.className = `login-alert ${type}`;
+  el.style.display = "block";
+}
+
+function hideAlertMessage(elementId) {
+  const el = document.getElementById(elementId);
+  if (el) el.style.display = "none";
+}
+
+// Bind DOM Event Listeners for Doctor Authentication
+document.addEventListener("DOMContentLoaded", async () => {
+  await initSQLiteDatabase();
+
+  // Password Visibility Toggle
+  const togglePassBtn = document.getElementById("toggle-password-btn");
+  const passInput = document.getElementById("doctor-password-input");
+  if (togglePassBtn && passInput) {
+    togglePassBtn.addEventListener("click", () => {
+      const isPass = passInput.type === "password";
+      passInput.type = isPass ? "text" : "password";
+      const eyeIcon = togglePassBtn.querySelector(".eye-icon");
+      const eyeOffIcon = togglePassBtn.querySelector(".eye-off-icon");
+      if (eyeIcon && eyeOffIcon) {
+        eyeIcon.style.display = isPass ? "none" : "block";
+        eyeOffIcon.style.display = isPass ? "block" : "none";
+      }
+    });
+  }
+
+  // Back Button from Doctor Login to Role Selection
+  const docBackBtn = document.getElementById("doctor-login-back-btn");
+  if (docBackBtn) {
+    docBackBtn.addEventListener("click", () => {
+      if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
+      if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
+    });
+  }
+
+  // Main Dashboard Back Button -> Return to Role Selection
+  const mainBackBtn = document.getElementById("backBtn");
+  if (mainBackBtn) {
+    mainBackBtn.addEventListener("click", () => {
+      if (appDashboard) appDashboard.style.display = "none";
+      if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
+      // Hide header user badge when returning to role selection
+      const badgeEl = document.getElementById("header-user-badge");
+      if (badgeEl) badgeEl.style.display = "none";
+    });
+  }
+
+  // Secure Login Form Submission
+  const loginForm = document.getElementById("doctor-login-form");
+  if (loginForm) {
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("doctor-login-alert");
+
+      const emailVal = document.getElementById("doctor-email-input")?.value || "";
+      const passVal = document.getElementById("doctor-password-input")?.value || "";
+
+      if (!emailVal || !passVal) {
+        showAlertMessage("doctor-login-alert", "Please fill in all fields.");
+        return;
+      }
+
+      const res = await authenticateDoctorAccount(emailVal, passVal);
+      if (res.success && res.doctor) {
+        setAuthenticatedDoctorSession(res.doctor);
+      } else {
+        showAlertMessage("doctor-login-alert", res.error || "Invalid email/UID or password.");
+      }
+    });
+  }
+
+  // ============================================================
+  // Create Account Link -> Navigate to Full Page Registration
+  // ============================================================
+  const createAccLink = document.getElementById("doctor-create-account-link");
+
+  if (createAccLink) {
+    createAccLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      hideAlertMessage("register-alert");
+      
+      // Clear form fields completely (Professional ID is left blank by default)
+      const regForm = document.getElementById("doctor-register-form");
+      if (regForm) regForm.reset();
+
+      // Ensure Professional ID is completely blank by default
+      const profIdInput = document.getElementById("reg-professional-id");
+      if (profIdInput) {
+        profIdInput.value = "";
+      }
+
+      // Hide login screen, show registration screen
+      const loginScreen = document.getElementById("doctor-login-screen");
+      const regScreen = document.getElementById("doctor-register-screen");
+      if (loginScreen) loginScreen.style.display = "none";
+      if (regScreen) regScreen.style.display = "flex";
+    });
+  }
+
+  // Back Button from Registration -> Doctor Login
+  const regBackBtn = document.getElementById("doctor-register-back-btn");
+  if (regBackBtn) {
+    regBackBtn.addEventListener("click", () => {
+      const loginScreen = document.getElementById("doctor-login-screen");
+      const regScreen = document.getElementById("doctor-register-screen");
+      if (regScreen) regScreen.style.display = "none";
+      if (loginScreen) loginScreen.style.display = "flex";
+    });
+  }
+
+  // Password Visibility Toggle for Registration
+  function setupPasswordToggle(btnId, inputId) {
+    const toggleBtn = document.getElementById(btnId);
+    const inputEl = document.getElementById(inputId);
+    if (toggleBtn && inputEl) {
+      toggleBtn.addEventListener("click", () => {
+        const isPass = inputEl.type === "password";
+        inputEl.type = isPass ? "text" : "password";
+        toggleBtn.innerHTML = isPass
+          ? `<svg class="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
+          : `<svg class="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+      });
+    }
+  }
+
+  setupPasswordToggle("reg-password-toggle", "reg-password");
+  setupPasswordToggle("reg-confirm-password-toggle", "reg-confirm-password");
+
+  // Registration Form Submission
+  const registerForm = document.getElementById("doctor-register-form");
+  const submitRegBtn = document.getElementById("submitRegisterBtn");
+
+  if (registerForm) {
+    registerForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await handleDoctorRegistration();
+    });
+  }
+
+  async function handleDoctorRegistration() {
+    hideAlertMessage("register-alert");
+
+    const nameVal = document.getElementById("reg-name")?.value || "";
+    const profIdVal = document.getElementById("reg-professional-id")?.value?.trim() || "";
+    const emailVal = document.getElementById("reg-email")?.value || "";
+    const mobileVal = document.getElementById("reg-mobile")?.value || "";
+    const passVal = document.getElementById("reg-password")?.value || "";
+    const confirmVal = document.getElementById("reg-confirm-password")?.value || "";
+    const termsChecked = document.getElementById("reg-terms-checkbox")?.checked || false;
+
+    // --- Frontend Validations ---
+
+    if (!nameVal.trim()) {
+      showAlertMessage("register-alert", "Full Name is required.");
+      return;
+    }
+
+    if (profIdVal) {
+      // Validate alphanumeric format if entered manually
+      if (!/^[A-Za-z0-9\-_]{3,20}$/.test(profIdVal)) {
+        showAlertMessage("register-alert", "Professional ID must contain letters and numbers (e.g., DOC-A7K29).");
+        return;
+      }
+    }
+
+    if (!emailVal.trim()) {
+      showAlertMessage("register-alert", "Email is required.");
+      return;
+    }
+
+    if (!validateEmailFormat(emailVal)) {
+      showAlertMessage("register-alert", "Please enter a valid email address.");
+      return;
+    }
+
+    if (!mobileVal.trim()) {
+      showAlertMessage("register-alert", "Mobile Number is required.");
+      return;
+    }
+
+    if (!validateMobileFormat(mobileVal)) {
+      showAlertMessage("register-alert", "Please enter a valid mobile number.");
+      return;
+    }
+
+    if (!passVal) {
+      showAlertMessage("register-alert", "Password is required.");
+      return;
+    }
+
+    const pwdCheck = validateStrongPassword(passVal);
+    if (!pwdCheck.valid) {
+      showAlertMessage("register-alert", "Password must be at least 8 characters long and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character (e.g. Doctor@2026).");
+      return;
+    }
+
+    if (!confirmVal) {
+      showAlertMessage("register-alert", "Please confirm your password.");
+      return;
+    }
+
+    if (passVal !== confirmVal) {
+      showAlertMessage("register-alert", "Passwords do not match.");
+      return;
+    }
+
+    if (!termsChecked) {
+      showAlertMessage("register-alert", "You must agree to the Terms & Conditions and Privacy Policy.");
+      return;
+    }
+
+    // --- Call Registration API ---
+    const res = await registerDoctorAccount(nameVal, emailVal, passVal, mobileVal, profIdVal);
+
+    if (res.success && res.doctor) {
+      // Navigate back to Doctor Login with success message
+      if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
+      if (doctorLoginScreen) doctorLoginScreen.style.display = "flex";
+
+      // Pre-fill the email field for convenience
+      const emailInput = document.getElementById("doctor-email-input");
+      if (emailInput) emailInput.value = res.doctor.email;
+      // Clear the pre-filled password
+      const loginPassInput = document.getElementById("doctor-password-input");
+      if (loginPassInput) loginPassInput.value = "";
+
+      showAlertMessage(
+        "doctor-login-alert",
+        `Account created successfully! Professional ID: ${res.doctor.uid}. You can now log in.`,
+        "success"
+      );
+    } else {
+      showAlertMessage("register-alert", res.error || "Registration failed. Please try again.");
+    }
+  }
+
+  // ============================================================
+  // Doctor Forgot Password Multi-Step Screen Handlers
+  // ============================================================
+  const doctorForgotScreen = document.getElementById("doctor-forgot-screen");
+  const forgotLink = document.getElementById("doctor-forgot-link");
+  const forgotBackBtn = document.getElementById("doctor-forgot-back-btn");
+  const forgotStep2BackBtn = document.getElementById("forgot-step2-back-btn");
+  const forgotStep3BackBtn = document.getElementById("forgot-step3-back-btn");
+
+  const forgotStep1 = document.getElementById("forgot-step-1");
+  const forgotStep2 = document.getElementById("forgot-step-2");
+  const forgotStep3 = document.getElementById("forgot-step-3");
+
+  const formStep1 = document.getElementById("doctor-forgot-form-step1");
+  const formStep2 = document.getElementById("doctor-forgot-form-step2");
+  const formStep3 = document.getElementById("doctor-forgot-form-step3");
+
+  const inputIdentifier = document.getElementById("forgot-identifier");
+  const inputOtp = document.getElementById("forgot-otp-input");
+  const inputNewPass = document.getElementById("forgot-new-pass");
+  const inputConfirmPass = document.getElementById("forgot-confirm-pass");
+  const resendOtpBtn = document.getElementById("forgot-resend-otp-btn");
+
+  let currentResetIdentifier = "";
+  let currentResetToken = "";
+
+  function resetForgotFlowUI() {
+    hideAlertMessage("forgot-alert-step1");
+    hideAlertMessage("forgot-alert-step2");
+    hideAlertMessage("forgot-alert-step3");
+
+    if (inputIdentifier) inputIdentifier.value = "";
+    if (inputOtp) inputOtp.value = "";
+    if (inputNewPass) inputNewPass.value = "";
+    if (inputConfirmPass) inputConfirmPass.value = "";
+
+    currentResetIdentifier = "";
+    currentResetToken = "";
+
+    if (forgotStep1) forgotStep1.style.display = "flex";
+    if (forgotStep2) forgotStep2.style.display = "none";
+    if (forgotStep3) forgotStep3.style.display = "none";
+  }
+
+  function showDoctorLoginFromForgot() {
+    if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
+    if (doctorLoginScreen) doctorLoginScreen.style.display = "flex";
+    resetForgotFlowUI();
+  }
+
+  if (forgotLink) {
+    forgotLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetForgotFlowUI();
+
+      if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
+      if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
+      if (doctorForgotScreen) doctorForgotScreen.style.display = "flex";
+    });
+  }
+
+  if (forgotBackBtn) {
+    forgotBackBtn.addEventListener("click", showDoctorLoginFromForgot);
+  }
+
+  if (forgotStep2BackBtn) {
+    forgotStep2BackBtn.addEventListener("click", () => {
+      hideAlertMessage("forgot-alert-step1");
+      hideAlertMessage("forgot-alert-step2");
+      if (forgotStep1) forgotStep1.style.display = "flex";
+      if (forgotStep2) forgotStep2.style.display = "none";
+      if (forgotStep3) forgotStep3.style.display = "none";
+    });
+  }
+
+  if (forgotStep3BackBtn) {
+    forgotStep3BackBtn.addEventListener("click", showDoctorLoginFromForgot);
+  }
+
+  // Step 1: Send OTP
+  if (formStep1) {
+    formStep1.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("forgot-alert-step1");
+
+      const identifierVal = inputIdentifier?.value?.trim() || "";
+      if (!identifierVal) {
+        showAlertMessage("forgot-alert-step1", "Please enter your registered Email or User ID.");
+        return;
+      }
+
+      const submitBtn = document.getElementById("forgot-send-otp-btn");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await requestDoctorResetOTP(identifierVal);
+        if (res.success) {
+          currentResetIdentifier = identifierVal;
+          if (forgotStep1) forgotStep1.style.display = "none";
+          if (forgotStep2) forgotStep2.style.display = "flex";
+          if (forgotStep3) forgotStep3.style.display = "none";
+
+          showAlertMessage("forgot-alert-step2", res.message || "A 6-digit OTP has been sent to your registered email address.", "success");
+        } else {
+          showAlertMessage("forgot-alert-step1", res.error || "No account found with this email or User ID.");
+        }
+      } catch (err) {
+        showAlertMessage("forgot-alert-step1", "Failed to send OTP. Please try again.");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  // Step 2: Verify OTP
+  if (formStep2) {
+    formStep2.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("forgot-alert-step2");
+
+      const otpVal = inputOtp?.value?.trim() || "";
+      if (!otpVal || otpVal.length !== 6) {
+        showAlertMessage("forgot-alert-step2", "Please enter the valid 6-digit OTP code.");
+        return;
+      }
+
+      const verifyBtn = document.getElementById("forgot-verify-otp-btn");
+      if (verifyBtn) verifyBtn.disabled = true;
+
+      try {
+        const res = await verifyDoctorResetOTP(currentResetIdentifier, otpVal);
+        if (res.success) {
+          currentResetToken = res.reset_token || otpVal;
+          if (forgotStep1) forgotStep1.style.display = "none";
+          if (forgotStep2) forgotStep2.style.display = "none";
+          if (forgotStep3) forgotStep3.style.display = "flex";
+          hideAlertMessage("forgot-alert-step3");
+        } else {
+          showAlertMessage("forgot-alert-step2", res.error || "Invalid OTP code. Please check your email.");
+        }
+      } catch (err) {
+        showAlertMessage("forgot-alert-step2", "Verification error. Please try again.");
+      } finally {
+        if (verifyBtn) verifyBtn.disabled = false;
+      }
+    });
+  }
+
+  // Resend OTP
+  if (resendOtpBtn) {
+    resendOtpBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("forgot-alert-step2");
+
+      if (!currentResetIdentifier) {
+        showAlertMessage("forgot-alert-step2", "Session expired. Please return to Step 1.");
+        return;
+      }
+
+      try {
+        const res = await requestDoctorResetOTP(currentResetIdentifier);
+        if (res.success) {
+          showAlertMessage("forgot-alert-step2", res.message || "A fresh 6-digit OTP has been sent to your registered email.", "success");
+        } else {
+          showAlertMessage("forgot-alert-step2", res.error || "Could not resend OTP.");
+        }
+      } catch (err) {
+        showAlertMessage("forgot-alert-step2", "Failed to resend OTP.");
+      }
+    });
+  }
+
+  // Step 3: Reset Password
+  if (formStep3) {
+    formStep3.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("forgot-alert-step3");
+
+      const newPass = inputNewPass?.value || "";
+      const confirmPass = inputConfirmPass?.value || "";
+
+      if (!newPass) {
+        showAlertMessage("forgot-alert-step3", "New Password is required.");
+        return;
+      }
+
+      const pwdCheck = validateStrongPassword(newPass);
+      if (!pwdCheck.valid) {
+        showAlertMessage("forgot-alert-step3", pwdCheck.error);
+        return;
+      }
+
+      if (!confirmPass) {
+        showAlertMessage("forgot-alert-step3", "Please confirm your new password.");
+        return;
+      }
+
+      if (newPass !== confirmPass) {
+        showAlertMessage("forgot-alert-step3", "Passwords do not match.");
+        return;
+      }
+
+      const resetBtn = document.getElementById("forgot-reset-submit-btn");
+      if (resetBtn) resetBtn.disabled = true;
+
+      try {
+        const res = await resetDoctorPasswordWithToken(currentResetIdentifier, currentResetToken, newPass);
+        if (res.success) {
+          showDoctorLoginFromForgot();
+
+          // Pre-fill email/login input on login screen for ease of use
+          const docEmailInput = document.getElementById("doctor-email-input");
+          if (docEmailInput && currentResetIdentifier) {
+            docEmailInput.value = currentResetIdentifier;
+          }
+          const docPassInput = document.getElementById("doctor-password-input");
+          if (docPassInput) docPassInput.value = "";
+
+          showAlertMessage(
+            "doctor-login-alert",
+            "Password reset successfully! Please log in with your new password.",
+            "success"
+          );
+        } else {
+          showAlertMessage("forgot-alert-step3", res.error || "Password reset failed.");
+        }
+      } catch (err) {
+        showAlertMessage("forgot-alert-step3", "Failed to reset password. Please try again.");
+      } finally {
+        if (resetBtn) resetBtn.disabled = false;
+      }
+    });
+  }
+
+  // Biometric Verification Simulation Button Handler
+  const bioBtn = document.getElementById("doctor-biometric-btn");
+  const bioModal = document.getElementById("biometric-modal");
+  const cancelBioBtn = document.getElementById("cancelBioBtn");
+
+  if (bioBtn) {
+    bioBtn.addEventListener("click", () => {
+      if (bioModal) bioModal.style.display = "flex";
+
+      setTimeout(async () => {
+        if (bioModal && bioModal.style.display === "flex") {
+          bioModal.style.display = "none";
+          // Authenticate active/default doctor or admin
+          const res = await authenticateDoctorAccount("admin@gmail.com", "admin123");
+          if (res.success && res.doctor) {
+            setAuthenticatedDoctorSession(res.doctor);
+          }
+        }
+      }, 2000);
+    });
+  }
+
+  if (cancelBioBtn) {
+    cancelBioBtn.addEventListener("click", () => {
+      if (bioModal) bioModal.style.display = "none";
+    });
+  }
+});
+

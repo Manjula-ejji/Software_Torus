@@ -1,0 +1,164 @@
+"""
+TORUS Clinical Robotics Platform - Backend API Server
+Handles Doctor Registration, Authentication, Password Reset, and Real SMTP OTP Dispatch.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from flask import Flask, request, jsonify, Response, send_from_directory
+
+# Add backend directory to sys.path
+APP_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = APP_DIR.parent
+FRONTEND_DIR = PROJECT_DIR / "frontend"
+
+sys.path.insert(0, str(APP_DIR))
+
+import database
+
+app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
+database.init_db()
+
+# -------------------- GLOBAL CORS HEADERS --------------------
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        res = Response(status=204)
+        res.headers["Access-Control-Allow-Origin"] = "*"
+        res.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        res.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+        return res
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    return response
+
+# -------------------- HEALTH CHECK --------------------
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    return jsonify({"status": "healthy", "service": "TORUS Doctor Authentication Engine"})
+
+# -------------------- DOCTOR AUTHENTICATION API --------------------
+@app.route("/api/doctors/register", methods=["POST", "OPTIONS"])
+def api_register_doctor():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    mobile = data.get("mobile", "").strip()
+    uid = data.get("uid", "").strip() or data.get("professional_id", "").strip()
+
+    if not name or not email or not password:
+        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
+
+    res = database.register_doctor(name, email, password, mobile=mobile, uid=uid)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/login", methods=["POST", "OPTIONS"])
+def api_login_doctor():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    login_id = data.get("login_id", "").strip()
+    password = data.get("password", "")
+
+    if not login_id or not password:
+        return jsonify({"success": False, "error": "Email/UID and password are required."}), 400
+
+    res = database.authenticate_doctor(login_id, password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password/send-otp", methods=["POST", "OPTIONS"])
+def api_forgot_password_send_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+
+    if not identifier:
+        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
+
+    res = database.generate_and_store_reset_otp(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
+def api_forgot_password_verify_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    otp = str(data.get("otp", "")).strip()
+
+    if not identifier or not otp:
+        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
+
+    res = database.verify_reset_otp(identifier, otp)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password/reset", methods=["POST", "OPTIONS"])
+def api_forgot_password_reset():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
+    new_password = data.get("new_password", "")
+
+    if not identifier or not reset_token or not new_password:
+        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
+
+    res = database.reset_doctor_password_with_token(identifier, reset_token, new_password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password", methods=["POST", "OPTIONS"])
+def api_forgot_password():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip()
+    new_password = data.get("new_password", "")
+    reset_token = data.get("reset_token", "").strip()
+
+    if new_password and reset_token:
+        res = database.reset_doctor_password_with_token(identifier, reset_token, new_password)
+    elif identifier:
+        res = database.generate_and_store_reset_otp(identifier)
+    else:
+        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
+
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+# -------------------- STATIC FILE SERVING --------------------
+@app.route("/")
+def serve_root():
+    return send_from_directory(str(FRONTEND_DIR), "index.html")
+
+@app.route("/<path:path>")
+def serve_static_files(path):
+    file_path = FRONTEND_DIR / path
+    if file_path.is_file():
+        return send_from_directory(str(FRONTEND_DIR), path)
+    return send_from_directory(str(FRONTEND_DIR), "index.html")
+
+def main():
+    host = os.environ.get("SERVER_HOST", "0.0.0.0")
+    port = int(os.environ.get("SERVER_PORT", "8000"))
+    print(f"[TORUS Backend] Server starting on http://127.0.0.1:{port} ...")
+    app.run(host=host, port=port, threaded=True)
+
+if __name__ == "__main__":
+    main()

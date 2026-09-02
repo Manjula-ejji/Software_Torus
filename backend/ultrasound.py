@@ -1300,6 +1300,97 @@ def publisher_page():
     return Response(html, mimetype="text/html")
 
 
+# -------------------- DOCTOR AUTHENTICATION API (SQLITE) --------------------
+try:
+    import database
+    database.init_db()
+except Exception as _db_err:
+    print(f"[Database] Warning: Could not initialize database module: {_db_err}")
+
+@app.route("/api/doctors/register", methods=["POST"])
+def api_register_doctor():
+    data = request.get_json() or {}
+    name = data.get("name", "")
+    email = data.get("email", "")
+    password = data.get("password", "")
+    mobile = data.get("mobile", "")
+    uid = data.get("uid", "") or data.get("professional_id", "")
+    if not name or not email or not password:
+        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
+    res = database.register_doctor(name, email, password, mobile=mobile, uid=uid)
+    return jsonify(res)
+
+@app.route("/api/doctors/login", methods=["POST"])
+def api_login_doctor():
+    data = request.get_json() or {}
+    login_id = data.get("login_id", "")
+    password = data.get("password", "")
+    if not login_id or not password:
+        return jsonify({"success": False, "error": "Email/UID and password are required."}), 400
+    res = database.authenticate_doctor(login_id, password)
+    return jsonify(res)
+
+@app.route("/api/doctors/forgot-password/send-otp", methods=["POST", "OPTIONS"])
+def api_forgot_password_send_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json() or {}
+    identifier = data.get("identifier", "") or data.get("email", "") or data.get("login_id", "")
+    if not identifier:
+        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
+    res = database.generate_and_store_reset_otp(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
+def api_forgot_password_verify_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json() or {}
+    identifier = data.get("identifier", "") or data.get("email", "") or data.get("login_id", "")
+    otp = data.get("otp", "")
+    if not identifier or not otp:
+        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
+    res = database.verify_reset_otp(identifier, otp)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password/reset", methods=["POST", "OPTIONS"])
+def api_forgot_password_reset():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json() or {}
+    identifier = data.get("identifier", "") or data.get("email", "") or data.get("login_id", "")
+    reset_token = data.get("reset_token", "") or data.get("otp", "")
+    new_password = data.get("new_password", "")
+    if not identifier or not reset_token or not new_password:
+        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
+    res = database.reset_doctor_password_with_token(identifier, reset_token, new_password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/forgot-password", methods=["POST", "OPTIONS"])
+def api_forgot_password():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json() or {}
+    identifier = data.get("identifier", "") or data.get("email", "")
+    new_password = data.get("new_password", "")
+    reset_token = data.get("reset_token", "")
+    if new_password and reset_token:
+        res = database.reset_doctor_password_with_token(identifier, reset_token, new_password)
+    elif new_password and identifier:
+        res = database.reset_doctor_password(identifier, new_password)
+    elif identifier:
+        res = database.generate_and_store_reset_otp(identifier)
+    else:
+        return jsonify({"success": False, "error": "Email/User ID is required."}), 400
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+# ----------------------------------------------------------------------------
+
+
+
 def main() -> None:
     global _ultrasound_proc
 
