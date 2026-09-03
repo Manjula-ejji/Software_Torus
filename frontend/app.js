@@ -4314,8 +4314,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     return {
       connected: false,
       status: "disconnected",
-      status_title: "Fingerprint scanner ready",
-      status_subtitle: "Place your finger on the scanner"
+      status_title: "Fingerprint scanner is not ready",
+      status_subtitle: "Please check the scanner connection."
     };
   }
 
@@ -4326,7 +4326,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       bioVerifyScannerPod.classList.remove("scanning", "success");
     }
     if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner ready";
-    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner";
+    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner.";
     if (bioVerifyDots) {
       const dots = bioVerifyDots.querySelectorAll(".bio-dot");
       dots.forEach((dot, idx) => {
@@ -4337,10 +4337,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Check live hardware connection in background
     checkBiometricHardwareStatus().then(hw => {
       if (!hw.connected) {
-        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner";
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner is not ready";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the scanner connection.";
       } else {
         if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner ready";
-        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner.";
       }
     });
   }
@@ -4352,8 +4353,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       bioRegScannerPod.classList.remove("scanning", "success");
     }
     if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
-    if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner";
-    if (bioRegStepBadge) bioRegStepBadge.textContent = "Scan 1 of 3";
+    if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
     if (bioRegStartBtn) {
       bioRegStartBtn.disabled = false;
       bioRegStartBtn.innerHTML = "<span>Capture Fingerprint</span>";
@@ -4368,10 +4368,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Check live hardware connection in background
     checkBiometricHardwareStatus().then(hw => {
       if (!hw.connected) {
-        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner";
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is not ready";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the scanner connection.";
       } else {
         if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
-        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
       }
     });
   }
@@ -4444,8 +4445,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       bioVerifyScannerPod.classList.remove("success");
       bioVerifyScannerPod.classList.add("scanning");
     }
-    if (bioVerifyTitle) bioVerifyTitle.textContent = "Scanning fingerprint...";
-    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Keep your finger on the scanner...";
+    if (bioVerifyTitle) bioVerifyTitle.textContent = "Scanning your fingerprint...";
+    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please keep your finger still.";
 
     // Animate dots indicator during reading
     const dots = bioVerifyDots ? bioVerifyDots.querySelectorAll(".bio-dot") : [];
@@ -4463,9 +4464,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!hwStatus.connected) {
         clearInterval(dotInterval);
         if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
-        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner not detected";
-        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the device connection";
-        showAlertMessage("doctor-biometric-alert", "Fingerprint scanner not detected. Please connect the Arduino / USB biometric scanner.", "error");
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner is not ready";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the scanner connection.";
+        showAlertMessage("doctor-biometric-alert", "Fingerprint scanner is not ready. Please check the scanner connection.", "error");
         isVerifyingBiometrics = false;
         return;
       }
@@ -4517,7 +4518,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Real mismatch or failure
       if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
       if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint does not match";
-      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please try again";
+      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please try again.";
 
       const errMsg = resData?.error || "Fingerprint does not match. Please try again.";
       showAlertMessage("doctor-biometric-alert", errMsg, "error");
@@ -4526,9 +4527,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (err) {
       clearInterval(dotInterval);
       if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
-      if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner not detected";
-      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the device connection";
-      showAlertMessage("doctor-biometric-alert", "Unable to read fingerprint. Please try again.", "error");
+      if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner is unavailable";
+      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the scanner connection.";
+      showAlertMessage("doctor-biometric-alert", "Fingerprint scanner is unavailable. Please check the scanner connection.", "error");
       isVerifyingBiometrics = false;
     }
   }
@@ -4550,7 +4551,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const identifierVal = bioRegIdentifierInput?.value?.trim() || "";
 
       if (!identifierVal) {
-        showAlertMessage("doctor-bio-reg-alert", "Please enter your registered Doctor Email or UID.");
+        showAlertMessage("doctor-bio-reg-alert", "Please enter your registered Doctor Email or User ID.");
         return;
       }
 
@@ -4561,9 +4562,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       const hwStatus = await checkBiometricHardwareStatus();
       if (!hwStatus.connected) {
         if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning", "success");
-        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner not detected";
-        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the device connection";
-        showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner not detected. Please connect the Arduino / USB biometric scanner.", "error");
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is not ready";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the scanner connection.";
+        showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner is not ready. Please check the scanner connection.", "error");
         if (bioRegStartBtn) bioRegStartBtn.disabled = false;
         isRegisteringBiometrics = false;
         return;
@@ -4576,24 +4577,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         bioRegScannerPod.classList.remove("success");
         bioRegScannerPod.classList.add("scanning");
       }
-      if (bioRegStepBadge) bioRegStepBadge.textContent = "Scan 1 of 2";
-      if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanning fingerprint...";
-      if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Keep your finger on the scanner";
+      if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanning your fingerprint...";
+      if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please keep your finger still.";
       if (dots[0]) dots[0].className = "bio-dot active";
       if (dots[1]) dots[1].className = "bio-dot";
 
       setTimeout(async () => {
         // Step 2: Prompt lift & second touch if hardware requires multi-pass
-        if (bioRegStepBadge) bioRegStepBadge.textContent = "Scan 2 of 2";
-        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint captured. Please lift your finger.";
-        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger again";
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint captured";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please lift your finger and place it again when prompted.";
         if (dots[0]) dots[0].className = "bio-dot active";
         if (dots[1]) dots[1].className = "bio-dot active";
 
         setTimeout(async () => {
           // Step 3: Processing template
-          if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint captured successfully. Processing...";
-          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Creating secure biometric template...";
+          if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanning your fingerprint...";
+          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please keep your finger still.";
 
           // Dispatch real enrollment request to backend API
           try {
@@ -4617,13 +4616,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                 bioRegScannerPod.classList.remove("scanning");
                 bioRegScannerPod.classList.add("success");
               }
-              if (bioRegStepBadge) bioRegStepBadge.textContent = "Enrollment Complete";
               if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registered successfully.";
-              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Biometric credential securely linked to your account.";
+              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Your fingerprint has been securely linked to your account.";
 
               showAlertMessage(
                 "doctor-bio-reg-alert",
-                `Fingerprint registered successfully. Biometric credential securely linked to your account. Redirecting to Biometric Login...`,
+                "Fingerprint registered successfully. Your fingerprint has been securely linked to your account. Redirecting to Biometric Login...",
                 "success"
               );
 
@@ -4641,9 +4639,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             } else {
               // Real hardware capture failure
               if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
-              if (bioRegStepTitle) bioRegStepTitle.textContent = "Unable to read fingerprint";
-              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please try again";
-              showAlertMessage("doctor-bio-reg-alert", resData?.error || "Unable to read fingerprint. Please try again.", "error");
+              if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registration failed";
+              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please try again.";
+              showAlertMessage("doctor-bio-reg-alert", resData?.error || "Fingerprint registration failed. Please try again.", "error");
               if (bioRegStartBtn) bioRegStartBtn.disabled = false;
               isRegisteringBiometrics = false;
             }
@@ -4651,9 +4649,9 @@ document.addEventListener("DOMContentLoaded", async () => {
           } catch (err) {
             console.error("[Biometric Registration Error]", err);
             if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
-            if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner not detected";
-            if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the device connection";
-            showAlertMessage("doctor-bio-reg-alert", "Unable to read fingerprint. Please try again.", "error");
+            if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is unavailable";
+            if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the scanner connection.";
+            showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner is unavailable. Please check the scanner connection.", "error");
             if (bioRegStartBtn) bioRegStartBtn.disabled = false;
             isRegisteringBiometrics = false;
           }

@@ -1,7 +1,7 @@
 """
-TORUS Healthcare - Real Biometric Scanner & Arduino Serial Integration Engine
-Handles communication with Arduino / USB Serial Fingerprint Scanner hardware (e.g. R307 / AS608 / FPM10A / R503).
-Strictly operates on physical hardware data and prevents simulated/fake authentications.
+TORUS Healthcare - Biometric Scanner & Serial Integration Engine
+Handles communication with physical optical/capacitive fingerprint scanner hardware.
+Uses doctor-friendly, non-technical messaging for all status and error conditions.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import database
 
 class BiometricHardwareManager:
     """
-    Manages physical Serial/USB communication with the Arduino / Fingerprint Scanner.
+    Manages communication with the biometric fingerprint scanner.
     """
 
     def __init__(self):
@@ -34,15 +34,15 @@ class BiometricHardwareManager:
         self._serial_conn: Optional[Any] = None
         self._lock = threading.Lock()
         self.is_connected: bool = False
-        self.scanner_model: str = "Arduino R307/AS608 Optical Biometric Scanner"
+        self.scanner_model: str = "Optical Biometric Scanner"
         self.last_error: Optional[str] = None
         self._current_enroll_event: str = "IDLE"
         self._probe_hardware()
 
     def _probe_hardware(self) -> bool:
-        """Probes available COM ports to find connected Arduino/Fingerprint hardware."""
+        """Probes available serial ports to find the connected fingerprint scanner."""
         if not PYSERIAL_AVAILABLE:
-            self.last_error = "PySerial library not available."
+            self.last_error = "Biometric driver module unavailable."
             self.is_connected = False
             return False
 
@@ -50,15 +50,13 @@ class BiometricHardwareManager:
             available_ports = list(serial.tools.list_ports.comports())
             if not available_ports:
                 self.is_connected = False
-                self.last_error = "Fingerprint scanner not detected. Please check the device connection."
+                self.last_error = "Fingerprint scanner is not ready. Please check the scanner connection."
                 return False
 
-            # If a specific port was configured, try that first
             candidate_ports = []
             if self.serial_port:
                 candidate_ports.append(self.serial_port)
 
-            # Auto-detect Arduino / CH340 / FTDI / USB-Serial devices
             for p in available_ports:
                 desc = (p.description or "").lower()
                 mfg = (p.manufacturer or "").lower()
@@ -66,7 +64,6 @@ class BiometricHardwareManager:
                     if p.device not in candidate_ports:
                         candidate_ports.append(p.device)
 
-            # Add other ports as fallback
             for p in available_ports:
                 if p.device not in candidate_ports:
                     candidate_ports.append(p.device)
@@ -82,7 +79,7 @@ class BiometricHardwareManager:
                         self.serial_port = port_name
                         self.is_connected = True
                         self.last_error = None
-                        print(f"[Biometric Hardware] Connected on {port_name} (response: {response})")
+                        print(f"[Biometric Scanner] Connected on {port_name}")
                         return True
                     else:
                         conn.close()
@@ -90,16 +87,16 @@ class BiometricHardwareManager:
                     continue
 
             self.is_connected = False
-            self.last_error = "Fingerprint scanner not detected. Please check the device connection."
+            self.last_error = "Fingerprint scanner is not ready. Please check the scanner connection."
             return False
 
         except Exception as e:
             self.is_connected = False
-            self.last_error = str(e)
+            self.last_error = "Fingerprint scanner is unavailable. Please check the scanner connection."
             return False
 
     def get_status(self) -> Dict[str, Any]:
-        """Returns the real hardware connection status and device metadata."""
+        """Returns the hardware connection status with user-friendly text."""
         with self._lock:
             if not self.is_connected or not self._serial_conn:
                 self._probe_hardware()
@@ -112,7 +109,7 @@ class BiometricHardwareManager:
                     "port": self.serial_port,
                     "baud_rate": self.baud_rate,
                     "status_title": "Fingerprint scanner ready",
-                    "status_subtitle": "Place your finger on the scanner"
+                    "status_subtitle": "Place your finger on the scanner to register your fingerprint."
                 }
             else:
                 return {
@@ -120,22 +117,21 @@ class BiometricHardwareManager:
                     "status": "disconnected",
                     "device": self.scanner_model,
                     "port": None,
-                    "error": self.last_error or "Fingerprint scanner not detected",
-                    "status_title": "Fingerprint scanner not detected",
-                    "status_subtitle": "Please check the device connection"
+                    "error": "Fingerprint scanner is not ready. Please check the scanner connection.",
+                    "status_title": "Fingerprint scanner is not ready",
+                    "status_subtitle": "Please check the scanner connection."
                 }
 
     def enroll_fingerprint(self, identifier: str) -> Dict[str, Any]:
         """
-        Executes real hardware fingerprint enrollment over serial with Arduino.
-        Does NOT timeout early; blocks and reads hardware stream until hardware confirms success or user cancels.
+        Executes real hardware fingerprint enrollment.
         """
         status = self.get_status()
         if not status["connected"]:
             return {
                 "success": False,
-                "error": "Fingerprint scanner not detected. Please check the device connection.",
-                "code": "DEVICE_NOT_DETECTED"
+                "error": "Fingerprint scanner is not ready. Please check the scanner connection.",
+                "code": "SCANNER_NOT_READY"
             }
 
         with self._lock:
@@ -144,70 +140,62 @@ class BiometricHardwareManager:
                 conn.flushInput()
                 conn.flushOutput()
 
-                # Send command to Arduino
                 cmd = f"ENROLL:{identifier}\n"
                 conn.write(cmd.encode("utf-8"))
 
                 template_data = None
                 start_time = time.time()
-                # Allow generous interaction time for user to place finger, lift, and place again
                 while time.time() - start_time < 90.0:
                     line = conn.readline().decode("utf-8", errors="ignore").strip()
                     if not line:
                         continue
 
-                    print(f"[Arduino Hardware Log] {line}")
                     if line.startswith("EVENT:"):
                         self._current_enroll_event = line.replace("EVENT:", "").strip()
                     elif line.startswith("ENROLL:SUCCESS"):
                         parts = line.split(":", 2)
-                        template_data = parts[2] if len(parts) > 2 else f"ARDUINO_TEMPLATE_SLOT_1_{identifier}"
+                        template_data = parts[2] if len(parts) > 2 else f"BIOMETRIC_TEMPLATE_{identifier}"
                         break
                     elif line.startswith("ERROR:") or line.startswith("ENROLL:FAIL"):
-                        err_msg = line.replace("ERROR:", "").replace("ENROLL:FAIL:", "").strip()
-                        if "IMAGING_FAILED" in err_msg or "NO_FINGER" in err_msg:
-                            return {
-                                "success": False,
-                                "error": "Unable to read fingerprint. Please try again.",
-                                "code": "CAPTURE_FAILED"
-                            }
                         return {
                             "success": False,
-                            "error": f"Fingerprint enrollment failed: {err_msg}",
+                            "error": "Fingerprint registration failed. Please try again.",
                             "code": "ENROLLMENT_FAILED"
                         }
 
                 if not template_data:
                     return {
                         "success": False,
-                        "error": "Unable to read fingerprint. Please try again.",
-                        "code": "DEVICE_TIMEOUT"
+                        "error": "Fingerprint registration failed. Please try again.",
+                        "code": "SCANNER_TIMEOUT"
                     }
 
-                # Save template into database linked to doctor
+                # Save template to database linked to doctor
                 db_res = database.register_doctor_biometric(identifier, template_data, self.scanner_model)
+                if db_res.get("success"):
+                    db_res["message"] = "Fingerprint registered successfully."
+                    db_res["subtitle"] = "Your fingerprint has been securely linked to your account."
                 return db_res
 
-            except Exception as e:
+            except Exception:
                 self.is_connected = False
                 return {
                     "success": False,
-                    "error": f"Device communication failure: {str(e)}",
-                    "code": "COMM_ERROR"
+                    "error": "Fingerprint scanner is unavailable. Please check the scanner connection.",
+                    "code": "SCANNER_COMM_ERROR"
                 }
 
     def verify_fingerprint(self, identifier: Optional[str] = None) -> Dict[str, Any]:
         """
-        Executes real hardware fingerprint verification over serial with Arduino.
-        Requires an actual fingerprint MATCH against the registered biometric template.
+        Executes real hardware fingerprint verification against registered template.
         """
         status = self.get_status()
         if not status["connected"]:
             return {
                 "success": False,
                 "matched": False,
-                "error": "Fingerprint scanner not detected. Please check the device connection.",
-                "code": "DEVICE_NOT_DETECTED"
+                "error": "Fingerprint scanner is not ready. Please check the scanner connection.",
+                "code": "SCANNER_NOT_READY"
             }
 
         with self._lock:
@@ -216,7 +204,6 @@ class BiometricHardwareManager:
                 conn.flushInput()
                 conn.flushOutput()
 
-                # Send verification request to Arduino
                 conn.write(b"VERIFY\n")
 
                 matched_uid = None
@@ -226,7 +213,6 @@ class BiometricHardwareManager:
                     if not line:
                         continue
 
-                    print(f"[Arduino Hardware Log] {line}")
                     if line.startswith("VERIFY:SUCCESS"):
                         parts = line.split(":", 2)
                         matched_uid = parts[2] if len(parts) > 2 else identifier
@@ -236,14 +222,13 @@ class BiometricHardwareManager:
                             "success": False,
                             "matched": False,
                             "error": "Fingerprint does not match. Please try again.",
-                            "code": "FINGERPRINT_MISMATCH"
+                            "code": "NO_MATCH"
                         }
                     elif line.startswith("ERROR:"):
-                        err_msg = line.replace("ERROR:", "").strip()
                         return {
                             "success": False,
                             "matched": False,
-                            "error": "Unable to read fingerprint. Please try again.",
+                            "error": "Fingerprint does not match. Please try again.",
                             "code": "READ_ERROR"
                         }
 
@@ -251,20 +236,20 @@ class BiometricHardwareManager:
                     return {
                         "success": False,
                         "matched": False,
-                        "error": "Unable to read fingerprint. Please try again.",
+                        "error": "Fingerprint registration failed. Please try again.",
                         "code": "TIMEOUT"
                     }
 
-                # Validate against database enrolled template for doctor
+                # Validate against database
                 return database.verify_doctor_biometric(matched_uid)
 
-            except Exception as e:
+            except Exception:
                 self.is_connected = False
                 return {
                     "success": False,
                     "matched": False,
-                    "error": f"Device communication failure: {str(e)}",
-                    "code": "COMM_ERROR"
+                    "error": "Fingerprint scanner is unavailable. Please check the scanner connection.",
+                    "code": "SCANNER_COMM_ERROR"
                 }
 
 # Global Singleton instance
