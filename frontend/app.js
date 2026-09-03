@@ -5,7 +5,7 @@ let pendingMqttPayloads = [];
 function connectDoctorMQTT(appId, channel) {
   const targetAppId = appId || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "");
   const targetChannel = channel || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "torus");
-  
+
   if (!targetAppId) {
     console.warn("[Doctor MQTT] App ID is missing, skipping MQTT connection.");
     return;
@@ -29,7 +29,7 @@ function connectDoctorMQTT(appId, channel) {
     console.log(`[Doctor MQTT] Connecting to ${url} on topic: ${doctorControlTopic}`);
     try {
       doctorMqttClient = mqtt.connect(url, { keepalive: 30, reconnectPeriod: 3000 });
-      
+
       doctorMqttClient.on("connect", () => {
         console.log(`[Doctor MQTT] Connected to ${url} on topic: ${doctorControlTopic}`);
         // Flush any queued payloads
@@ -39,7 +39,7 @@ function connectDoctorMQTT(appId, channel) {
           console.log(`[Doctor MQTT] Flushed queued control to ${doctorControlTopic}:`, payload);
         }
       });
-      
+
       doctorMqttClient.on("error", (err) => {
         console.error(`[Doctor MQTT] Connection error on ${url}:`, err);
         doctorMqttClient.end();
@@ -3210,7 +3210,7 @@ function triggerHeaderBootSequence() {
     // Clear any previous state and add booting class
     card.classList.remove("boot-complete");
     card.classList.add("booting");
-    
+
     if (robotContainer) {
       robotContainer.classList.add("active-boot");
     }
@@ -3243,16 +3243,16 @@ function bindHeaderLogoCardInteractions(card) {
     const rect = card.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     // Percentage relative to center (-0.5 to 0.5)
     const px = (x / rect.width) - 0.5;
     const py = (y / rect.height) - 0.5;
-    
+
     // Max tilt angle (degrees)
     const maxTilt = 3.5;
     const tiltY = px * maxTilt;
     const tiltX = -py * maxTilt;
-    
+
     card.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
     card.style.transition = "transform 0.08s ease";
   });
@@ -3263,7 +3263,7 @@ function bindHeaderLogoCardInteractions(card) {
   });
 
   // Material Ripple & Click scale bounce
-  card.addEventListener("click", function(e) {
+  card.addEventListener("click", function (e) {
     // Create ripple span
     const ripple = document.createElement("span");
     ripple.classList.add("ripple-effect");
@@ -3382,7 +3382,7 @@ async function initSQLiteDatabase() {
           dbInstance.run("ALTER TABLE doctors ADD COLUMN mobile TEXT DEFAULT ''");
           saveSQLiteState();
           console.log("[SQLite] Migrated: added 'mobile' column to doctors.");
-        } catch (e2) {}
+        } catch (e2) { }
       }
 
       try {
@@ -3392,7 +3392,7 @@ async function initSQLiteDatabase() {
           dbInstance.run("ALTER TABLE patients ADD COLUMN mobile TEXT DEFAULT ''");
           saveSQLiteState();
           console.log("[SQLite] Migrated: added 'mobile' column to patients.");
-        } catch (e2) {}
+        } catch (e2) { }
       }
 
       // Seed default Admin Doctor if empty
@@ -3427,14 +3427,14 @@ async function initSQLiteDatabase() {
 // Generate Unique Alphanumeric Professional ID (DOC-XXXXX format)
 function generateProfessionalId() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  
+
   for (let attempt = 0; attempt < 100; attempt++) {
     let randomPart = "";
     for (let i = 0; i < 5; i++) {
       randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     const professionalId = `DOC-${randomPart}`;
-    
+
     // Check uniqueness in client-side database
     if (dbInstance) {
       try {
@@ -3449,7 +3449,7 @@ function generateProfessionalId() {
       return professionalId;
     }
   }
-  
+
   // Fallback with timestamp to guarantee uniqueness
   return `DOC-${Date.now().toString(36).toUpperCase().slice(-5)}`;
 }
@@ -3457,14 +3457,14 @@ function generateProfessionalId() {
 // Generate Unique Alphanumeric Patient ID (PAT-XXXXX format)
 function generatePatientId() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  
+
   for (let attempt = 0; attempt < 100; attempt++) {
     let randomPart = "";
     for (let i = 0; i < 5; i++) {
       randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     const patientId = `PAT-${randomPart}`;
-    
+
     // Check uniqueness in client-side database
     if (dbInstance) {
       try {
@@ -3479,7 +3479,7 @@ function generatePatientId() {
       return patientId;
     }
   }
-  
+
   // Fallback with timestamp to guarantee uniqueness
   return `PAT-${Date.now().toString(36).toUpperCase().slice(-5)}`;
 }
@@ -3523,19 +3523,19 @@ async function callBackendAPI(endpoint, payload) {
   const isPort8000 = window.location.port === "8000";
   const candidateUrls = isPort8000
     ? [
-        endpoint,
-        `http://127.0.0.1:8000${endpoint}`,
-        `http://localhost:8000${endpoint}`
-      ]
+      endpoint,
+      `http://127.0.0.1:8000${endpoint}`,
+      `http://localhost:8000${endpoint}`
+    ]
     : [
-        `http://127.0.0.1:8000${endpoint}`,
-        `http://localhost:8000${endpoint}`,
-        endpoint,
-        `http://127.0.0.1:8080${endpoint}`,
-        `http://localhost:8080${endpoint}`,
-        `http://127.0.0.1:5000${endpoint}`,
-        `http://localhost:5000${endpoint}`
-      ];
+      `http://127.0.0.1:8000${endpoint}`,
+      `http://localhost:8000${endpoint}`,
+      endpoint,
+      `http://127.0.0.1:8080${endpoint}`,
+      `http://localhost:8080${endpoint}`,
+      `http://127.0.0.1:5000${endpoint}`,
+      `http://localhost:5000${endpoint}`
+    ];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));
 
@@ -3780,7 +3780,7 @@ async function resetDoctorPasswordWithToken(identifier, resetToken, newPassword)
         if (offlineData.reset_token === resetToken || resetToken === "legacy_direct") {
           isValidOfflineSession = true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (isValidOfflineSession || resetToken === "legacy_direct") {
@@ -4054,7 +4054,7 @@ async function resetPatientPasswordWithToken(identifier, resetToken, newPassword
         if (offlineData.reset_token === resetToken || resetToken === "legacy_direct") {
           isValidOfflineSession = true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (isValidOfflineSession || resetToken === "legacy_direct") {
@@ -4219,7 +4219,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     createAccLink.addEventListener("click", (e) => {
       e.preventDefault();
       hideAlertMessage("register-alert");
-      
+
       // Clear form fields completely (Professional ID is left blank by default)
       const regForm = document.getElementById("doctor-register-form");
       if (regForm) regForm.reset();
@@ -5059,14 +5059,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   async function checkBiometricHardwareStatus() {
     try {
-      const endpoints = ["/api/biometrics/status", "http://127.0.0.1:8000/api/biometrics/status"];
+      const endpoints = [
+        "/api/biometrics/status",
+        "http://127.0.0.1:8000/api/biometrics/status",
+        "http://localhost:8000/api/biometrics/status"
+      ];
       for (const ep of endpoints) {
         try {
           const res = await fetch(ep, { method: "GET" });
           if (res.ok) {
             return await res.json();
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (e) {
       console.warn("[Biometrics] Error querying hardware status:", e);
@@ -5079,14 +5083,47 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
   }
 
+  let bioStatusPollInterval = null;
+  function startBiometricStatusPolling() {
+    if (bioStatusPollInterval) clearInterval(bioStatusPollInterval);
+    bioStatusPollInterval = setInterval(async () => {
+      const isVerifyVisible = doctorBiometricScreen && doctorBiometricScreen.style.display !== "none";
+      const isRegVisible = doctorBioRegisterScreen && doctorBioRegisterScreen.style.display !== "none";
+      if (!isVerifyVisible && !isRegVisible) return;
+      if (isVerifyingBiometrics || isRegisteringBiometrics) return;
+
+      const hw = await checkBiometricHardwareStatus();
+      if (isVerifyVisible && bioVerifyTitle && bioVerifySubtitle) {
+        if (!hw.connected) {
+          bioVerifyTitle.textContent = "Fingerprint scanner is not ready";
+          bioVerifySubtitle.textContent = "Please check the scanner connection.";
+        } else {
+          bioVerifyTitle.textContent = "Fingerprint scanner ready";
+          bioVerifySubtitle.textContent = "Place your registered finger on the scanner.";
+          hideAlertMessage("doctor-biometric-alert");
+        }
+      }
+      if (isRegVisible && bioRegStepTitle && bioRegStepSubtitle) {
+        if (!hw.connected) {
+          bioRegStepTitle.textContent = "Fingerprint scanner is not ready";
+          bioRegStepSubtitle.textContent = "Please check the scanner connection.";
+        } else {
+          bioRegStepTitle.textContent = "Fingerprint scanner ready";
+          bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+          hideAlertMessage("doctor-bio-reg-alert");
+        }
+      }
+    }, 2500);
+  }
+
   async function resetBiometricVerifyUI() {
     isVerifyingBiometrics = false;
     hideAlertMessage("doctor-biometric-alert");
     if (bioVerifyScannerPod) {
       bioVerifyScannerPod.classList.remove("scanning", "success");
     }
-    if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner ready";
-    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner.";
+    if (bioVerifyTitle) bioVerifyTitle.textContent = "Checking scanner...";
+    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Connecting to biometric hardware.";
     if (bioVerifyDots) {
       const dots = bioVerifyDots.querySelectorAll(".bio-dot");
       dots.forEach((dot, idx) => {
@@ -5094,7 +5131,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     }
 
-    // Check live hardware connection in background
+    startBiometricStatusPolling();
+
+    // Check live hardware connection immediately
     checkBiometricHardwareStatus().then(hw => {
       if (!hw.connected) {
         if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner is not ready";
@@ -5102,6 +5141,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       } else {
         if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner ready";
         if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner.";
+        hideAlertMessage("doctor-biometric-alert");
       }
     });
   }
@@ -5112,8 +5152,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (bioRegScannerPod) {
       bioRegScannerPod.classList.remove("scanning", "success");
     }
-    if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
-    if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+    if (bioRegStepTitle) bioRegStepTitle.textContent = "Checking scanner...";
+    if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Connecting to biometric hardware.";
     if (bioRegStartBtn) {
       bioRegStartBtn.disabled = false;
       bioRegStartBtn.innerHTML = "<span>Capture Fingerprint</span>";
@@ -5125,7 +5165,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     }
 
-    // Check live hardware connection in background
+    startBiometricStatusPolling();
+
+    // Check live hardware connection immediately
     checkBiometricHardwareStatus().then(hw => {
       if (!hw.connected) {
         if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is not ready";
@@ -5133,6 +5175,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       } else {
         if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
         if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+        hideAlertMessage("doctor-bio-reg-alert");
       }
     });
   }
@@ -5233,7 +5276,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Dispatch real verification request to backend hardware API
       let resData = null;
-      const verifyUrls = ["/api/biometrics/verify", "http://127.0.0.1:8000/api/biometrics/verify"];
+      const verifyUrls = ["/api/biometrics/verify", "http://127.0.0.1:8000/api/biometrics/verify", "http://localhost:8000/api/biometrics/verify"];
       for (const url of verifyUrls) {
         try {
           const res = await fetch(url, {
@@ -5243,7 +5286,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           });
           resData = await res.json();
           if (resData) break;
-        } catch (_) {}
+        } catch (_) { }
       }
 
       clearInterval(dotInterval);
@@ -5332,93 +5375,94 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const dots = bioRegDots ? bioRegDots.querySelectorAll(".bio-dot") : [];
 
-      // Step 1: Scanning fingerprint
+      // Step 1: Immediately activate scanning UI and send command to hardware
       if (bioRegScannerPod) {
         bioRegScannerPod.classList.remove("success");
         bioRegScannerPod.classList.add("scanning");
       }
-      if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanning your fingerprint...";
-      if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please keep your finger still.";
+      if (bioRegStepTitle) bioRegStepTitle.textContent = "Place finger for Scan 1...";
+      if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger firmly on the optical scanner.";
       if (dots[0]) dots[0].className = "bio-dot active";
       if (dots[1]) dots[1].className = "bio-dot";
 
-      setTimeout(async () => {
-        // Step 2: Prompt lift & second touch if hardware requires multi-pass
-        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint captured";
-        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please lift your finger and place it again when prompted.";
-        if (dots[0]) dots[0].className = "bio-dot active";
-        if (dots[1]) dots[1].className = "bio-dot active";
+      // Animate second pass indicator after 4 seconds to guide the doctor
+      const secondPassTimer = setTimeout(() => {
+        if (isRegisteringBiometrics) {
+          if (bioRegStepTitle) bioRegStepTitle.textContent = "Lift & place finger for Scan 2...";
+          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Lift your finger and place the same finger again.";
+          if (dots[0]) dots[0].className = "bio-dot active";
+          if (dots[1]) dots[1].className = "bio-dot active";
+        }
+      }, 4500);
 
-        setTimeout(async () => {
-          // Step 3: Processing template
-          if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanning your fingerprint...";
-          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please keep your finger still.";
-
-          // Dispatch real enrollment request to backend API
+      // Dispatch real enrollment request to backend API immediately
+      try {
+        let resData = null;
+        const enrollUrls = ["/api/biometrics/enroll", "http://127.0.0.1:8000/api/biometrics/enroll", "http://localhost:8000/api/biometrics/enroll"];
+        for (const url of enrollUrls) {
           try {
-            let resData = null;
-            const enrollUrls = ["/api/biometrics/enroll", "http://127.0.0.1:8000/api/biometrics/enroll"];
-            for (const url of enrollUrls) {
-              try {
-                const res = await fetch(url, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ identifier: identifierVal })
-                });
-                resData = await res.json();
-                if (resData) break;
-              } catch (_) {}
-            }
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ identifier: identifierVal })
+            });
+            resData = await res.json();
+            if (resData) break;
+          } catch (_) { }
+        }
 
-            // Only mark complete if real scanner and backend report success
-            if (resData && resData.success) {
-              if (bioRegScannerPod) {
-                bioRegScannerPod.classList.remove("scanning");
-                bioRegScannerPod.classList.add("success");
-              }
-              if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registered successfully.";
-              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Your fingerprint has been securely linked to your account.";
+        clearTimeout(secondPassTimer);
 
-              showAlertMessage(
-                "doctor-bio-reg-alert",
-                "Fingerprint registered successfully. Your fingerprint has been securely linked to your account. Redirecting to Biometric Login...",
-                "success"
-              );
-
-              setTimeout(() => {
-                if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
-                if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
-                resetBiometricVerifyUI();
-                showAlertMessage(
-                  "doctor-biometric-alert",
-                  "Fingerprint registered successfully. Place your registered finger on the scanner to verify.",
-                  "success"
-                );
-                isRegisteringBiometrics = false;
-              }, 1800);
-            } else {
-              // Real hardware capture failure
-              if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
-              if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registration failed";
-              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please try again.";
-              showAlertMessage("doctor-bio-reg-alert", resData?.error || "Fingerprint registration failed. Please try again.", "error");
-              if (bioRegStartBtn) bioRegStartBtn.disabled = false;
-              isRegisteringBiometrics = false;
-            }
-
-          } catch (err) {
-            console.error("[Biometric Registration Error]", err);
-            if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
-            if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is unavailable";
-            if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the scanner connection.";
-            showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner is unavailable. Please check the scanner connection.", "error");
-            if (bioRegStartBtn) bioRegStartBtn.disabled = false;
-            isRegisteringBiometrics = false;
+        // Only mark complete if real scanner and backend report success
+        if (resData && resData.success) {
+          if (bioRegScannerPod) {
+            bioRegScannerPod.classList.remove("scanning");
+            bioRegScannerPod.classList.add("success");
           }
-        }, 1200);
-      }, 1200);
+          dots.forEach(d => d.className = "bio-dot active");
+          if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registered successfully.";
+          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Your fingerprint has been securely linked to your account.";
+
+          showAlertMessage(
+            "doctor-bio-reg-alert",
+            "Fingerprint registered successfully. Your fingerprint has been securely linked to your account. Redirecting to Biometric Login...",
+            "success"
+          );
+
+          setTimeout(() => {
+            if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
+            if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
+            resetBiometricVerifyUI();
+            showAlertMessage(
+              "doctor-biometric-alert",
+              "Fingerprint registered successfully. Place your registered finger on the scanner to verify.",
+              "success"
+            );
+            isRegisteringBiometrics = false;
+          }, 1800);
+        } else {
+          // Real hardware capture failure
+          if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
+          if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registration failed";
+          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please try again.";
+          showAlertMessage("doctor-bio-reg-alert", resData?.error || "Fingerprint registration failed. Please try again.", "error");
+          if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+          isRegisteringBiometrics = false;
+        }
+
+      } catch (err) {
+        clearTimeout(secondPassTimer);
+        console.error("[Biometric Registration Error]", err);
+        if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is unavailable";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the scanner connection.";
+        showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner is unavailable. Please check the scanner connection.", "error");
+        if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+        isRegisteringBiometrics = false;
+      }
     });
   }
 });
+
 
 
