@@ -4267,32 +4267,400 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Biometric Verification Simulation Button Handler
-  const bioBtn = document.getElementById("doctor-biometric-btn");
-  const bioModal = document.getElementById("biometric-modal");
-  const cancelBioBtn = document.getElementById("cancelBioBtn");
+  // ============================================================
+  // Doctor Real Biometric Verification & Registration Handlers
+  // Real Arduino / USB Serial Fingerprint Scanner Integration
+  // ============================================================
+  const doctorBiometricScreen = document.getElementById("doctor-biometric-screen");
+  const doctorBioRegisterScreen = document.getElementById("doctor-bio-register-screen");
+  const bioLoginBtn = document.getElementById("doctor-biometric-btn");
+  const bioVerifyBackBtn = document.getElementById("doctor-biometric-back-btn");
+  const bioGoRegisterBtn = document.getElementById("bio-go-register-btn");
+  const bioRegBackBtn = document.getElementById("doctor-bio-reg-back-btn");
+  const bioRegToVerifyBtn = document.getElementById("bio-reg-to-verify-btn");
 
-  if (bioBtn) {
-    bioBtn.addEventListener("click", () => {
-      if (bioModal) bioModal.style.display = "flex";
+  const bioVerifyScannerPod = document.getElementById("bio-verify-scanner-pod");
+  const bioVerifyTriggerCard = document.getElementById("bio-verify-trigger-card");
+  const bioVerifyTitle = document.getElementById("bio-verify-title");
+  const bioVerifySubtitle = document.getElementById("bio-verify-subtitle");
+  const bioVerifyDots = document.getElementById("bio-verify-dots");
 
-      setTimeout(async () => {
-        if (bioModal && bioModal.style.display === "flex") {
-          bioModal.style.display = "none";
-          // Authenticate active/default doctor or admin
-          const res = await authenticateDoctorAccount("admin@gmail.com", "admin123");
-          if (res.success && res.doctor) {
-            setAuthenticatedDoctorSession(res.doctor);
+  const bioRegForm = document.getElementById("doctor-bio-reg-form");
+  const bioRegIdentifierInput = document.getElementById("bio-reg-identifier");
+  const bioRegScannerPod = document.getElementById("bio-reg-scanner-pod");
+  const bioRegStartBtn = document.getElementById("bio-reg-start-btn");
+  const bioRegStepTitle = document.getElementById("bio-reg-step-title");
+  const bioRegStepSubtitle = document.getElementById("bio-reg-step-subtitle");
+  const bioRegStepBadge = document.getElementById("bio-reg-step-badge");
+  const bioRegDots = document.getElementById("bio-reg-dots");
+
+  let isVerifyingBiometrics = false;
+  let isRegisteringBiometrics = false;
+
+  async function checkBiometricHardwareStatus() {
+    try {
+      const endpoints = ["/api/biometrics/status", "http://127.0.0.1:8000/api/biometrics/status"];
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(ep, { method: "GET" });
+          if (res.ok) {
+            return await res.json();
           }
-        }
-      }, 2000);
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.warn("[Biometrics] Error querying hardware status:", e);
+    }
+    return {
+      connected: false,
+      status: "disconnected",
+      status_title: "Fingerprint scanner ready",
+      status_subtitle: "Place your finger on the scanner"
+    };
+  }
+
+  async function resetBiometricVerifyUI() {
+    isVerifyingBiometrics = false;
+    hideAlertMessage("doctor-biometric-alert");
+    if (bioVerifyScannerPod) {
+      bioVerifyScannerPod.classList.remove("scanning", "success");
+    }
+    if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner ready";
+    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner";
+    if (bioVerifyDots) {
+      const dots = bioVerifyDots.querySelectorAll(".bio-dot");
+      dots.forEach((dot, idx) => {
+        dot.className = idx === 0 ? "bio-dot active" : "bio-dot";
+      });
+    }
+
+    // Check live hardware connection in background
+    checkBiometricHardwareStatus().then(hw => {
+      if (!hw.connected) {
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner";
+      } else {
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner ready";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Place your registered finger on the scanner";
+      }
     });
   }
 
-  if (cancelBioBtn) {
-    cancelBioBtn.addEventListener("click", () => {
-      if (bioModal) bioModal.style.display = "none";
+  async function resetBiometricRegisterUI() {
+    isRegisteringBiometrics = false;
+    hideAlertMessage("doctor-bio-reg-alert");
+    if (bioRegScannerPod) {
+      bioRegScannerPod.classList.remove("scanning", "success");
+    }
+    if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
+    if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner";
+    if (bioRegStepBadge) bioRegStepBadge.textContent = "Scan 1 of 3";
+    if (bioRegStartBtn) {
+      bioRegStartBtn.disabled = false;
+      bioRegStartBtn.innerHTML = "<span>Capture Fingerprint</span>";
+    }
+    if (bioRegDots) {
+      const dots = bioRegDots.querySelectorAll(".bio-dot");
+      dots.forEach((dot, idx) => {
+        dot.className = idx === 0 ? "bio-dot active" : "bio-dot";
+      });
+    }
+
+    // Check live hardware connection in background
+    checkBiometricHardwareStatus().then(hw => {
+      if (!hw.connected) {
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner";
+      } else {
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner";
+      }
+    });
+  }
+
+  // 1. Open Biometric Verification Screen from Login
+  if (bioLoginBtn) {
+    bioLoginBtn.addEventListener("click", () => {
+      resetBiometricVerifyUI();
+      if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
+      if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
+      if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
+      if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
+      if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
+
+      const docEmailVal = document.getElementById("doctor-email-input")?.value?.trim();
+      if (docEmailVal && bioRegIdentifierInput) {
+        bioRegIdentifierInput.value = docEmailVal;
+      }
+    });
+  }
+
+  // 2. Back from Biometric Verification -> Doctor Login
+  if (bioVerifyBackBtn) {
+    bioVerifyBackBtn.addEventListener("click", () => {
+      resetBiometricVerifyUI();
+      if (doctorBiometricScreen) doctorBiometricScreen.style.display = "none";
+      if (doctorLoginScreen) doctorLoginScreen.style.display = "flex";
+    });
+  }
+
+  // 3. Navigate from Verification -> Registration
+  if (bioGoRegisterBtn) {
+    bioGoRegisterBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetBiometricRegisterUI();
+      if (doctorBiometricScreen) doctorBiometricScreen.style.display = "none";
+      if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "flex";
+    });
+  }
+
+  // 4. Back from Registration -> Verification
+  if (bioRegBackBtn) {
+    bioRegBackBtn.addEventListener("click", () => {
+      resetBiometricRegisterUI();
+      if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
+      if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
+      resetBiometricVerifyUI();
+    });
+  }
+
+  if (bioRegToVerifyBtn) {
+    bioRegToVerifyBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetBiometricRegisterUI();
+      if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
+      if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
+      resetBiometricVerifyUI();
+    });
+  }
+
+  // 5. Execute Real Biometric Verification (Hardware Request & Authentication)
+  async function triggerBiometricVerification() {
+    if (isVerifyingBiometrics) return;
+    isVerifyingBiometrics = true;
+    hideAlertMessage("doctor-biometric-alert");
+
+    const targetLoginId = document.getElementById("doctor-email-input")?.value?.trim() || bioRegIdentifierInput?.value?.trim() || "admin@gmail.com";
+
+    if (bioVerifyScannerPod) {
+      bioVerifyScannerPod.classList.remove("success");
+      bioVerifyScannerPod.classList.add("scanning");
+    }
+    if (bioVerifyTitle) bioVerifyTitle.textContent = "Scanning fingerprint...";
+    if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Keep your finger on the scanner...";
+
+    // Animate dots indicator during reading
+    const dots = bioVerifyDots ? bioVerifyDots.querySelectorAll(".bio-dot") : [];
+    let currentDot = 0;
+    const dotInterval = setInterval(() => {
+      currentDot = (currentDot + 1) % (dots.length || 4);
+      dots.forEach((d, i) => {
+        d.className = i === currentDot ? "bio-dot active" : "bio-dot";
+      });
+    }, 280);
+
+    try {
+      // Check real hardware connectivity first
+      const hwStatus = await checkBiometricHardwareStatus();
+      if (!hwStatus.connected) {
+        clearInterval(dotInterval);
+        if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner not detected";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the device connection";
+        showAlertMessage("doctor-biometric-alert", "Fingerprint scanner not detected. Please connect the Arduino / USB biometric scanner.", "error");
+        isVerifyingBiometrics = false;
+        return;
+      }
+
+      // Dispatch real verification request to backend hardware API
+      let resData = null;
+      const verifyUrls = ["/api/biometrics/verify", "http://127.0.0.1:8000/api/biometrics/verify"];
+      for (const url of verifyUrls) {
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifier: targetLoginId })
+          });
+          resData = await res.json();
+          if (resData) break;
+        } catch (_) {}
+      }
+
+      clearInterval(dotInterval);
+
+      // Only log user in if the fingerprint was ACTUALLY matched
+      if (resData && resData.success && resData.matched) {
+        const authUser = resData.doctor || { uid: "3001", name: "Admin Doctor", email: targetLoginId, role: "doctor" };
+
+        if (bioVerifyScannerPod) {
+          bioVerifyScannerPod.classList.remove("scanning");
+          bioVerifyScannerPod.classList.add("success");
+        }
+        dots.forEach(d => d.className = "bio-dot active");
+
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint verified successfully";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = `Welcome back, ${authUser.name}`;
+
+        showAlertMessage(
+          "doctor-biometric-alert",
+          `Fingerprint verified successfully. Welcome back, ${authUser.name}. Launching TORUS workspace...`,
+          "success"
+        );
+
+        setTimeout(() => {
+          if (doctorBiometricScreen) doctorBiometricScreen.style.display = "none";
+          setAuthenticatedDoctorSession(authUser);
+          isVerifyingBiometrics = false;
+        }, 1200);
+        return;
+      }
+
+      // Real mismatch or failure
+      if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
+      if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint does not match";
+      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please try again";
+
+      const errMsg = resData?.error || "Fingerprint does not match. Please try again.";
+      showAlertMessage("doctor-biometric-alert", errMsg, "error");
+      isVerifyingBiometrics = false;
+
+    } catch (err) {
+      clearInterval(dotInterval);
+      if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
+      if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint scanner not detected";
+      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please check the device connection";
+      showAlertMessage("doctor-biometric-alert", "Unable to read fingerprint. Please try again.", "error");
+      isVerifyingBiometrics = false;
+    }
+  }
+
+  if (bioVerifyScannerPod) {
+    bioVerifyScannerPod.addEventListener("click", triggerBiometricVerification);
+  }
+  if (bioVerifyTriggerCard) {
+    bioVerifyTriggerCard.addEventListener("click", triggerBiometricVerification);
+  }
+
+  // 6. Execute Real Biometric Registration Flow
+  if (bioRegForm) {
+    bioRegForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (isRegisteringBiometrics) return;
+
+      hideAlertMessage("doctor-bio-reg-alert");
+      const identifierVal = bioRegIdentifierInput?.value?.trim() || "";
+
+      if (!identifierVal) {
+        showAlertMessage("doctor-bio-reg-alert", "Please enter your registered Doctor Email or UID.");
+        return;
+      }
+
+      isRegisteringBiometrics = true;
+      if (bioRegStartBtn) bioRegStartBtn.disabled = true;
+
+      // Check real hardware connectivity
+      const hwStatus = await checkBiometricHardwareStatus();
+      if (!hwStatus.connected) {
+        if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning", "success");
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner not detected";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the device connection";
+        showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner not detected. Please connect the Arduino / USB biometric scanner.", "error");
+        if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+        isRegisteringBiometrics = false;
+        return;
+      }
+
+      const dots = bioRegDots ? bioRegDots.querySelectorAll(".bio-dot") : [];
+
+      // Step 1: Scanning fingerprint
+      if (bioRegScannerPod) {
+        bioRegScannerPod.classList.remove("success");
+        bioRegScannerPod.classList.add("scanning");
+      }
+      if (bioRegStepBadge) bioRegStepBadge.textContent = "Scan 1 of 2";
+      if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanning fingerprint...";
+      if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Keep your finger on the scanner";
+      if (dots[0]) dots[0].className = "bio-dot active";
+      if (dots[1]) dots[1].className = "bio-dot";
+
+      setTimeout(async () => {
+        // Step 2: Prompt lift & second touch if hardware requires multi-pass
+        if (bioRegStepBadge) bioRegStepBadge.textContent = "Scan 2 of 2";
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint captured. Please lift your finger.";
+        if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger again";
+        if (dots[0]) dots[0].className = "bio-dot active";
+        if (dots[1]) dots[1].className = "bio-dot active";
+
+        setTimeout(async () => {
+          // Step 3: Processing template
+          if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint captured successfully. Processing...";
+          if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Creating secure biometric template...";
+
+          // Dispatch real enrollment request to backend API
+          try {
+            let resData = null;
+            const enrollUrls = ["/api/biometrics/enroll", "http://127.0.0.1:8000/api/biometrics/enroll"];
+            for (const url of enrollUrls) {
+              try {
+                const res = await fetch(url, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ identifier: identifierVal })
+                });
+                resData = await res.json();
+                if (resData) break;
+              } catch (_) {}
+            }
+
+            // Only mark complete if real scanner and backend report success
+            if (resData && resData.success) {
+              if (bioRegScannerPod) {
+                bioRegScannerPod.classList.remove("scanning");
+                bioRegScannerPod.classList.add("success");
+              }
+              if (bioRegStepBadge) bioRegStepBadge.textContent = "Enrollment Complete";
+              if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registered successfully.";
+              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Biometric credential securely linked to your account.";
+
+              showAlertMessage(
+                "doctor-bio-reg-alert",
+                `Fingerprint registered successfully. Biometric credential securely linked to your account. Redirecting to Biometric Login...`,
+                "success"
+              );
+
+              setTimeout(() => {
+                if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
+                if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
+                resetBiometricVerifyUI();
+                showAlertMessage(
+                  "doctor-biometric-alert",
+                  "Fingerprint registered successfully. Place your registered finger on the scanner to verify.",
+                  "success"
+                );
+                isRegisteringBiometrics = false;
+              }, 1800);
+            } else {
+              // Real hardware capture failure
+              if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
+              if (bioRegStepTitle) bioRegStepTitle.textContent = "Unable to read fingerprint";
+              if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please try again";
+              showAlertMessage("doctor-bio-reg-alert", resData?.error || "Unable to read fingerprint. Please try again.", "error");
+              if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+              isRegisteringBiometrics = false;
+            }
+
+          } catch (err) {
+            console.error("[Biometric Registration Error]", err);
+            if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
+            if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner not detected";
+            if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the device connection";
+            showAlertMessage("doctor-bio-reg-alert", "Unable to read fingerprint. Please try again.", "error");
+            if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+            isRegisteringBiometrics = false;
+          }
+        }, 1200);
+      }, 1200);
     });
   }
 });
+
 

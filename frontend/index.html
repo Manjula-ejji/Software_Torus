@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=29" />
+  <link rel="stylesheet" href="css/styles.css?v=34" />
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
@@ -56,7 +56,8 @@
   <div id="doctor-login-screen" class="doctor-login-screen" style="display: none;">
     <div class="doctor-login-card">
       <button type="button" id="doctor-login-back-btn" class="doctor-back-btn" title="Back to Role Selection">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
@@ -75,20 +76,26 @@
       <form id="doctor-login-form" class="doctor-login-form" onsubmit="return false;">
         <div class="form-group">
           <label for="doctor-email-input" class="form-label">Email / User ID</label>
-          <input type="text" id="doctor-email-input" class="form-input" placeholder="Enter your registered email or UID" autocomplete="username" required value="admin@gmail.com" />
+          <input type="text" id="doctor-email-input" class="form-input" placeholder="Enter your registered email or UID"
+            autocomplete="username" required value="admin@gmail.com" />
         </div>
 
         <div class="form-group">
           <label for="doctor-password-input" class="form-label">Password</label>
           <div class="password-input-wrapper">
-            <input type="password" id="doctor-password-input" class="form-input" placeholder="••••••••••••" autocomplete="current-password" required value="admin123" />
+            <input type="password" id="doctor-password-input" class="form-input" placeholder="••••••••••••"
+              autocomplete="current-password" required value="admin123" />
             <button type="button" id="toggle-password-btn" class="eye-toggle-btn" title="Toggle password visibility">
-              <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
               </svg>
-              <svg class="eye-off-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+              <svg class="eye-off-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24">
+                </path>
                 <line x1="1" y1="1" x2="23" y2="23"></line>
               </svg>
             </button>
@@ -97,7 +104,8 @@
 
         <div class="login-actions">
           <button type="submit" id="doctor-login-btn" class="btn btn-primary login-main-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
               <polyline points="10 17 15 12 10 7"></polyline>
               <line x1="15" y1="12" x2="3" y2="12"></line>
@@ -105,7 +113,8 @@
             <span>Secure Login</span>
           </button>
           <button type="button" id="doctor-biometric-btn" class="btn btn-secondary login-bio-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+              stroke-linecap="round" stroke-linejoin="round">
               <!-- Face outline -->
               <circle cx="12" cy="12" r="7"></circle>
               <!-- Left eye -->
@@ -113,7 +122,8 @@
               <!-- Right eye -->
               <circle cx="14.5" cy="11" r="0.8"></circle>
               <!-- Mouth -->
-              <path d="M9.5 14c1 0.8 2.5 0.8 3.5 0" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"></path>
+              <path d="M9.5 14c1 0.8 2.5 0.8 3.5 0" stroke="currentColor" stroke-width="1.5" fill="none"
+                stroke-linecap="round"></path>
               <!-- Scanning corner brackets - top left -->
               <path d="M3 3v2M3 3h2"></path>
               <!-- Scanning corner brackets - top right -->
@@ -139,7 +149,8 @@
   <div id="doctor-register-screen" class="doctor-register-screen" style="display: none;">
     <div class="doctor-login-card doctor-register-card">
       <button type="button" id="doctor-register-back-btn" class="doctor-back-btn" title="Back to Doctor Login">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
@@ -156,7 +167,8 @@
           <label for="reg-name" class="form-label">Full Name</label>
           <div class="form-input-wrapper">
             <span class="input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                 <circle cx="12" cy="7" r="4"></circle>
               </svg>
@@ -169,7 +181,8 @@
           <label for="reg-professional-id" class="form-label">Professional ID</label>
           <div class="form-input-wrapper">
             <span class="input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="4" width="20" height="16" rx="2"></rect>
                 <circle cx="8" cy="10" r="2"></circle>
                 <path d="M14 9h4"></path>
@@ -177,7 +190,8 @@
                 <path d="M6 16h12"></path>
               </svg>
             </span>
-            <input type="text" id="reg-professional-id" class="form-input" placeholder="Enter your professional ID" autocomplete="off" />
+            <input type="text" id="reg-professional-id" class="form-input" placeholder="Enter your professional ID"
+              autocomplete="off" />
           </div>
         </div>
 
@@ -185,7 +199,8 @@
           <label for="reg-email" class="form-label">Email</label>
           <div class="form-input-wrapper">
             <span class="input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
                 <rect width="20" height="16" x="2" y="4" rx="2"></rect>
                 <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
               </svg>
@@ -198,8 +213,11 @@
           <label for="reg-mobile" class="form-label">Mobile Number</label>
           <div class="form-input-wrapper">
             <span class="input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path
+                  d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z">
+                </path>
               </svg>
             </span>
             <input type="tel" id="reg-mobile" class="form-input" placeholder="+91 98765 43210" required />
@@ -210,14 +228,18 @@
           <label for="reg-password" class="form-label">Password</label>
           <div class="form-input-wrapper">
             <span class="input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
             </span>
-            <input type="password" id="reg-password" class="form-input has-toggle" placeholder="Enter your password" required />
-            <button type="button" class="password-toggle-btn" id="reg-password-toggle" title="Toggle password visibility">
-              <svg class="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <input type="password" id="reg-password" class="form-input has-toggle" placeholder="Enter your password"
+              required />
+            <button type="button" class="password-toggle-btn" id="reg-password-toggle"
+              title="Toggle password visibility">
+              <svg class="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -229,14 +251,18 @@
           <label for="reg-confirm-password" class="form-label">Confirm Password</label>
           <div class="form-input-wrapper">
             <span class="input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
             </span>
-            <input type="password" id="reg-confirm-password" class="form-input has-toggle" placeholder="Confirm your password" required />
-            <button type="button" class="password-toggle-btn" id="reg-confirm-password-toggle" title="Toggle password visibility">
-              <svg class="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <input type="password" id="reg-confirm-password" class="form-input has-toggle"
+              placeholder="Confirm your password" required />
+            <button type="button" class="password-toggle-btn" id="reg-confirm-password-toggle"
+              title="Toggle password visibility">
+              <svg class="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -246,7 +272,9 @@
 
         <div class="terms-checkbox-row">
           <input type="checkbox" id="reg-terms-checkbox" class="terms-checkbox" />
-          <label for="reg-terms-checkbox" class="terms-label">I agree to the <a href="javascript:void(0)" class="terms-link">Terms & Conditions</a> and <a href="javascript:void(0)" class="terms-link">Privacy Policy</a></label>
+          <label for="reg-terms-checkbox" class="terms-label">I agree to the <a href="javascript:void(0)"
+              class="terms-link">Terms & Conditions</a> and <a href="javascript:void(0)" class="terms-link">Privacy
+              Policy</a></label>
         </div>
 
         <button type="submit" id="submitRegisterBtn" class="btn btn-primary login-main-btn register-main-btn">
@@ -261,7 +289,8 @@
     <!-- Step 1: Request OTP -->
     <div id="forgot-step-1" class="doctor-login-card doctor-forgot-card">
       <button type="button" id="doctor-forgot-back-btn" class="doctor-back-btn" title="Back to Doctor Login">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
@@ -288,7 +317,8 @@
     <!-- Step 2: OTP Verification (NO LOGO on this screen) -->
     <div id="forgot-step-2" class="doctor-login-card doctor-forgot-card" style="display: none;">
       <button type="button" id="forgot-step2-back-btn" class="doctor-back-btn" title="Back to Step 1">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
@@ -303,7 +333,8 @@
       <form id="doctor-forgot-form-step2" class="doctor-login-form" onsubmit="return false;">
         <div class="form-group">
           <label for="forgot-otp-input" class="form-label">Verification OTP</label>
-          <input type="text" id="forgot-otp-input" class="form-input otp-input-field" placeholder="Enter 6-digit OTP" maxlength="6" autocomplete="one-time-code" required />
+          <input type="text" id="forgot-otp-input" class="form-input otp-input-field" placeholder="Enter 6-digit OTP"
+            maxlength="6" autocomplete="one-time-code" required />
         </div>
 
         <button type="submit" id="forgot-verify-otp-btn" class="btn btn-primary login-main-btn">
@@ -319,7 +350,8 @@
     <!-- Step 3: Password Reset Screen (NO LOGO on this screen) -->
     <div id="forgot-step-3" class="doctor-login-card doctor-forgot-card" style="display: none;">
       <button type="button" id="forgot-step3-back-btn" class="doctor-back-btn" title="Back to Doctor Login">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
@@ -349,19 +381,143 @@
     </div>
   </div>
 
-  <!-- Biometric Scanning Simulator Modal -->
-  <div id="biometric-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-content doctor-auth-modal biometric-modal-content">
-      <div class="biometric-scanner-container">
-        <div class="bio-pulse-ring"></div>
-        <svg class="bio-fingerprint-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2a10 10 0 0 0-10 10c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"></path>
+  <!-- Doctor Biometric Verification Screen -->
+  <div id="doctor-biometric-screen" class="doctor-login-screen doctor-bio-screen" style="display: none;">
+    <div class="doctor-login-card doctor-bio-card">
+      <button type="button" id="doctor-biometric-back-btn" class="doctor-back-btn" title="Back to Doctor Login">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
-        <div class="bio-scan-line"></div>
+        <span>Back</span>
+      </button>
+
+      <!-- Glowing Fingerprint Biometric Scanner Pod -->
+      <div class="bio-scanner-pod" id="bio-verify-scanner-pod" title="Touch scanner to verify fingerprint">
+        <div class="bio-pulse-ring"></div>
+        <div class="bio-laser-beam"></div>
+        <svg class="bio-fingerprint-svg" viewBox="0 0 24 24" width="62" height="62" fill="none" stroke="#22d3ee"
+          stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"></path>
+          <path d="M14 13.12c0 2.38 0 6.38-1 8.88"></path>
+          <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"></path>
+          <path d="M2 12a10 10 0 0 1 18-6"></path>
+          <path d="M2 16h.01"></path>
+          <path d="M21.8 16c.2-2 .131-5.354 0-6"></path>
+          <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"></path>
+          <path d="M8.65 22c.21-.66.45-1.32.57-2"></path>
+          <path d="M9 6.8a6 6 0 0 1 9 5.2v2"></path>
+        </svg>
       </div>
-      <h3 class="bio-status-title">Verifying Biometrics</h3>
-      <p class="bio-status-text">Scanning identity credentials...</p>
-      <button id="cancelBioBtn" class="btn btn-secondary" type="button" style="margin-top: 16px;">Cancel</button>
+
+      <h2 class="doctor-login-title">Biometric Verification</h2>
+      <p class="doctor-login-subtitle">Use the registered fingerprint to enter the TORUS workspace.</p>
+
+      <div id="doctor-biometric-alert" class="login-alert" style="display: none;"></div>
+
+      <div class="bio-instruction-card" id="bio-verify-trigger-card" title="Click to trigger biometric verification">
+        <div class="bio-shield-icon-wrapper">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00C8FF" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <polyline points="9 12 11 14 15 10"></polyline>
+          </svg>
+        </div>
+        <div class="bio-instruction-text">
+          <div class="bio-instruction-title" id="bio-verify-title">Fingerprint scanner ready</div>
+          <div class="bio-instruction-subtitle" id="bio-verify-subtitle">Place your registered finger on the scanner</div>
+        </div>
+      </div>
+
+      <div class="bio-dots-indicator" id="bio-verify-dots">
+        <span class="bio-dot active"></span>
+        <span class="bio-dot"></span>
+        <span class="bio-dot"></span>
+        <span class="bio-dot"></span>
+      </div>
+
+      <div class="bio-footer-row">
+        <span class="bio-footer-text">New User?</span>
+        <a href="#" id="bio-go-register-btn" class="login-link">Register</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Doctor Biometric Registration Screen -->
+  <div id="doctor-bio-register-screen" class="doctor-login-screen doctor-bio-screen" style="display: none;">
+    <div class="doctor-login-card doctor-bio-card">
+      <button type="button" id="doctor-bio-reg-back-btn" class="doctor-back-btn" title="Back to Biometric Verification">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>Back</span>
+      </button>
+
+      <!-- Glowing Fingerprint Scanner Pod -->
+      <div class="bio-scanner-pod" id="bio-reg-scanner-pod" title="Touch scanner to register fingerprint">
+        <div class="bio-pulse-ring"></div>
+        <div class="bio-laser-beam"></div>
+        <svg class="bio-fingerprint-svg" viewBox="0 0 24 24" width="62" height="62" fill="none" stroke="#22d3ee"
+          stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"></path>
+          <path d="M14 13.12c0 2.38 0 6.38-1 8.88"></path>
+          <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"></path>
+          <path d="M2 12a10 10 0 0 1 18-6"></path>
+          <path d="M2 16h.01"></path>
+          <path d="M21.8 16c.2-2 .131-5.354 0-6"></path>
+          <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"></path>
+          <path d="M8.65 22c.21-.66.45-1.32.57-2"></path>
+          <path d="M9 6.8a6 6 0 0 1 9 5.2v2"></path>
+        </svg>
+      </div>
+
+      <h2 class="doctor-login-title">Biometric Registration</h2>
+      <p class="doctor-login-subtitle">Register your fingerprint for quick and secure access.</p>
+
+      <div id="doctor-bio-reg-alert" class="login-alert" style="display: none;"></div>
+
+      <form id="doctor-bio-reg-form" class="doctor-login-form" onsubmit="return false;" style="width: 100%;">
+        <div class="form-group" style="text-align: left; width: 100%;">
+          <label for="bio-reg-identifier" class="form-label">Doctor Email / User ID</label>
+          <input type="text" id="bio-reg-identifier" class="form-input" placeholder="Enter your registered email or UID"
+            required value="admin@gmail.com" />
+        </div>
+
+        <div class="bio-instruction-card" id="bio-reg-instruction-card" style="margin-top: 4px; margin-bottom: 12px;">
+          <div class="bio-shield-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00C8FF" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <polyline points="9 12 11 14 15 10"></polyline>
+            </svg>
+          </div>
+          <div class="bio-instruction-text">
+            <div class="bio-instruction-title" id="bio-reg-step-title">Fingerprint scanner ready</div>
+            <div class="bio-instruction-subtitle" id="bio-reg-step-subtitle">Place your finger on the scanner</div>
+          </div>
+        </div>
+
+        <div class="bio-reg-progress-row">
+          <div class="bio-reg-badge" id="bio-reg-step-badge">Scan 1 of 3</div>
+          <div class="bio-dots-indicator" id="bio-reg-dots">
+            <span class="bio-dot active"></span>
+            <span class="bio-dot"></span>
+            <span class="bio-dot"></span>
+          </div>
+        </div>
+
+        <button type="submit" id="bio-reg-start-btn" class="btn btn-primary login-main-btn" style="width: 100%;">
+          <span>Capture Fingerprint</span>
+        </button>
+
+        <div class="bio-footer-row" style="margin-top: 10px;">
+          <span class="bio-footer-text">Already registered?</span>
+          <a href="#" id="bio-reg-to-verify-btn" class="login-link">Login with Biometrics</a>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -924,7 +1080,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=21"></script>
 </body>
 
 </html>

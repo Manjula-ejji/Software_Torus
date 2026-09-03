@@ -3130,7 +3130,7 @@ select {
 }
 
 /* Specific positioning inside Login card */
-.doctor-login-card > .doctor-back-btn {
+.doctor-login-card>.doctor-back-btn {
   position: absolute;
   top: 22px;
   left: 24px;
@@ -3350,79 +3350,323 @@ select {
   line-height: 1.5;
 }
 
-/* Biometric scanner simulation styling */
-.biometric-modal-content {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px 24px;
-}
+/* ================================================================
+   TORUS Biometric Verification & Registration Screens
+   ================================================================ */
 
-.biometric-scanner-container {
-  position: relative;
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  background: rgba(0, 200, 255, 0.06);
-  border: 2px solid rgba(0, 200, 255, 0.3);
+.doctor-bio-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-main);
+  background-image:
+    radial-gradient(circle at 50% 20%, rgba(0, 132, 255, 0.15) 0%, transparent 60%),
+    radial-gradient(circle at 0% 0%, rgba(0, 132, 255, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 45%),
+    linear-gradient(180deg, #060B18 0%, #03050b 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 20px auto;
+  z-index: 99999;
+  padding: 16px;
+  overflow-y: auto;
+  animation: screen-fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.doctor-bio-card {
+  max-width: 440px;
+  width: 100%;
+  max-height: none;
+  margin: auto;
+  background: var(--bg-card, #111B31);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 26px 28px 22px;
+  position: relative;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  overflow: visible;
+  z-index: 100000;
+  animation: page-entrance 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.doctor-bio-card .doctor-back-btn {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+}
+
+.doctor-bio-card .doctor-login-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 4px;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.doctor-bio-card .doctor-login-subtitle {
+  font-size: 13.5px;
+  color: var(--text-muted, #94A3B8);
+  margin-bottom: 16px;
+  line-height: 1.35;
+  text-align: center;
+  max-width: 340px;
+}
+
+/* Biometric Scanner Pod (Concentric Glowing Circles matching Image 1 & Image 2) */
+.bio-scanner-pod {
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #0c1833 0%, #071124 60%, #030712 100%);
+  border: 1.5px solid rgba(0, 200, 255, 0.4);
+  outline: 1.5px solid rgba(0, 200, 255, 0.16);
+  outline-offset: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px auto 16px auto;
+  position: relative;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.6),
+    0 0 25px rgba(0, 200, 255, 0.18),
+    inset 0 0 20px rgba(0, 200, 255, 0.12);
+  cursor: pointer;
+  transition: border-color 0.35s ease, box-shadow 0.35s ease, transform 0.3s ease;
+  user-select: none;
   overflow: hidden;
+}
+
+.bio-scanner-pod:hover {
+  transform: scale(1.03);
+  border-color: rgba(0, 229, 255, 0.75);
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.7),
+    0 0 35px rgba(0, 200, 255, 0.32),
+    inset 0 0 25px rgba(0, 200, 255, 0.2);
+}
+
+.bio-fingerprint-svg {
+  width: 62px;
+  height: 62px;
+  stroke: #22d3ee;
+  color: #22d3ee;
+  fill: none !important;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: block;
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.7));
+  transition: stroke 0.35s ease, color 0.35s ease, filter 0.35s ease, transform 0.3s ease;
+  z-index: 3;
+}
+
+.bio-scanner-pod:hover .bio-fingerprint-svg {
+  filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.95));
+  transform: scale(1.02);
 }
 
 .bio-pulse-ring {
   position: absolute;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   border-radius: 50%;
-  border: 2px solid var(--accent-cyan);
-  animation: bio-pulse 1.8s ease-out infinite;
+  border: 1.5px solid rgba(0, 200, 255, 0.45);
+  animation: bio-pod-pulse 2.2s ease-out infinite;
+  pointer-events: none;
+  z-index: 1;
 }
 
-@keyframes bio-pulse {
+@keyframes bio-pod-pulse {
   0% {
-    transform: scale(0.8);
-    opacity: 1;
+    transform: scale(0.88);
+    opacity: 0.9;
   }
   100% {
-    transform: scale(1.4);
+    transform: scale(1.35);
     opacity: 0;
   }
 }
 
-.bio-scan-line {
+/* Very thin subtle laser scanning beam (Requirement 3) */
+.bio-laser-beam {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
-  box-shadow: 0 0 10px var(--accent-cyan);
-  animation: bio-scan 1.5s ease-in-out infinite alternate;
+  left: 14%;
+  width: 72%;
+  height: 1.5px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.95) 50%, transparent);
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.85);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
 }
 
-@keyframes bio-scan {
+.bio-scanner-pod.scanning .bio-laser-beam {
+  opacity: 1;
+  animation: laser-scan-cycle 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes laser-scan-cycle {
   0% {
-    top: 0%;
+    top: 15%;
   }
   100% {
-    top: 96%;
+    top: 85%;
   }
 }
 
-.bio-status-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-main);
-  margin-bottom: 6px;
+/* Scanning State - Keeps Blue/Cyan */
+.bio-scanner-pod.scanning {
+  border-color: #00E5FF;
+  box-shadow:
+    0 0 35px rgba(0, 229, 255, 0.45),
+    inset 0 0 25px rgba(0, 229, 255, 0.25);
 }
 
-.bio-status-text {
+/* Success State - Only NOW turns Green (Requirement 2) */
+.bio-scanner-pod.success {
+  border-color: #00E676 !important;
+  box-shadow:
+    0 0 35px rgba(0, 230, 118, 0.55),
+    inset 0 0 25px rgba(0, 230, 118, 0.3) !important;
+}
+
+.bio-scanner-pod.success .bio-fingerprint-svg {
+  stroke: #00E676 !important;
+  color: #00E676 !important;
+  fill: none !important;
+  filter: drop-shadow(0 0 10px rgba(0, 230, 118, 0.85)) !important;
+}
+
+.bio-scanner-pod.success .bio-fingerprint-svg path {
+  stroke: #00E676 !important;
+  fill: none !important;
+}
+
+/* Biometric Instruction Box (Shield + Title + Subtitle) */
+.bio-instruction-card {
+  width: 100%;
+  background: rgba(14, 24, 48, 0.75);
+  border: 1px solid rgba(0, 132, 255, 0.22);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: border-color 0.25s ease, background 0.25s ease, transform 0.25s ease;
+}
+
+.bio-instruction-card:hover {
+  border-color: rgba(0, 200, 255, 0.45);
+  background: rgba(18, 30, 60, 0.85);
+  transform: translateY(-1px);
+}
+
+.bio-shield-icon-wrapper {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(0, 132, 255, 0.12);
+  border: 1px solid rgba(0, 132, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 12px rgba(0, 132, 255, 0.15);
+}
+
+.bio-instruction-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.bio-instruction-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #FFFFFF;
+  line-height: 1.25;
+}
+
+.bio-instruction-subtitle {
+  font-size: 12.5px;
+  color: #94A3B8;
+  line-height: 1.35;
+}
+
+/* Scanner Status Dots Indicator */
+.bio-dots-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.bio-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(140, 159, 181, 0.35);
+  transition: all 0.3s ease;
+}
+
+.bio-dot.active {
+  background: #00C8FF;
+  box-shadow: 0 0 8px #00C8FF, 0 0 14px rgba(0, 200, 255, 0.6);
+  transform: scale(1.2);
+}
+
+/* Registration Steps Badge & Progress */
+.bio-reg-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 2px;
+  margin-bottom: 12px;
+  padding: 0 2px;
+}
+
+.bio-reg-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #00C8FF;
+  background: rgba(0, 200, 255, 0.12);
+  border: 1px solid rgba(0, 200, 255, 0.25);
+  border-radius: 99px;
+  padding: 2px 10px;
+}
+
+.bio-reg-progress-row .bio-dots-indicator {
+  margin-bottom: 0;
+}
+
+/* Footer Link Row */
+.bio-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: 13px;
-  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.bio-footer-text {
+  color: var(--text-muted, #94A3B8);
 }
 
 .header-user-badge {
@@ -3811,6 +4055,7 @@ select {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -3821,6 +4066,7 @@ select {
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

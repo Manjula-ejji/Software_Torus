@@ -142,6 +142,43 @@ def api_forgot_password():
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 
+# -------------------- REAL BIOMETRIC HARDWARE & SERIAL API --------------------
+import biometrics
+
+@app.route("/api/biometrics/status", methods=["GET", "OPTIONS"])
+def api_biometrics_status():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    status = biometrics.hardware_manager.get_status()
+    return jsonify(status)
+
+@app.route("/api/biometrics/enroll", methods=["POST", "OPTIONS"])
+def api_biometrics_enroll():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
+
+    if not identifier:
+        return jsonify({"success": False, "error": "Doctor Email or User ID is required for biometric registration."}), 400
+
+    # Execute enrollment through real hardware manager
+    res = biometrics.hardware_manager.enroll_fingerprint(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/biometrics/verify", methods=["POST", "OPTIONS"])
+def api_biometrics_verify():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
+
+    # Execute verification through real hardware manager
+    res = biometrics.hardware_manager.verify_fingerprint(identifier or None)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
 # -------------------- STATIC FILE SERVING --------------------
 @app.route("/")
 def serve_root():

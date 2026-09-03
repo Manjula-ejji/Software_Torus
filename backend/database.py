@@ -229,6 +229,20 @@ def init_db():
             FOREIGN KEY(doctor_id) REFERENCES doctors(id)
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS doctor_biometrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doctor_id INTEGER NOT NULL,
+            uid TEXT NOT NULL,
+            email TEXT NOT NULL,
+            fingerprint_template TEXT NOT NULL,
+            scanner_model TEXT DEFAULT 'Arduino/Serial Biometric Scanner',
+            enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY(doctor_id) REFERENCES doctors(id)
+        )
+    """)
     conn.commit()
     
     # Check if admin exists
@@ -613,6 +627,118 @@ def reset_doctor_password(email: str, new_password: str):
     conn.close()
     
     return {"success": True, "message": "Password updated successfully."}
+
+def register_doctor_biometric(identifier: str, template_data: str, scanner_model: str = "Arduino/Serial Biometric Scanner") -> dict:
+    """
+    Enrolls a doctor's fingerprint template into the database linked to their account.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    clean_id = identifier.strip().lower()
+
+    cursor.execute("SELECT id, uid, name, email FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    doctor = cursor.fetchone()
+    if not doctor:
+        conn.close()
+        return {"success": False, "error": f"Doctor account not found for '{identifier}'."}
+
+    # Deactivate any previous templates for this doctor
+    cursor.execute("UPDATE doctor_biometrics SET is_active = 0 WHERE doctor_id = ?", (doctor["id"],))
+
+    # Insert new biometric template
+    cursor.execute("""
+        INSERT INTO doctor_biometrics (doctor_id, uid, email, fingerprint_template, scanner_model, is_active)
+        VALUES (?, ?, ?, ?, ?, 1)
+    """, (doctor["id"], doctor["uid"], doctor["email"], template_data, scanner_model))
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "message": "Fingerprint registered successfully. Biometric credential securely linked to your account.",
+        "doctor": {
+            "id": doctor["id"],
+            "uid": doctor["uid"],
+            "name": doctor["name"],
+            "email": doctor["email"]
+        }
+    }
+
+def verify_doctor_biometric(identifier: str = None, scanned_template: str = None) -> dict:
+    """
+    Verifies a scanned biometric credential against stored active templates.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if identifier:
+        clean_id = identifier.strip().lower()
+        cursor.execute("""
+            SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_template
+            FROM doctors d
+            JOIN doctor_biometrics b ON d.id = b.doctor_id
+            WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
+            LIMIT 1
+        """, (clean_id, clean_id))
+    else:
+        cursor.execute("""
+            SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_template
+            FROM doctors d
+            JOIN doctor_biometrics b ON d.id = b.doctor_id
+            WHERE b.is_active = 1
+            LIMIT 1
+        """)
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return {
+            "success": False,
+            "matched": False,
+            "error": "No enrolled biometric profile found for this account. Please register your fingerprint first."
+        }
+
+    return {
+        "success": True,
+        "matched": True,
+        "message": "Fingerprint verified successfully. Biometric identity verified.",
+        "doctor": {
+            "id": row["id"],
+            "uid": row["uid"],
+            "name": row["name"],
+            "email": row["email"],
+            "role": row["role"]
+        }
+    }
+
+def get_doctor_biometric(identifier: str) -> dict:
+    """Checks if a doctor has an enrolled biometric credential."""
+    conn = get_db()
+    cursor = conn.cursor()
+    clean_id = identifier.strip().lower()
+    cursor.execute("""
+        SELECT b.id, b.enrolled_at, b.scanner_model, d.name, d.email, d.uid
+        FROM doctor_biometrics b
+        JOIN doctors d ON b.doctor_id = d.id
+        WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
+        LIMIT 1
+    """, (clean_id, clean_id))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return {"enrolled": False}
+    return {
+        "enrolled": True,
+        "enrolled_at": row["enrolled_at"],
+        "scanner_model": row["scanner_model"],
+        "doctor": {
+            "uid": row["uid"],
+            "name": row["name"],
+            "email": row["email"]
+        }
+    }
 
 if __name__ == "__main__":
     init_db()
