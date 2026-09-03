@@ -5,7 +5,9 @@
   "main": "frontend/app.js",
   "scripts": {
     "start": "http-server frontend -p 8080",
-    "dev": "http-server frontend -p 8080"
+    "dev": "http-server frontend -p 8080",
+    "server": "python backend/server.py",
+    "backend": "python backend/server.py"
   },
   "keywords": [],
   "author": "",
