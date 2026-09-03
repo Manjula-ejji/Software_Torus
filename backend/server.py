@@ -1,6 +1,6 @@
 """
 TORUS Clinical Robotics Platform - Backend API Server
-Handles Doctor Registration, Authentication, Password Reset, and Real SMTP OTP Dispatch.
+Handles Doctor & Patient Registration, Authentication, Password Reset, and Real SMTP OTP Dispatch.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def add_cors_headers(response):
 # -------------------- HEALTH CHECK --------------------
 @app.route("/api/health", methods=["GET"])
 def api_health():
-    return jsonify({"status": "healthy", "service": "TORUS Doctor Authentication Engine"})
+    return jsonify({"status": "healthy", "service": "TORUS Healthcare Authentication Engine"})
 
 # -------------------- DOCTOR AUTHENTICATION API --------------------
 @app.route("/api/doctors/register", methods=["POST", "OPTIONS"])
@@ -142,6 +142,104 @@ def api_forgot_password():
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 
+# -------------------- PATIENT AUTHENTICATION API --------------------
+@app.route("/api/patients/register", methods=["POST", "OPTIONS"])
+def api_register_patient():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    mobile = data.get("mobile", "").strip()
+    uid = data.get("uid", "").strip() or data.get("patient_id", "").strip()
+
+    if not name or not email or not password:
+        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
+
+    res = database.register_patient(name, email, password, mobile=mobile, uid=uid)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/patients/login", methods=["POST", "OPTIONS"])
+def api_login_patient():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    login_id = data.get("login_id", "").strip()
+    password = data.get("password", "")
+
+    if not login_id or not password:
+        return jsonify({"success": False, "error": "Email/Patient ID and password are required."}), 400
+
+    res = database.authenticate_patient(login_id, password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/patients/forgot-password/send-otp", methods=["POST", "OPTIONS"])
+def api_patient_forgot_password_send_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+
+    if not identifier:
+        return jsonify({"success": False, "error": "Email or Patient ID is required."}), 400
+
+    res = database.generate_and_store_patient_reset_otp(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/patients/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
+def api_patient_forgot_password_verify_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    otp = str(data.get("otp", "")).strip()
+
+    if not identifier or not otp:
+        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
+
+    res = database.verify_patient_reset_otp(identifier, otp)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/patients/forgot-password/reset", methods=["POST", "OPTIONS"])
+def api_patient_forgot_password_reset():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
+    new_password = data.get("new_password", "")
+
+    if not identifier or not reset_token or not new_password:
+        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
+
+    res = database.reset_patient_password_with_token(identifier, reset_token, new_password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/patients/forgot-password", methods=["POST", "OPTIONS"])
+def api_patient_forgot_password():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip()
+    new_password = data.get("new_password", "")
+    reset_token = data.get("reset_token", "").strip()
+
+    if new_password and reset_token:
+        res = database.reset_patient_password_with_token(identifier, reset_token, new_password)
+    elif identifier:
+        res = database.generate_and_store_patient_reset_otp(identifier)
+    else:
+        return jsonify({"success": False, "error": "Email or Patient ID is required."}), 400
+
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
 # -------------------- REAL BIOMETRIC HARDWARE & SERIAL API --------------------
 import biometrics
 
@@ -162,7 +260,6 @@ def api_biometrics_enroll():
     if not identifier:
         return jsonify({"success": False, "error": "Doctor Email or User ID is required for biometric registration."}), 400
 
-    # Execute enrollment through real hardware manager
     res = biometrics.hardware_manager.enroll_fingerprint(identifier)
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
@@ -174,7 +271,6 @@ def api_biometrics_verify():
     data = request.get_json(silent=True) or {}
     identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
 
-    # Execute verification through real hardware manager
     res = biometrics.hardware_manager.verify_fingerprint(identifier or None)
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code

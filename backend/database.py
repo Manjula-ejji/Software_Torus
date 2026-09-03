@@ -58,9 +58,9 @@ def load_env_file():
             except Exception as e:
                 print(f"[ENV] Notice reading {p}: {e}")
 
-def send_otp_email(to_email: str, doctor_name: str, doctor_uid: str, otp: str) -> tuple[bool, str]:
+def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_role: str = "doctor") -> tuple[bool, str]:
     """
-    Sends a real OTP to the doctor's registered email address via SMTP.
+    Sends a real OTP to the user's registered email address via SMTP.
     Returns (success: bool, message_or_error: str).
     """
     load_env_file()
@@ -75,7 +75,6 @@ def send_otp_email(to_email: str, doctor_name: str, doctor_uid: str, otp: str) -
     smtp_user = os.environ.get("SMTP_USER", os.environ.get("EMAIL_USER", os.environ.get("MAIL_USERNAME", ""))).strip()
     smtp_pass = os.environ.get("SMTP_PASSWORD", os.environ.get("SMTP_PASS", os.environ.get("EMAIL_PASS", os.environ.get("MAIL_PASSWORD", "")))).strip()
     
-    # If no custom from address is provided, use authenticated user
     smtp_from_env = os.environ.get("SMTP_FROM", os.environ.get("EMAIL_FROM", "")).strip()
     if smtp_from_env and "noreply@torus.med" not in smtp_from_env:
         smtp_from = smtp_from_env
@@ -87,6 +86,7 @@ def send_otp_email(to_email: str, doctor_name: str, doctor_uid: str, otp: str) -
     use_ssl = os.environ.get("SMTP_SSL", "false").lower() in ("true", "1") or smtp_port == 465
     use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() in ("true", "1") or smtp_port == 587
 
+    portal_name = "TORUS clinical workspace" if user_role == "doctor" else "TORUS patient portal"
     subject = f"Your TORUS Account Password Reset OTP: {otp}"
 
     html_content = f"""
@@ -107,10 +107,10 @@ def send_otp_email(to_email: str, doctor_name: str, doctor_uid: str, otp: str) -
                 <td style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
                   <h3 style="color: #FFFFFF; font-size: 18px; margin: 0 0 12px 0;">Reset Your Password</h3>
                   <p style="color: #B7C5D8; font-size: 14px; line-height: 1.5; margin: 0 0 16px 0;">
-                    Hello <strong>{doctor_name}</strong> (User ID: <code style="color: #00C8FF;">{doctor_uid}</code>),
+                    Hello <strong>{user_name}</strong> (User ID: <code style="color: #00C8FF;">{user_uid}</code>),
                   </p>
                   <p style="color: #B7C5D8; font-size: 14px; line-height: 1.5; margin: 0 0 24px 0;">
-                    We received a request to reset your password for the TORUS clinical workspace. Use the verification code below:
+                    We received a request to reset your password for the {portal_name}. Use the verification code below:
                   </p>
                 </td>
               </tr>
@@ -139,7 +139,7 @@ def send_otp_email(to_email: str, doctor_name: str, doctor_uid: str, otp: str) -
     </html>
     """
 
-    text_content = f"Hello {doctor_name},\n\nYour TORUS password reset verification code is: {otp}\n\nThis OTP is valid for 10 minutes.\nUser ID: {doctor_uid}\n\nIf you did not request this, please ignore this email."
+    text_content = f"Hello {user_name},\n\nYour TORUS password reset verification code is: {otp}\n\nThis OTP is valid for 10 minutes.\nUser ID: {user_uid}\n\nIf you did not request this, please ignore this email."
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -182,7 +182,7 @@ def send_otp_email(to_email: str, doctor_name: str, doctor_uid: str, otp: str) -
         return False, err
 
 def _migrate_add_mobile_column():
-    """Safely adds 'mobile' column to doctors table if it doesn't exist."""
+    """Safely adds 'mobile' column to doctors and patients tables if missing."""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -192,16 +192,24 @@ def _migrate_add_mobile_column():
             cursor.execute("ALTER TABLE doctors ADD COLUMN mobile TEXT DEFAULT ''")
             conn.commit()
             print("[Database] Migrated: added 'mobile' column to doctors table.")
+            
+        cursor.execute("PRAGMA table_info(patients)")
+        pat_columns = [row["name"] for row in cursor.fetchall()]
+        if "mobile" not in pat_columns and len(pat_columns) > 0:
+            cursor.execute("ALTER TABLE patients ADD COLUMN mobile TEXT DEFAULT ''")
+            conn.commit()
+            print("[Database] Migrated: added 'mobile' column to patients table.")
     except Exception as e:
         print(f"[Database] Migration warning: {e}")
     finally:
         conn.close()
 
 def init_db():
-    """Initializes the doctors table, password_reset_otps table, and seeds default admin doctor if empty."""
+    """Initializes the doctors, patients, and password reset tables and seeds defaults."""
     conn = get_db()
     cursor = conn.cursor()
     
+    # 1. Doctors Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS doctors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,7 +222,22 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # 2. Patients Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'patient',
+            mobile TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
+    # 3. Doctor Password Reset Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS password_reset_otps (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -230,6 +253,23 @@ def init_db():
         )
     """)
 
+    # 4. Patient Password Reset Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patient_password_reset_otps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            identifier TEXT NOT NULL,
+            email TEXT NOT NULL,
+            otp TEXT NOT NULL,
+            reset_token TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            used INTEGER DEFAULT 0,
+            FOREIGN KEY(patient_id) REFERENCES patients(id)
+        )
+    """)
+
+    # 5. Doctor Biometrics Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS doctor_biometrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -245,7 +285,7 @@ def init_db():
     """)
     conn.commit()
     
-    # Check if admin exists
+    # Seed default admin doctor
     cursor.execute("SELECT * FROM doctors WHERE email = ?", ("admin@gmail.com",))
     if not cursor.fetchone():
         admin_pass = hash_password("admin123")
@@ -255,39 +295,24 @@ def init_db():
         """, ("3001", "Admin Doctor", "admin@gmail.com", admin_pass, "admin"))
         conn.commit()
         print("[Database] Default Admin Doctor created (UID: 3001, email: admin@gmail.com).")
+
+    # Seed default patient
+    cursor.execute("SELECT * FROM patients WHERE email = ?", ("patient@gmail.com",))
+    if not cursor.fetchone():
+        patient_pass = hash_password("patient123")
+        cursor.execute("""
+            INSERT INTO patients (uid, name, email, password_hash, role, mobile)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, ("4001", "Patient User", "patient@gmail.com", patient_pass, "patient", "+91 98765 43210"))
+        conn.commit()
+        print("[Database] Default Patient created (UID: 4001, email: patient@gmail.com).")
         
     conn.close()
-    
-    # Run migration for existing databases that might not have mobile column
     _migrate_add_mobile_column()
 
-def generate_professional_id() -> str:
-    """
-    Generates a unique alphanumeric Professional ID in format DOC-XXXXX.
-    Each X is a random uppercase letter or digit. Checks for uniqueness in the database.
-    """
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    for _ in range(100):  # max retries to avoid infinite loop
-        chars = string.ascii_uppercase + string.digits
-        random_part = ''.join(random.choices(chars, k=5))
-        professional_id = f"DOC-{random_part}"
-        
-        cursor.execute("SELECT id FROM doctors WHERE uid = ?", (professional_id,))
-        if not cursor.fetchone():
-            conn.close()
-            return professional_id
-    
-    conn.close()
-    # Extremely unlikely fallback
-    raise RuntimeError("Could not generate a unique Professional ID after 100 attempts.")
-
+# -------------------- VALIDATION HELPERS --------------------
 def validate_strong_password(password: str) -> tuple:
-    """
-    Validates that a password meets strong password requirements.
-    Returns (is_valid: bool, error_message: str).
-    """
+    """Validates that a password meets strong password requirements."""
     if len(password) < 8:
         return False, "Password must be at least 8 characters long."
     if not re.search(r'[A-Z]', password):
@@ -306,92 +331,86 @@ def validate_email_format(email: str) -> bool:
     return bool(re.match(pattern, email.strip()))
 
 def validate_mobile_format(mobile: str) -> bool:
-    """Validates mobile number format (allows various international formats)."""
+    """Validates mobile number format."""
     cleaned = re.sub(r'[\s\-\(\)]', '', mobile.strip())
-    # Allow formats like: +919876543210, 9876543210, +1-234-567-8910, etc.
     pattern = r'^\+?[0-9]{7,15}$'
     return bool(re.match(pattern, cleaned))
 
-def validate_professional_id_format(uid: str) -> bool:
-    """Validates that a Professional ID matches DOC-XXXXX format."""
-    pattern = r'^DOC-[A-Z0-9]{5}$'
-    return bool(re.match(pattern, uid.strip()))
-
-def get_next_uid() -> str:
-    """Generates the next sequential UID starting at 3002. (Legacy, kept for backward compatibility)"""
+def generate_professional_id() -> str:
+    """Generates unique alphanumeric Professional ID (DOC-XXXXX)."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT uid FROM doctors WHERE uid GLOB '[0-9]*' ORDER BY CAST(uid AS INTEGER) DESC LIMIT 1")
-    row = cursor.fetchone()
+    for _ in range(100):
+        chars = string.ascii_uppercase + string.digits
+        random_part = ''.join(random.choices(chars, k=5))
+        professional_id = f"DOC-{random_part}"
+        cursor.execute("SELECT id FROM doctors WHERE uid = ?", (professional_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return professional_id
     conn.close()
-    
-    if row and row["uid"].isdigit():
-        last_uid = int(row["uid"])
-        return str(max(3002, last_uid + 1))
-    return "3002"
+    return f"DOC-{secrets.token_hex(3).upper()[:5]}"
 
+def generate_patient_id() -> str:
+    """Generates unique alphanumeric Patient ID (PAT-XXXXX)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    for _ in range(100):
+        chars = string.ascii_uppercase + string.digits
+        random_part = ''.join(random.choices(chars, k=5))
+        patient_id = f"PAT-{random_part}"
+        cursor.execute("SELECT id FROM patients WHERE uid = ?", (patient_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return patient_id
+    conn.close()
+    return f"PAT-{secrets.token_hex(3).upper()[:5]}"
+
+# ============================================================
+# DOCTOR CRUD & AUTHENTICATION
+# ============================================================
 def register_doctor(name: str, email: str, password: str, mobile: str = "", uid: str = "", role: str = "doctor"):
-    """Registers a new doctor into SQLite with full backend validation."""
-    
-    # --- Backend Validations ---
-    
-    # Validate name
     clean_name = name.strip()
     if not clean_name:
         return {"success": False, "error": "Full Name is required."}
     
-    # Validate email
     clean_email = email.strip().lower()
-    if not clean_email:
-        return {"success": False, "error": "Email is required."}
-    if not validate_email_format(clean_email):
+    if not clean_email or not validate_email_format(clean_email):
         return {"success": False, "error": "Please enter a valid email address."}
     
-    # Validate mobile
     clean_mobile = mobile.strip()
-    if not clean_mobile:
-        return {"success": False, "error": "Mobile Number is required."}
-    if not validate_mobile_format(clean_mobile):
+    if not clean_mobile or not validate_mobile_format(clean_mobile):
         return {"success": False, "error": "Please enter a valid mobile number."}
     
-    # Validate password strength
     if not password:
         return {"success": False, "error": "Password is required."}
     pwd_valid, pwd_error = validate_strong_password(password)
     if not pwd_valid:
         return {"success": False, "error": pwd_error}
     
-    # Force role to doctor (never trust frontend)
-    role = "doctor"
-    
     conn = get_db()
     cursor = conn.cursor()
     
-    # Check duplicate email
     cursor.execute("SELECT id FROM doctors WHERE LOWER(email) = LOWER(?)", (clean_email,))
     if cursor.fetchone():
         conn.close()
         return {"success": False, "error": "An account with this email already exists."}
     
-    # Process Professional ID
     clean_uid = uid.strip().upper() if uid else ""
     if clean_uid:
-        # Check duplicate Professional ID
         cursor.execute("SELECT id FROM doctors WHERE UPPER(uid) = UPPER(?)", (clean_uid,))
         if cursor.fetchone():
             conn.close()
             return {"success": False, "error": f"Professional ID '{clean_uid}' is already registered."}
         final_uid = clean_uid
     else:
-        # Generate unique Professional ID
         final_uid = generate_professional_id()
     
     pwd_hash = hash_password(password)
-    
     cursor.execute("""
         INSERT INTO doctors (uid, name, email, password_hash, role, mobile)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (final_uid, clean_name, clean_email, pwd_hash, role, clean_mobile))
+        VALUES (?, ?, ?, ?, 'doctor', ?)
+    """, (final_uid, clean_name, clean_email, pwd_hash, clean_mobile))
     conn.commit()
     conn.close()
     
@@ -402,12 +421,11 @@ def register_doctor(name: str, email: str, password: str, mobile: str = "", uid:
             "name": clean_name,
             "email": clean_email,
             "mobile": clean_mobile,
-            "role": role
+            "role": "doctor"
         }
     }
 
 def authenticate_doctor(login_id: str, password: str):
-    """Authenticates doctor against SQLite using Email OR UID."""
     conn = get_db()
     cursor = conn.cursor()
     login_clean = login_id.strip().lower()
@@ -435,10 +453,6 @@ def authenticate_doctor(login_id: str, password: str):
     return {"success": False, "error": "Invalid email/UID or password."}
 
 def generate_and_store_reset_otp(identifier: str):
-    """
-    Finds doctor by email or UID, generates a secure 6-digit OTP, stores it with 10m expiry,
-    and dispatches it to the doctor's registered email via SMTP.
-    """
     clean_id = identifier.strip().lower()
     if not clean_id:
         return {"success": False, "error": "Email or User ID is required."}
@@ -457,14 +471,10 @@ def generate_and_store_reset_otp(identifier: str):
     doctor_name = doctor["name"]
     doctor_uid = doctor["uid"]
     
-    # Generate 6-digit numeric OTP
     otp = f"{random.randint(100000, 999999)}"
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     
-    # Invalidate older unused OTPs for this doctor
     cursor.execute("UPDATE password_reset_otps SET used = 2 WHERE doctor_id = ? AND used = 0", (doctor_id,))
-    
-    # Insert new OTP record
     cursor.execute("""
         INSERT INTO password_reset_otps (doctor_id, identifier, email, otp, expires_at, used)
         VALUES (?, ?, ?, ?, ?, 0)
@@ -472,8 +482,7 @@ def generate_and_store_reset_otp(identifier: str):
     conn.commit()
     conn.close()
     
-    # Send email via SMTP
-    sent, err_msg = send_otp_email(doctor_email, doctor_name, doctor_uid, otp)
+    sent, err_msg = send_otp_email(doctor_email, doctor_name, doctor_uid, otp, "doctor")
     if not sent:
         conn = get_db()
         cursor = conn.cursor()
@@ -485,19 +494,14 @@ def generate_and_store_reset_otp(identifier: str):
             "error": err_msg or "Failed to send OTP to your registered email address. Please verify your SMTP settings in .env."
         }
 
-    masked = mask_email(doctor_email)
     return {
         "success": True,
         "message": "A 6-digit OTP has been sent to your registered email address.",
-        "masked_email": masked,
+        "masked_email": mask_email(doctor_email),
         "email": doctor_email
     }
 
 def verify_reset_otp(identifier: str, otp: str):
-    """
-    Validates the 6-digit OTP against the active record for this doctor in SQLite.
-    Returns a reset_token if valid.
-    """
     clean_id = identifier.strip().lower()
     clean_otp = str(otp).strip()
     
@@ -516,8 +520,6 @@ def verify_reset_otp(identifier: str, otp: str):
         return {"success": False, "error": "No account found with this email or User ID."}
     
     doctor_id = doctor["id"]
-    
-    # Fetch active OTP
     cursor.execute("""
         SELECT * FROM password_reset_otps 
         WHERE doctor_id = ? AND used = 0 
@@ -529,7 +531,6 @@ def verify_reset_otp(identifier: str, otp: str):
         conn.close()
         return {"success": False, "error": "No active OTP found. Please request a new OTP."}
     
-    # Check expiry
     expires_str = otp_record["expires_at"]
     try:
         expires_dt = datetime.strptime(expires_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -543,7 +544,6 @@ def verify_reset_otp(identifier: str, otp: str):
         conn.close()
         return {"success": False, "error": "Invalid OTP. Please check the code sent to your email."}
     
-    # Generate temporary reset token
     reset_token = secrets.token_hex(24)
     cursor.execute("UPDATE password_reset_otps SET reset_token = ? WHERE id = ?", (reset_token, otp_record["id"]))
     conn.commit()
@@ -557,16 +557,12 @@ def verify_reset_otp(identifier: str, otp: str):
     }
 
 def reset_doctor_password_with_token(identifier: str, reset_token: str, new_password: str):
-    """
-    Validates token and strong password, updates doctor password in SQLite.
-    """
     clean_id = identifier.strip().lower()
     clean_token = reset_token.strip()
     
     if not clean_id or not clean_token:
         return {"success": False, "error": "Invalid session. Please restart password reset."}
     
-    # Validate password strength
     pwd_valid, pwd_error = validate_strong_password(new_password)
     if not pwd_valid:
         return {"success": False, "error": pwd_error}
@@ -581,7 +577,6 @@ def reset_doctor_password_with_token(identifier: str, reset_token: str, new_pass
         return {"success": False, "error": "Doctor account not found."}
     
     doctor_id = doctor["id"]
-    
     cursor.execute("""
         SELECT * FROM password_reset_otps 
         WHERE doctor_id = ? AND reset_token = ? AND used = 0 
@@ -593,12 +588,8 @@ def reset_doctor_password_with_token(identifier: str, reset_token: str, new_pass
         conn.close()
         return {"success": False, "error": "Invalid or expired session. Please request a new OTP."}
     
-    # Hash password securely
     pwd_hash = hash_password(new_password)
-    
-    # Update doctor password
     cursor.execute("UPDATE doctors SET password_hash = ? WHERE id = ?", (pwd_hash, doctor_id))
-    # Mark OTP as used
     cursor.execute("UPDATE password_reset_otps SET used = 1 WHERE id = ?", (otp_record["id"],))
     conn.commit()
     conn.close()
@@ -609,29 +600,249 @@ def reset_doctor_password_with_token(identifier: str, reset_token: str, new_pass
         "email": doctor["email"]
     }
 
-def reset_doctor_password(email: str, new_password: str):
-    """Resets password for doctor with specified email (legacy)."""
+# ============================================================
+# PATIENT CRUD & AUTHENTICATION
+# ============================================================
+def register_patient(name: str, email: str, password: str, mobile: str = "", uid: str = ""):
+    """Registers a new patient into SQLite with full backend validation."""
+    clean_name = name.strip()
+    if not clean_name:
+        return {"success": False, "error": "Full Name is required."}
+    
+    clean_email = email.strip().lower()
+    if not clean_email or not validate_email_format(clean_email):
+        return {"success": False, "error": "Please enter a valid email address."}
+    
+    clean_mobile = mobile.strip()
+    if not clean_mobile or not validate_mobile_format(clean_mobile):
+        return {"success": False, "error": "Please enter a valid mobile number."}
+    
+    if not password:
+        return {"success": False, "error": "Password is required."}
+    pwd_valid, pwd_error = validate_strong_password(password)
+    if not pwd_valid:
+        return {"success": False, "error": pwd_error}
+    
     conn = get_db()
     cursor = conn.cursor()
-    email_clean = email.strip().lower()
     
-    cursor.execute("SELECT id FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?", (email_clean, email_clean))
-    row = cursor.fetchone()
-    if not row:
+    cursor.execute("SELECT id FROM patients WHERE LOWER(email) = LOWER(?)", (clean_email,))
+    if cursor.fetchone():
         conn.close()
-        return {"success": False, "error": "No account found with this email or User ID."}
+        return {"success": False, "error": "An account with this email already exists."}
     
-    pwd_hash = hash_password(new_password)
-    cursor.execute("UPDATE doctors SET password_hash = ? WHERE id = ?", (pwd_hash, row["id"]))
+    clean_uid = uid.strip().upper() if uid else ""
+    if clean_uid:
+        cursor.execute("SELECT id FROM patients WHERE UPPER(uid) = UPPER(?)", (clean_uid,))
+        if cursor.fetchone():
+            conn.close()
+            return {"success": False, "error": f"Patient ID '{clean_uid}' is already registered."}
+        final_uid = clean_uid
+    else:
+        final_uid = generate_patient_id()
+    
+    pwd_hash = hash_password(password)
+    cursor.execute("""
+        INSERT INTO patients (uid, name, email, password_hash, role, mobile)
+        VALUES (?, ?, ?, ?, 'patient', ?)
+    """, (final_uid, clean_name, clean_email, pwd_hash, clean_mobile))
     conn.commit()
     conn.close()
     
-    return {"success": True, "message": "Password updated successfully."}
+    return {
+        "success": True,
+        "patient": {
+            "uid": final_uid,
+            "name": clean_name,
+            "email": clean_email,
+            "mobile": clean_mobile,
+            "role": "patient"
+        }
+    }
 
+def authenticate_patient(login_id: str, password: str):
+    """Authenticates patient against SQLite using Email OR UID."""
+    conn = get_db()
+    cursor = conn.cursor()
+    login_clean = login_id.strip().lower()
+    pwd_hash = hash_password(password)
+    
+    cursor.execute("""
+        SELECT * FROM patients 
+        WHERE (LOWER(email) = ? OR LOWER(uid) = ?) AND password_hash = ?
+    """, (login_clean, login_clean, pwd_hash))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {
+            "success": True,
+            "patient": {
+                "id": row["id"],
+                "uid": row["uid"],
+                "name": row["name"],
+                "email": row["email"],
+                "role": row["role"]
+            }
+        }
+    return {"success": False, "error": "Invalid email/Patient ID or password."}
+
+def generate_and_store_patient_reset_otp(identifier: str):
+    """Generates and dispatches OTP for patient password reset."""
+    clean_id = identifier.strip().lower()
+    if not clean_id:
+        return {"success": False, "error": "Email or User ID is required."}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM patients WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    patient = cursor.fetchone()
+    
+    if not patient:
+        conn.close()
+        return {"success": False, "error": "No patient account found with this email or User ID."}
+    
+    patient_id = patient["id"]
+    patient_email = patient["email"]
+    patient_name = patient["name"]
+    patient_uid = patient["uid"]
+    
+    otp = f"{random.randint(100000, 999999)}"
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    
+    cursor.execute("UPDATE patient_password_reset_otps SET used = 2 WHERE patient_id = ? AND used = 0", (patient_id,))
+    cursor.execute("""
+        INSERT INTO patient_password_reset_otps (patient_id, identifier, email, otp, expires_at, used)
+        VALUES (?, ?, ?, ?, ?, 0)
+    """, (patient_id, clean_id, patient_email, otp, expires_at))
+    conn.commit()
+    conn.close()
+    
+    sent, err_msg = send_otp_email(patient_email, patient_name, patient_uid, otp, "patient")
+    if not sent:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM patient_password_reset_otps WHERE email = ? AND otp = ?", (patient_email, otp))
+        conn.commit()
+        conn.close()
+        return {
+            "success": False,
+            "error": err_msg or "Failed to send OTP to your registered email address. Please verify your SMTP settings in .env."
+        }
+
+    return {
+        "success": True,
+        "message": "A 6-digit OTP has been sent to your registered email address.",
+        "masked_email": mask_email(patient_email),
+        "email": patient_email
+    }
+
+def verify_patient_reset_otp(identifier: str, otp: str):
+    """Validates 6-digit OTP for patient."""
+    clean_id = identifier.strip().lower()
+    clean_otp = str(otp).strip()
+    
+    if not clean_id:
+        return {"success": False, "error": "Email or User ID is required."}
+    if not clean_otp or len(clean_otp) != 6:
+        return {"success": False, "error": "Please enter a valid 6-digit OTP."}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM patients WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    patient = cursor.fetchone()
+    
+    if not patient:
+        conn.close()
+        return {"success": False, "error": "No patient account found with this email or User ID."}
+    
+    patient_id = patient["id"]
+    cursor.execute("""
+        SELECT * FROM patient_password_reset_otps 
+        WHERE patient_id = ? AND used = 0 
+        ORDER BY id DESC LIMIT 1
+    """, (patient_id,))
+    otp_record = cursor.fetchone()
+    
+    if not otp_record:
+        conn.close()
+        return {"success": False, "error": "No active OTP found. Please request a new OTP."}
+    
+    expires_str = otp_record["expires_at"]
+    try:
+        expires_dt = datetime.strptime(expires_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_dt:
+            conn.close()
+            return {"success": False, "error": "OTP has expired. Please request a new OTP."}
+    except Exception:
+        pass
+    
+    if otp_record["otp"] != clean_otp:
+        conn.close()
+        return {"success": False, "error": "Invalid OTP. Please check the code sent to your email."}
+    
+    reset_token = secrets.token_hex(24)
+    cursor.execute("UPDATE patient_password_reset_otps SET reset_token = ? WHERE id = ?", (reset_token, otp_record["id"]))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "message": "OTP verified successfully.",
+        "reset_token": reset_token,
+        "email": patient["email"]
+    }
+
+def reset_patient_password_with_token(identifier: str, reset_token: str, new_password: str):
+    """Resets patient password with verified token."""
+    clean_id = identifier.strip().lower()
+    clean_token = reset_token.strip()
+    
+    if not clean_id or not clean_token:
+        return {"success": False, "error": "Invalid session. Please restart password reset."}
+    
+    pwd_valid, pwd_error = validate_strong_password(new_password)
+    if not pwd_valid:
+        return {"success": False, "error": pwd_error}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM patients WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    patient = cursor.fetchone()
+    
+    if not patient:
+        conn.close()
+        return {"success": False, "error": "Patient account not found."}
+    
+    patient_id = patient["id"]
+    cursor.execute("""
+        SELECT * FROM patient_password_reset_otps 
+        WHERE patient_id = ? AND reset_token = ? AND used = 0 
+        ORDER BY id DESC LIMIT 1
+    """, (patient_id, clean_token))
+    otp_record = cursor.fetchone()
+    
+    if not otp_record:
+        conn.close()
+        return {"success": False, "error": "Invalid or expired session. Please request a new OTP."}
+    
+    pwd_hash = hash_password(new_password)
+    cursor.execute("UPDATE patients SET password_hash = ? WHERE id = ?", (pwd_hash, patient_id))
+    cursor.execute("UPDATE patient_password_reset_otps SET used = 1 WHERE id = ?", (otp_record["id"],))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "message": "Password updated successfully. You can now log in with your new password.",
+        "email": patient["email"]
+    }
+
+# ============================================================
+# DOCTOR BIOMETRIC DRIVER
+# ============================================================
 def register_doctor_biometric(identifier: str, template_data: str, scanner_model: str = "Arduino/Serial Biometric Scanner") -> dict:
-    """
-    Enrolls a doctor's fingerprint template into the database linked to their account.
-    """
     conn = get_db()
     cursor = conn.cursor()
     clean_id = identifier.strip().lower()
@@ -642,10 +853,7 @@ def register_doctor_biometric(identifier: str, template_data: str, scanner_model
         conn.close()
         return {"success": False, "error": f"Doctor account not found for '{identifier}'."}
 
-    # Deactivate any previous templates for this doctor
     cursor.execute("UPDATE doctor_biometrics SET is_active = 0 WHERE doctor_id = ?", (doctor["id"],))
-
-    # Insert new biometric template
     cursor.execute("""
         INSERT INTO doctor_biometrics (doctor_id, uid, email, fingerprint_template, scanner_model, is_active)
         VALUES (?, ?, ?, ?, ?, 1)
@@ -655,7 +863,8 @@ def register_doctor_biometric(identifier: str, template_data: str, scanner_model
 
     return {
         "success": True,
-        "message": "Fingerprint registered successfully. Biometric credential securely linked to your account.",
+        "message": "Fingerprint registered successfully.",
+        "subtitle": "Your fingerprint has been securely linked to your account.",
         "doctor": {
             "id": doctor["id"],
             "uid": doctor["uid"],
@@ -665,9 +874,6 @@ def register_doctor_biometric(identifier: str, template_data: str, scanner_model
     }
 
 def verify_doctor_biometric(identifier: str = None, scanned_template: str = None) -> dict:
-    """
-    Verifies a scanned biometric credential against stored active templates.
-    """
     conn = get_db()
     cursor = conn.cursor()
 
@@ -696,13 +902,13 @@ def verify_doctor_biometric(identifier: str = None, scanned_template: str = None
         return {
             "success": False,
             "matched": False,
-            "error": "No enrolled biometric profile found for this account. Please register your fingerprint first."
+            "error": "Fingerprint does not match. Please try again."
         }
 
     return {
         "success": True,
         "matched": True,
-        "message": "Fingerprint verified successfully. Biometric identity verified.",
+        "message": "Fingerprint verified successfully.",
         "doctor": {
             "id": row["id"],
             "uid": row["uid"],
@@ -713,7 +919,6 @@ def verify_doctor_biometric(identifier: str = None, scanned_template: str = None
     }
 
 def get_doctor_biometric(identifier: str) -> dict:
-    """Checks if a doctor has an enrolled biometric credential."""
     conn = get_db()
     cursor = conn.cursor()
     clean_id = identifier.strip().lower()

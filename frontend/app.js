@@ -2056,6 +2056,9 @@ const roleCards = document.querySelectorAll(".role-card-item");
 const roleSelectionScreen = document.getElementById("role-selection-screen");
 const doctorLoginScreen = document.getElementById("doctor-login-screen");
 const doctorRegisterScreen = document.getElementById("doctor-register-screen");
+const patientLoginScreen = document.getElementById("patient-login-screen");
+const patientRegisterScreen = document.getElementById("patient-register-screen");
+const patientForgotScreen = document.getElementById("patient-forgot-screen");
 const appDashboard = document.getElementById("app-dashboard");
 
 roleCards.forEach(card => {
@@ -2067,6 +2070,14 @@ roleCards.forEach(card => {
       // Show Doctor Secure Login screen instead of jumping directly to dashboard
       roleSelectionScreen.style.display = "none";
       if (doctorLoginScreen) doctorLoginScreen.style.display = "flex";
+      return;
+    }
+
+    if (selectedRole === "patient") {
+      // Show Patient Secure Login screen instead of jumping directly to dashboard
+      roleSelectionScreen.style.display = "none";
+      const patLoginScreen = document.getElementById("patient-login-screen");
+      if (patLoginScreen) patLoginScreen.style.display = "flex";
       return;
     }
 
@@ -3350,6 +3361,19 @@ async function initSQLiteDatabase() {
         );
       `);
 
+      dbInstance.run(`
+        CREATE TABLE IF NOT EXISTS patients (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          uid TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'patient',
+          mobile TEXT DEFAULT '',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
       // Safely add mobile column if missing (for pre-existing databases)
       try {
         dbInstance.run("SELECT mobile FROM doctors LIMIT 1");
@@ -3357,7 +3381,17 @@ async function initSQLiteDatabase() {
         try {
           dbInstance.run("ALTER TABLE doctors ADD COLUMN mobile TEXT DEFAULT ''");
           saveSQLiteState();
-          console.log("[SQLite] Migrated: added 'mobile' column.");
+          console.log("[SQLite] Migrated: added 'mobile' column to doctors.");
+        } catch (e2) {}
+      }
+
+      try {
+        dbInstance.run("SELECT mobile FROM patients LIMIT 1");
+      } catch (e) {
+        try {
+          dbInstance.run("ALTER TABLE patients ADD COLUMN mobile TEXT DEFAULT ''");
+          saveSQLiteState();
+          console.log("[SQLite] Migrated: added 'mobile' column to patients.");
         } catch (e2) {}
       }
 
@@ -3371,6 +3405,18 @@ async function initSQLiteDatabase() {
         );
         saveSQLiteState();
         console.log("[SQLite] Pre-seeded default Admin Doctor (UID: 3001, admin@gmail.com).");
+      }
+
+      // Seed default Patient if empty
+      const patientCheck = dbInstance.exec("SELECT * FROM patients WHERE email = 'patient@gmail.com'");
+      if (!patientCheck || patientCheck.length === 0 || patientCheck[0].values.length === 0) {
+        const patientHash = await hashPasswordSHA256("patient123");
+        dbInstance.run(
+          "INSERT INTO patients (uid, name, email, password_hash, role, mobile) VALUES (?, ?, ?, ?, 'patient', ?)",
+          ["4001", "Patient User", "patient@gmail.com", patientHash, "+91 98765 43210"]
+        );
+        saveSQLiteState();
+        console.log("[SQLite] Pre-seeded default Patient (UID: 4001, patient@gmail.com).");
       }
     }
   } catch (err) {
@@ -3406,6 +3452,36 @@ function generateProfessionalId() {
   
   // Fallback with timestamp to guarantee uniqueness
   return `DOC-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+}
+
+// Generate Unique Alphanumeric Patient ID (PAT-XXXXX format)
+function generatePatientId() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  
+  for (let attempt = 0; attempt < 100; attempt++) {
+    let randomPart = "";
+    for (let i = 0; i < 5; i++) {
+      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const patientId = `PAT-${randomPart}`;
+    
+    // Check uniqueness in client-side database
+    if (dbInstance) {
+      try {
+        const checkRes = dbInstance.exec(`SELECT id FROM patients WHERE uid = '${patientId}'`);
+        if (!checkRes || checkRes.length === 0 || checkRes[0].values.length === 0) {
+          return patientId;
+        }
+      } catch (e) {
+        return patientId;
+      }
+    } else {
+      return patientId;
+    }
+  }
+  
+  // Fallback with timestamp to guarantee uniqueness
+  return `PAT-${Date.now().toString(36).toUpperCase().slice(-5)}`;
 }
 
 // Frontend Strong Password Validation
@@ -3767,6 +3843,272 @@ function setAuthenticatedDoctorSession(doctor) {
   if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
   if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
   if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
+  if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
+  if (appDashboard) appDashboard.style.display = "flex";
+
+  if (typeof triggerHeaderBootSequence === "function") {
+    triggerHeaderBootSequence();
+  }
+}
+
+// ============================================================
+// PATIENT AUTHENTICATION & API HELPERS
+// ============================================================
+
+// Register Patient in SQLite (Real Backend API + Client SQLite Fallback)
+async function registerPatientAccount(name, email, password, mobile, uid = "") {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = name.trim();
+  const cleanMobile = mobile.trim();
+  const cleanUid = uid.trim().toUpperCase();
+  const pwdHash = await hashPasswordSHA256(password);
+
+  // 1. Try Backend REST API first
+  const apiRes = await callBackendAPI("/api/patients/register", {
+    name: cleanName,
+    email: cleanEmail,
+    password: password,
+    mobile: cleanMobile,
+    uid: cleanUid
+  });
+  if (apiRes) return apiRes;
+
+  // 2. Client SQLite fallback
+  if (dbInstance) {
+    const checkRes = dbInstance.exec(`SELECT id FROM patients WHERE LOWER(email) = '${cleanEmail}'`);
+    if (checkRes && checkRes.length > 0 && checkRes[0].values.length > 0) {
+      return { success: false, error: "An account with this email already exists." };
+    }
+
+    let finalUid = cleanUid;
+    if (finalUid) {
+      const uidCheck = dbInstance.exec(`SELECT id FROM patients WHERE UPPER(uid) = '${finalUid}'`);
+      if (uidCheck && uidCheck.length > 0 && uidCheck[0].values.length > 0) {
+        return { success: false, error: `Patient ID '${finalUid}' is already in use.` };
+      }
+    } else {
+      finalUid = generatePatientId();
+    }
+
+    dbInstance.run(
+      "INSERT INTO patients (uid, name, email, password_hash, role, mobile) VALUES (?, ?, ?, ?, 'patient', ?)",
+      [finalUid, cleanName, cleanEmail, pwdHash, cleanMobile]
+    );
+    saveSQLiteState();
+
+    return {
+      success: true,
+      patient: { uid: finalUid, name: cleanName, email: cleanEmail, mobile: cleanMobile, role: "patient" }
+    };
+  }
+
+  return { success: false, error: "Database engine unavailable. Please try again." };
+}
+
+// Authenticate Patient against SQLite (Email OR UID)
+async function authenticatePatientAccount(loginId, password) {
+  const cleanLogin = loginId.trim().toLowerCase();
+  const pwdHash = await hashPasswordSHA256(password);
+
+  // 1. Try Backend REST API first
+  const apiRes = await callBackendAPI("/api/patients/login", {
+    login_id: cleanLogin,
+    password: password
+  });
+  if (apiRes) return apiRes;
+
+  // 2. Client SQLite fallback
+  if (dbInstance) {
+    const stmt = `SELECT id, uid, name, email, role FROM patients WHERE (LOWER(email) = '${cleanLogin}' OR LOWER(uid) = '${cleanLogin}') AND password_hash = '${pwdHash}'`;
+    const res = dbInstance.exec(stmt);
+    if (res && res.length > 0 && res[0].values.length > 0) {
+      const row = res[0].values[0];
+      return {
+        success: true,
+        patient: { id: row[0], uid: String(row[1]), name: row[2], email: row[3], role: row[4] }
+      };
+    }
+    return { success: false, error: "Invalid email/Patient ID or password." };
+  }
+
+  return { success: false, error: "Invalid credentials." };
+}
+
+// Request Patient Password Reset OTP (Real Backend API + Client SQLite Fallback)
+async function requestPatientResetOTP(identifier) {
+  const cleanId = identifier.trim().toLowerCase();
+
+  // 1. Try Backend REST API first (sends real email via SMTP)
+  const apiRes = await callBackendAPI("/api/patients/forgot-password/send-otp", {
+    identifier: cleanId
+  });
+  if (apiRes) return apiRes;
+
+  // 2. Client SQLite fallback
+  if (dbInstance) {
+    const stmt = `SELECT id, uid, name, email FROM patients WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`;
+    const res = dbInstance.exec(stmt);
+    if (res && res.length > 0 && res[0].values.length > 0) {
+      const row = res[0].values[0];
+      const patEmail = String(row[3]);
+      const patUid = String(row[1]);
+
+      const offlineOtp = String(Math.floor(100000 + Math.random() * 900000));
+      const expiry = Date.now() + 10 * 60 * 1000;
+      sessionStorage.setItem("torus_offline_patient_reset", JSON.stringify({
+        email: patEmail,
+        uid: patUid,
+        otp: offlineOtp,
+        expires: expiry
+      }));
+
+      return {
+        success: true,
+        message: `A 6-digit OTP code has been generated: ${offlineOtp} (Offline Fallback)`,
+        masked_email: maskEmailAddress(patEmail),
+        email: patEmail,
+        offline: true
+      };
+    }
+    return {
+      success: false,
+      error: "No patient account found with this email or User ID."
+    };
+  }
+
+  return {
+    success: false,
+    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+  };
+}
+
+// Verify Patient Password Reset OTP
+async function verifyPatientResetOTP(identifier, otp) {
+  const cleanId = identifier.trim().toLowerCase();
+  const cleanOtp = String(otp).trim();
+
+  // 1. Try Backend REST API first
+  const apiRes = await callBackendAPI("/api/patients/forgot-password/verify-otp", {
+    identifier: cleanId,
+    otp: cleanOtp
+  });
+  if (apiRes) return apiRes;
+
+  // 2. Client SQLite fallback
+  const offlineDataStr = sessionStorage.getItem("torus_offline_patient_reset");
+  if (offlineDataStr) {
+    try {
+      const offlineData = JSON.parse(offlineDataStr);
+      if (Date.now() > offlineData.expires) {
+        return { success: false, error: "OTP has expired. Please request a new OTP." };
+      }
+      if (offlineData.otp !== cleanOtp) {
+        return { success: false, error: "Invalid OTP code. Please enter the valid 6-digit code." };
+      }
+      const resetToken = "offline_pat_token_" + Date.now();
+      offlineData.reset_token = resetToken;
+      sessionStorage.setItem("torus_offline_patient_reset", JSON.stringify(offlineData));
+      return {
+        success: true,
+        message: "OTP verified successfully.",
+        reset_token: resetToken,
+        email: offlineData.email
+      };
+    } catch (e) {
+      console.warn("Offline OTP parse warning:", e);
+    }
+  }
+
+  return {
+    success: false,
+    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+  };
+}
+
+// Reset Patient Password with Verified Token
+async function resetPatientPasswordWithToken(identifier, resetToken, newPassword) {
+  const cleanId = identifier.trim().toLowerCase();
+  const pwdHash = await hashPasswordSHA256(newPassword);
+
+  // 1. Try Backend REST API first
+  const apiRes = await callBackendAPI("/api/patients/forgot-password/reset", {
+    identifier: cleanId,
+    reset_token: resetToken,
+    new_password: newPassword
+  });
+  if (apiRes) {
+    if (apiRes.success && dbInstance) {
+      dbInstance.run(`UPDATE patients SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
+      saveSQLiteState();
+    }
+    return apiRes;
+  }
+
+  // 2. Client SQLite fallback
+  if (dbInstance) {
+    const offlineDataStr = sessionStorage.getItem("torus_offline_patient_reset");
+    let isValidOfflineSession = false;
+    if (offlineDataStr) {
+      try {
+        const offlineData = JSON.parse(offlineDataStr);
+        if (offlineData.reset_token === resetToken || resetToken === "legacy_direct") {
+          isValidOfflineSession = true;
+        }
+      } catch (e) {}
+    }
+
+    if (isValidOfflineSession || resetToken === "legacy_direct") {
+      dbInstance.run(`UPDATE patients SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
+      saveSQLiteState();
+      sessionStorage.removeItem("torus_offline_patient_reset");
+      return {
+        success: true,
+        message: "Password updated successfully in local database. You can now log in."
+      };
+    }
+  }
+
+  return {
+    success: false,
+    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+  };
+}
+
+// Set Active Authenticated Patient Session & Launch Dashboard
+function setAuthenticatedPatientSession(patient) {
+  currentAuthenticatedUser = patient;
+
+  // Bind values to settings inputs
+  if (roleInput) {
+    roleInput.value = "patient";
+    roleInput.dispatchEvent(new Event("change"));
+  }
+  if (uidInput) {
+    uidInput.value = patient.uid;
+  }
+
+  // Update dynamic Header User Badge
+  const nameEl = document.getElementById("user-display-name");
+  const uidEl = document.getElementById("user-display-uid");
+  const badgeEl = document.getElementById("header-user-badge");
+
+  if (nameEl) {
+    nameEl.textContent = patient.name;
+  }
+  if (uidEl) {
+    uidEl.textContent = patient.uid;
+  }
+  if (badgeEl) {
+    badgeEl.style.display = "inline-flex";
+  }
+
+  // Transition UI to Dashboard
+  const patLoginScreen = document.getElementById("patient-login-screen");
+  const patRegScreen = document.getElementById("patient-register-screen");
+  const patForgotScreen = document.getElementById("patient-forgot-screen");
+  if (patLoginScreen) patLoginScreen.style.display = "none";
+  if (patRegScreen) patRegScreen.style.display = "none";
+  if (patForgotScreen) patForgotScreen.style.display = "none";
   if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
 
@@ -4261,6 +4603,424 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       } catch (err) {
         showAlertMessage("forgot-alert-step3", "Failed to reset password. Please try again.");
+      } finally {
+        if (resetBtn) resetBtn.disabled = false;
+      }
+    });
+  }
+
+  // ============================================================
+  // PATIENT AUTHENTICATION DOM EVENT HANDLERS
+  // ============================================================
+
+  // 1. Password Visibility Toggle for Patient Login
+  const patTogglePassBtn = document.getElementById("patient-toggle-password-btn");
+  const patPassInput = document.getElementById("patient-password-input");
+  if (patTogglePassBtn && patPassInput) {
+    patTogglePassBtn.addEventListener("click", () => {
+      const isPass = patPassInput.type === "password";
+      patPassInput.type = isPass ? "text" : "password";
+      const eyeIcon = patTogglePassBtn.querySelector(".eye-icon");
+      const eyeOffIcon = patTogglePassBtn.querySelector(".eye-off-icon");
+      if (eyeIcon && eyeOffIcon) {
+        eyeIcon.style.display = isPass ? "none" : "block";
+        eyeOffIcon.style.display = isPass ? "block" : "none";
+      }
+    });
+  }
+
+  // 2. Back Button from Patient Login to Role Selection
+  const patBackBtn = document.getElementById("patient-login-back-btn");
+  if (patBackBtn) {
+    patBackBtn.addEventListener("click", () => {
+      const patLoginScreen = document.getElementById("patient-login-screen");
+      if (patLoginScreen) patLoginScreen.style.display = "none";
+      if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
+    });
+  }
+
+  // 3. Patient Secure Login Form Submission
+  const patLoginForm = document.getElementById("patient-login-form");
+  if (patLoginForm) {
+    patLoginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("patient-login-alert");
+
+      const emailVal = document.getElementById("patient-email-input")?.value || "";
+      const passVal = document.getElementById("patient-password-input")?.value || "";
+
+      if (!emailVal || !passVal) {
+        showAlertMessage("patient-login-alert", "Please fill in all fields.");
+        return;
+      }
+
+      const res = await authenticatePatientAccount(emailVal, passVal);
+      if (res.success && res.patient) {
+        setAuthenticatedPatientSession(res.patient);
+      } else {
+        showAlertMessage("patient-login-alert", res.error || "Invalid email/Patient ID or password.");
+      }
+    });
+  }
+
+  // 4. Patient Create Account Link -> Navigate to Patient Registration
+  const patCreateAccLink = document.getElementById("patient-create-account-link");
+  const patRegScreen = document.getElementById("patient-register-screen");
+  const patLoginScreen = document.getElementById("patient-login-screen");
+
+  if (patCreateAccLink) {
+    patCreateAccLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      hideAlertMessage("patient-register-alert");
+
+      const regForm = document.getElementById("patient-register-form");
+      if (regForm) regForm.reset();
+
+      const patIdInput = document.getElementById("patient-reg-patient-id");
+      if (patIdInput) patIdInput.value = "";
+
+      if (patLoginScreen) patLoginScreen.style.display = "none";
+      if (patRegScreen) patRegScreen.style.display = "flex";
+    });
+  }
+
+  // 5. Patient Back Button from Registration -> Patient Login
+  const patRegBackBtn = document.getElementById("patient-register-back-btn");
+  if (patRegBackBtn) {
+    patRegBackBtn.addEventListener("click", () => {
+      if (patRegScreen) patRegScreen.style.display = "none";
+      if (patLoginScreen) patLoginScreen.style.display = "flex";
+    });
+  }
+
+  // 6. Password Visibility Toggles for Patient Registration
+  setupPasswordToggle("patient-reg-password-toggle", "patient-reg-password");
+  setupPasswordToggle("patient-reg-confirm-password-toggle", "patient-reg-confirm-password");
+
+  // 7. Patient Registration Form Submission
+  const patRegisterForm = document.getElementById("patient-register-form");
+  if (patRegisterForm) {
+    patRegisterForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await handlePatientRegistration();
+    });
+  }
+
+  async function handlePatientRegistration() {
+    hideAlertMessage("patient-register-alert");
+
+    const nameVal = document.getElementById("patient-reg-name")?.value || "";
+    const patIdVal = document.getElementById("patient-reg-patient-id")?.value?.trim() || "";
+    const emailVal = document.getElementById("patient-reg-email")?.value || "";
+    const mobileVal = document.getElementById("patient-reg-mobile")?.value || "";
+    const passVal = document.getElementById("patient-reg-password")?.value || "";
+    const confirmVal = document.getElementById("patient-reg-confirm-password")?.value || "";
+    const termsChecked = document.getElementById("patient-reg-terms-checkbox")?.checked || false;
+
+    if (!nameVal.trim()) {
+      showAlertMessage("patient-register-alert", "Full Name is required.");
+      return;
+    }
+
+    if (patIdVal) {
+      if (!/^[A-Za-z0-9\-_]{3,20}$/.test(patIdVal)) {
+        showAlertMessage("patient-register-alert", "Patient ID must contain letters and numbers (e.g., PAT-A7K29).");
+        return;
+      }
+    }
+
+    if (!emailVal.trim()) {
+      showAlertMessage("patient-register-alert", "Email is required.");
+      return;
+    }
+
+    if (!validateEmailFormat(emailVal)) {
+      showAlertMessage("patient-register-alert", "Please enter a valid email address.");
+      return;
+    }
+
+    if (!mobileVal.trim()) {
+      showAlertMessage("patient-register-alert", "Mobile Number is required.");
+      return;
+    }
+
+    if (!validateMobileFormat(mobileVal)) {
+      showAlertMessage("patient-register-alert", "Please enter a valid mobile number.");
+      return;
+    }
+
+    if (!passVal) {
+      showAlertMessage("patient-register-alert", "Password is required.");
+      return;
+    }
+
+    const pwdCheck = validateStrongPassword(passVal);
+    if (!pwdCheck.valid) {
+      showAlertMessage("patient-register-alert", "Password must be at least 8 characters long and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character (e.g. Patient@2026).");
+      return;
+    }
+
+    if (!confirmVal) {
+      showAlertMessage("patient-register-alert", "Please confirm your password.");
+      return;
+    }
+
+    if (passVal !== confirmVal) {
+      showAlertMessage("patient-register-alert", "Passwords do not match.");
+      return;
+    }
+
+    if (!termsChecked) {
+      showAlertMessage("patient-register-alert", "You must agree to the Terms & Conditions and Privacy Policy.");
+      return;
+    }
+
+    const res = await registerPatientAccount(nameVal, emailVal, passVal, mobileVal, patIdVal);
+
+    if (res.success && res.patient) {
+      if (patRegScreen) patRegScreen.style.display = "none";
+      if (patLoginScreen) patLoginScreen.style.display = "flex";
+
+      const emailInput = document.getElementById("patient-email-input");
+      if (emailInput) emailInput.value = res.patient.email;
+      const loginPassInput = document.getElementById("patient-password-input");
+      if (loginPassInput) loginPassInput.value = "";
+
+      showAlertMessage(
+        "patient-login-alert",
+        `Account created successfully! Patient ID: ${res.patient.uid}. You can now log in.`,
+        "success"
+      );
+    } else {
+      showAlertMessage("patient-register-alert", res.error || "Registration failed. Please try again.");
+    }
+  }
+
+  // 8. Patient Forgot Password Multi-Step Handlers
+  const patForgotScreen = document.getElementById("patient-forgot-screen");
+  const patForgotLink = document.getElementById("patient-forgot-link");
+  const patForgotBackBtn = document.getElementById("patient-forgot-back-btn");
+  const patForgotStep2BackBtn = document.getElementById("patient-forgot-step2-back-btn");
+  const patForgotStep3BackBtn = document.getElementById("patient-forgot-step3-back-btn");
+
+  const patForgotStep1 = document.getElementById("patient-forgot-step-1");
+  const patForgotStep2 = document.getElementById("patient-forgot-step-2");
+  const patForgotStep3 = document.getElementById("patient-forgot-step-3");
+
+  const patFormStep1 = document.getElementById("patient-forgot-form-step1");
+  const patFormStep2 = document.getElementById("patient-forgot-form-step2");
+  const patFormStep3 = document.getElementById("patient-forgot-form-step3");
+
+  const patInputIdentifier = document.getElementById("patient-forgot-identifier");
+  const patInputOtp = document.getElementById("patient-forgot-otp-input");
+  const patInputNewPass = document.getElementById("patient-forgot-new-pass");
+  const patInputConfirmPass = document.getElementById("patient-forgot-confirm-pass");
+  const patResendOtpBtn = document.getElementById("patient-forgot-resend-otp-btn");
+
+  let currentPatientResetIdentifier = "";
+  let currentPatientResetToken = "";
+
+  function resetPatientForgotFlowUI() {
+    hideAlertMessage("patient-forgot-alert-step1");
+    hideAlertMessage("patient-forgot-alert-step2");
+    hideAlertMessage("patient-forgot-alert-step3");
+
+    if (patInputIdentifier) patInputIdentifier.value = "";
+    if (patInputOtp) patInputOtp.value = "";
+    if (patInputNewPass) patInputNewPass.value = "";
+    if (patInputConfirmPass) patInputConfirmPass.value = "";
+
+    currentPatientResetIdentifier = "";
+    currentPatientResetToken = "";
+
+    if (patForgotStep1) patForgotStep1.style.display = "flex";
+    if (patForgotStep2) patForgotStep2.style.display = "none";
+    if (patForgotStep3) patForgotStep3.style.display = "none";
+  }
+
+  function showPatientLoginFromForgot() {
+    if (patForgotScreen) patForgotScreen.style.display = "none";
+    if (patLoginScreen) patLoginScreen.style.display = "flex";
+    resetPatientForgotFlowUI();
+  }
+
+  if (patForgotLink) {
+    patForgotLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetPatientForgotFlowUI();
+
+      if (patLoginScreen) patLoginScreen.style.display = "none";
+      if (patRegScreen) patRegScreen.style.display = "none";
+      if (patForgotScreen) patForgotScreen.style.display = "flex";
+    });
+  }
+
+  if (patForgotBackBtn) {
+    patForgotBackBtn.addEventListener("click", showPatientLoginFromForgot);
+  }
+
+  if (patForgotStep2BackBtn) {
+    patForgotStep2BackBtn.addEventListener("click", () => {
+      hideAlertMessage("patient-forgot-alert-step1");
+      hideAlertMessage("patient-forgot-alert-step2");
+      if (patForgotStep1) patForgotStep1.style.display = "flex";
+      if (patForgotStep2) patForgotStep2.style.display = "none";
+      if (patForgotStep3) patForgotStep3.style.display = "none";
+    });
+  }
+
+  if (patForgotStep3BackBtn) {
+    patForgotStep3BackBtn.addEventListener("click", showPatientLoginFromForgot);
+  }
+
+  // Patient Step 1: Send OTP
+  if (patFormStep1) {
+    patFormStep1.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("patient-forgot-alert-step1");
+
+      const identifierVal = patInputIdentifier?.value?.trim() || "";
+      if (!identifierVal) {
+        showAlertMessage("patient-forgot-alert-step1", "Please enter your registered Email or User ID.");
+        return;
+      }
+
+      const submitBtn = document.getElementById("patient-forgot-send-otp-btn");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await requestPatientResetOTP(identifierVal);
+        if (res.success) {
+          currentPatientResetIdentifier = identifierVal;
+          if (patForgotStep1) patForgotStep1.style.display = "none";
+          if (patForgotStep2) patForgotStep2.style.display = "flex";
+          if (patForgotStep3) patForgotStep3.style.display = "none";
+
+          showAlertMessage("patient-forgot-alert-step2", res.message || "A 6-digit OTP has been sent to your registered email address.", "success");
+        } else {
+          showAlertMessage("patient-forgot-alert-step1", res.error || "No patient account found with this email or User ID.");
+        }
+      } catch (err) {
+        showAlertMessage("patient-forgot-alert-step1", "Failed to send OTP. Please try again.");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  // Patient Step 2: Verify OTP
+  if (patFormStep2) {
+    patFormStep2.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("patient-forgot-alert-step2");
+
+      const otpVal = patInputOtp?.value?.trim() || "";
+      if (!otpVal || otpVal.length !== 6) {
+        showAlertMessage("patient-forgot-alert-step2", "Please enter the valid 6-digit OTP code.");
+        return;
+      }
+
+      const verifyBtn = document.getElementById("patient-forgot-verify-otp-btn");
+      if (verifyBtn) verifyBtn.disabled = true;
+
+      try {
+        const res = await verifyPatientResetOTP(currentPatientResetIdentifier, otpVal);
+        if (res.success) {
+          currentPatientResetToken = res.reset_token || otpVal;
+          if (patForgotStep1) patForgotStep1.style.display = "none";
+          if (patForgotStep2) patForgotStep2.style.display = "none";
+          if (patForgotStep3) patForgotStep3.style.display = "flex";
+          hideAlertMessage("patient-forgot-alert-step3");
+        } else {
+          showAlertMessage("patient-forgot-alert-step2", res.error || "Invalid OTP code. Please check your email.");
+        }
+      } catch (err) {
+        showAlertMessage("patient-forgot-alert-step2", "Verification error. Please try again.");
+      } finally {
+        if (verifyBtn) verifyBtn.disabled = false;
+      }
+    });
+  }
+
+  // Patient Resend OTP
+  if (patResendOtpBtn) {
+    patResendOtpBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("patient-forgot-alert-step2");
+
+      if (!currentPatientResetIdentifier) {
+        showAlertMessage("patient-forgot-alert-step2", "Session expired. Please return to Step 1.");
+        return;
+      }
+
+      try {
+        const res = await requestPatientResetOTP(currentPatientResetIdentifier);
+        if (res.success) {
+          showAlertMessage("patient-forgot-alert-step2", res.message || "A fresh 6-digit OTP has been sent to your registered email.", "success");
+        } else {
+          showAlertMessage("patient-forgot-alert-step2", res.error || "Could not resend OTP.");
+        }
+      } catch (err) {
+        showAlertMessage("patient-forgot-alert-step2", "Failed to resend OTP.");
+      }
+    });
+  }
+
+  // Patient Step 3: Reset Password
+  if (patFormStep3) {
+    patFormStep3.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("patient-forgot-alert-step3");
+
+      const newPass = patInputNewPass?.value || "";
+      const confirmPass = patInputConfirmPass?.value || "";
+
+      if (!newPass) {
+        showAlertMessage("patient-forgot-alert-step3", "New Password is required.");
+        return;
+      }
+
+      const pwdCheck = validateStrongPassword(newPass);
+      if (!pwdCheck.valid) {
+        showAlertMessage("patient-forgot-alert-step3", pwdCheck.error);
+        return;
+      }
+
+      if (!confirmPass) {
+        showAlertMessage("patient-forgot-alert-step3", "Please confirm your new password.");
+        return;
+      }
+
+      if (newPass !== confirmPass) {
+        showAlertMessage("patient-forgot-alert-step3", "Passwords do not match.");
+        return;
+      }
+
+      const resetBtn = document.getElementById("patient-forgot-reset-submit-btn");
+      if (resetBtn) resetBtn.disabled = true;
+
+      try {
+        const res = await resetPatientPasswordWithToken(currentPatientResetIdentifier, currentPatientResetToken, newPass);
+        if (res.success) {
+          showPatientLoginFromForgot();
+
+          const emailInput = document.getElementById("patient-email-input");
+          if (emailInput && currentPatientResetIdentifier) {
+            emailInput.value = currentPatientResetIdentifier;
+          }
+          const passInput = document.getElementById("patient-password-input");
+          if (passInput) passInput.value = "";
+
+          showAlertMessage(
+            "patient-login-alert",
+            "Password reset successfully! Please log in with your new password.",
+            "success"
+          );
+        } else {
+          showAlertMessage("patient-forgot-alert-step3", res.error || "Password reset failed.");
+        }
+      } catch (err) {
+        showAlertMessage("patient-forgot-alert-step3", "Failed to reset password. Please try again.");
       } finally {
         if (resetBtn) resetBtn.disabled = false;
       }
