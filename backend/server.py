@@ -1,6 +1,6 @@
 """
 TORUS Clinical Robotics Platform - Backend API Server
-Handles Doctor & Patient Registration, Authentication, Password Reset, and Real SMTP OTP Dispatch.
+Handles Doctor, Patient & Viewer Registration, Authentication, Password Reset, and Real SMTP OTP Dispatch.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def api_login_doctor():
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    login_id = data.get("login_id", "").strip()
+    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
     password = data.get("password", "")
 
     if not login_id or not password:
@@ -166,7 +166,7 @@ def api_login_patient():
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    login_id = data.get("login_id", "").strip()
+    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
     password = data.get("password", "")
 
     if not login_id or not password:
@@ -237,6 +237,193 @@ def api_patient_forgot_password():
     else:
         return jsonify({"success": False, "error": "Email or Patient ID is required."}), 400
 
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+# -------------------- VIEWER AUTHENTICATION API --------------------
+@app.route("/api/viewers/register", methods=["POST", "OPTIONS"])
+def api_register_viewer():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    mobile = data.get("mobile", "").strip()
+    uid = data.get("uid", "").strip() or data.get("viewer_id", "").strip()
+
+    if not name or not email or not password:
+        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
+
+    res = database.register_viewer(name, email, password, mobile=mobile, uid=uid)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/viewers/login", methods=["POST", "OPTIONS"])
+def api_login_viewer():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
+    password = data.get("password", "")
+
+    if not login_id or not password:
+        return jsonify({"success": False, "error": "Email/Viewer ID and password are required."}), 400
+
+    res = database.authenticate_viewer(login_id, password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/viewers/forgot-password/send-otp", methods=["POST", "OPTIONS"])
+def api_viewer_forgot_password_send_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+
+    if not identifier:
+        return jsonify({"success": False, "error": "Email or Viewer ID is required."}), 400
+
+    res = database.generate_and_store_viewer_reset_otp(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/viewers/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
+def api_viewer_forgot_password_verify_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    otp = str(data.get("otp", "")).strip()
+
+    if not identifier or not otp:
+        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
+
+    res = database.verify_viewer_reset_otp(identifier, otp)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/viewers/forgot-password/reset", methods=["POST", "OPTIONS"])
+def api_viewer_forgot_password_reset():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
+    new_password = data.get("new_password", "")
+
+    if not identifier or not reset_token or not new_password:
+        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
+
+    res = database.reset_viewer_password_with_token(identifier, reset_token, new_password)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/viewers/forgot-password", methods=["POST", "OPTIONS"])
+def api_viewer_forgot_password():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip()
+    new_password = data.get("new_password", "")
+    reset_token = data.get("reset_token", "").strip()
+
+    if new_password and reset_token:
+        res = database.reset_viewer_password_with_token(identifier, reset_token, new_password)
+    elif identifier:
+        res = database.generate_and_store_viewer_reset_otp(identifier)
+    else:
+        return jsonify({"success": False, "error": "Email or Viewer ID is required."}), 400
+
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+# -------------------- UNIFIED ROLE-BASED AUTHENTICATION API --------------------
+@app.route("/api/auth/register", methods=["POST", "OPTIONS"])
+@app.route("/api/register", methods=["POST", "OPTIONS"])
+def api_unified_register():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "doctor").strip().lower()
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    mobile = data.get("mobile", "").strip()
+    uid = data.get("uid", "").strip()
+
+    if not name or not email or not password:
+        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
+
+    res = database.register_for_role(name, email, password, mobile=mobile, uid=uid, role=role)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/auth/login", methods=["POST", "OPTIONS"])
+@app.route("/api/login", methods=["POST", "OPTIONS"])
+def api_unified_login():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "doctor").strip().lower()
+    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
+    password = data.get("password", "")
+
+    if not login_id or not password:
+        return jsonify({"success": False, "error": "Email/User ID and password are required."}), 400
+
+    res = database.authenticate_for_role(login_id, password, role=role)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/forgot-password/send-otp", methods=["POST", "OPTIONS"])
+@app.route("/api/auth/forgot-password/send-otp", methods=["POST", "OPTIONS"])
+def api_unified_forgot_password_send_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "doctor").strip().lower()
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+
+    if not identifier:
+        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
+
+    res = database.generate_and_store_otp_for_role(identifier, role=role)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
+@app.route("/api/auth/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
+def api_unified_forgot_password_verify_otp():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "doctor").strip().lower()
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    otp = str(data.get("otp", "")).strip()
+
+    if not identifier or not otp:
+        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
+
+    res = database.verify_otp_for_role(identifier, otp, role=role)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/forgot-password/reset", methods=["POST", "OPTIONS"])
+@app.route("/api/auth/forgot-password/reset", methods=["POST", "OPTIONS"])
+def api_unified_forgot_password_reset():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "doctor").strip().lower()
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
+    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
+    new_password = data.get("new_password", "")
+
+    if not identifier or not reset_token or not new_password:
+        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
+
+    res = database.reset_password_for_role(identifier, reset_token, new_password, role=role)
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 

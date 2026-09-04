@@ -2059,6 +2059,9 @@ const doctorRegisterScreen = document.getElementById("doctor-register-screen");
 const patientLoginScreen = document.getElementById("patient-login-screen");
 const patientRegisterScreen = document.getElementById("patient-register-screen");
 const patientForgotScreen = document.getElementById("patient-forgot-screen");
+const viewerLoginScreen = document.getElementById("viewer-login-screen");
+const viewerRegisterScreen = document.getElementById("viewer-register-screen");
+const viewerForgotScreen = document.getElementById("viewer-forgot-screen");
 const appDashboard = document.getElementById("app-dashboard");
 
 roleCards.forEach(card => {
@@ -2078,6 +2081,19 @@ roleCards.forEach(card => {
       roleSelectionScreen.style.display = "none";
       const patLoginScreen = document.getElementById("patient-login-screen");
       if (patLoginScreen) patLoginScreen.style.display = "flex";
+      return;
+    }
+
+    if (selectedRole === "viewer") {
+      // Show Viewer Secure Login screen
+      const viewerEmailInput = document.getElementById("viewer-email-input");
+      if (viewerEmailInput && !viewerEmailInput.value) {
+        viewerEmailInput.value = "user@gmail.com";
+      }
+
+      roleSelectionScreen.style.display = "none";
+      const viewLoginScreen = document.getElementById("viewer-login-screen");
+      if (viewLoginScreen) viewLoginScreen.style.display = "flex";
       return;
     }
 
@@ -3374,6 +3390,19 @@ async function initSQLiteDatabase() {
         );
       `);
 
+      dbInstance.run(`
+        CREATE TABLE IF NOT EXISTS viewers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          uid TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'viewer',
+          mobile TEXT DEFAULT '',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
       // Safely add mobile column if missing (for pre-existing databases)
       try {
         dbInstance.run("SELECT mobile FROM doctors LIMIT 1");
@@ -3392,6 +3421,16 @@ async function initSQLiteDatabase() {
           dbInstance.run("ALTER TABLE patients ADD COLUMN mobile TEXT DEFAULT ''");
           saveSQLiteState();
           console.log("[SQLite] Migrated: added 'mobile' column to patients.");
+        } catch (e2) { }
+      }
+
+      try {
+        dbInstance.run("SELECT mobile FROM viewers LIMIT 1");
+      } catch (e) {
+        try {
+          dbInstance.run("ALTER TABLE viewers ADD COLUMN mobile TEXT DEFAULT ''");
+          saveSQLiteState();
+          console.log("[SQLite] Migrated: added 'mobile' column to viewers.");
         } catch (e2) { }
       }
 
@@ -3418,10 +3457,58 @@ async function initSQLiteDatabase() {
         saveSQLiteState();
         console.log("[SQLite] Pre-seeded default Patient (UID: 4001, patient@gmail.com).");
       }
+
+      // Seed default Viewer if empty
+      const viewerCheck = dbInstance.exec("SELECT * FROM viewers WHERE email IN ('user@gmail.com', 'viewer@torus.local')");
+      if (!viewerCheck || viewerCheck.length === 0 || viewerCheck[0].values.length === 0) {
+        const viewerHash = await hashPasswordSHA256("user123");
+        dbInstance.run(
+          "INSERT INTO viewers (uid, name, email, password_hash, role, mobile) VALUES (?, ?, ?, ?, 'viewer', ?)",
+          ["6001", "Viewer 1", "user@gmail.com", viewerHash, "+91 98765 43210"]
+        );
+        saveSQLiteState();
+        console.log("[SQLite] Pre-seeded default Viewer (UID: 6001, user@gmail.com).");
+      }
     }
   } catch (err) {
     console.warn("[SQLite] sql.js initialization warning (falling back to REST API):", err);
   }
+}
+
+// Generate Unique Alphanumeric Viewer ID (6001+ or VIEW-XXXXX format)
+function generateViewerId() {
+  if (dbInstance) {
+    try {
+      for (let num = 6001; num < 6100; num++) {
+        const uidStr = String(num);
+        const checkRes = dbInstance.exec(`SELECT id FROM viewers WHERE uid = '${uidStr}'`);
+        if (!checkRes || checkRes.length === 0 || checkRes[0].values.length === 0) {
+          return uidStr;
+        }
+      }
+    } catch (e) { }
+  }
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  for (let attempt = 0; attempt < 100; attempt++) {
+    let randomPart = "";
+    for (let i = 0; i < 5; i++) {
+      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const viewerId = `VIEW-${randomPart}`;
+    if (dbInstance) {
+      try {
+        const checkRes = dbInstance.exec(`SELECT id FROM viewers WHERE uid = '${viewerId}'`);
+        if (!checkRes || checkRes.length === 0 || checkRes[0].values.length === 0) {
+          return viewerId;
+        }
+      } catch (e) {
+        return viewerId;
+      }
+    } else {
+      return viewerId;
+    }
+  }
+  return `VIEW-${Date.now().toString(36).toUpperCase().slice(-5)}`;
 }
 
 // Generate Unique Alphanumeric Professional ID (DOC-XXXXX format)
@@ -3578,225 +3665,94 @@ function maskEmailAddress(email) {
   return user[0] + "*".repeat(user.length - 2) + user[user.length - 1] + "@" + domain;
 }
 
-// Register Doctor in SQLite
+// Register Doctor in Backend Database
 async function registerDoctorAccount(name, email, password, mobile, uid = "") {
   const cleanEmail = email.trim().toLowerCase();
   const cleanName = name.trim();
   const cleanMobile = mobile.trim();
   const cleanUid = uid.trim().toUpperCase();
-  const pwdHash = await hashPasswordSHA256(password);
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/doctors/register", {
     name: cleanName,
     email: cleanEmail,
     password: password,
     mobile: cleanMobile,
-    uid: cleanUid
+    uid: cleanUid,
+    role: "doctor"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    // Check duplicate email
-    const checkRes = dbInstance.exec(`SELECT id FROM doctors WHERE LOWER(email) = '${cleanEmail}'`);
-    if (checkRes && checkRes.length > 0 && checkRes[0].values.length > 0) {
-      return { success: false, error: "An account with this email already exists." };
-    }
-
-    // Process UID
-    let finalUid = cleanUid;
-    if (finalUid) {
-      const uidCheck = dbInstance.exec(`SELECT id FROM doctors WHERE UPPER(uid) = '${finalUid}'`);
-      if (uidCheck && uidCheck.length > 0 && uidCheck[0].values.length > 0) {
-        return { success: false, error: `Professional ID '${finalUid}' is already in use.` };
-      }
-    } else {
-      finalUid = generateProfessionalId();
-    }
-
-    dbInstance.run(
-      "INSERT INTO doctors (uid, name, email, password_hash, role, mobile) VALUES (?, ?, ?, ?, 'doctor', ?)",
-      [finalUid, cleanName, cleanEmail, pwdHash, cleanMobile]
-    );
-    saveSQLiteState();
-
-    return {
-      success: true,
-      doctor: { uid: finalUid, name: cleanName, email: cleanEmail, mobile: cleanMobile, role: "doctor" }
-    };
-  }
-
-  return { success: false, error: "Database engine unavailable. Please try again." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
 }
 
-// Authenticate Doctor against SQLite (Email OR UID)
+// Authenticate Doctor against Backend Database (Email OR UID)
 async function authenticateDoctorAccount(loginId, password) {
   const cleanLogin = loginId.trim().toLowerCase();
-  const pwdHash = await hashPasswordSHA256(password);
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/doctors/login", {
     login_id: cleanLogin,
-    password: password
+    password: password,
+    role: "doctor"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const stmt = `SELECT id, uid, name, email, role FROM doctors WHERE (LOWER(email) = '${cleanLogin}' OR LOWER(uid) = '${cleanLogin}') AND password_hash = '${pwdHash}'`;
-    const res = dbInstance.exec(stmt);
-    if (res && res.length > 0 && res[0].values.length > 0) {
-      const row = res[0].values[0];
-      return {
-        success: true,
-        doctor: { id: row[0], uid: String(row[1]), name: row[2], email: row[3], role: row[4] }
-      };
-    }
-    return { success: false, error: "Invalid email/UID or password." };
-  }
-
-  return { success: false, error: "Invalid credentials." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
 }
 
-// Request Doctor Password Reset OTP (Real Backend API + Client SQLite Fallback)
+// Request Doctor Password Reset OTP (Real Backend API + SMTP Dispatch)
 async function requestDoctorResetOTP(identifier) {
   const cleanId = identifier.trim().toLowerCase();
 
-  // 1. Try Backend REST API first (sends real email via SMTP)
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/doctors/forgot-password/send-otp", {
-    identifier: cleanId
+    identifier: cleanId,
+    role: "doctor"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const stmt = `SELECT id, uid, name, email FROM doctors WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`;
-    const res = dbInstance.exec(stmt);
-    if (res && res.length > 0 && res[0].values.length > 0) {
-      const row = res[0].values[0];
-      const docEmail = String(row[3]);
-      const docUid = String(row[1]);
-
-      // Generate a 6-digit OTP for offline/demo recovery
-      const offlineOtp = String(Math.floor(100000 + Math.random() * 900000));
-      const expiry = Date.now() + 10 * 60 * 1000;
-      sessionStorage.setItem("torus_offline_reset", JSON.stringify({
-        email: docEmail,
-        uid: docUid,
-        otp: offlineOtp,
-        expires: expiry
-      }));
-
-      return {
-        success: true,
-        message: `A 6-digit OTP code has been generated: ${offlineOtp} (Offline Fallback)`,
-        masked_email: maskEmailAddress(docEmail),
-        email: docEmail,
-        offline: true
-      };
-    }
-    return {
-      success: false,
-      error: "No account found with this email or User ID."
-    };
-  }
-
   return {
     success: false,
-    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
   };
 }
 
-// Verify Doctor Password Reset OTP (Real Backend API + Client SQLite Fallback)
+// Verify Doctor Password Reset OTP (Real Backend API Verification)
 async function verifyDoctorResetOTP(identifier, otp) {
   const cleanId = identifier.trim().toLowerCase();
   const cleanOtp = String(otp).trim();
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/doctors/forgot-password/verify-otp", {
     identifier: cleanId,
-    otp: cleanOtp
+    otp: cleanOtp,
+    role: "doctor"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  const offlineDataStr = sessionStorage.getItem("torus_offline_reset");
-  if (offlineDataStr) {
-    try {
-      const offlineData = JSON.parse(offlineDataStr);
-      if (Date.now() > offlineData.expires) {
-        return { success: false, error: "OTP has expired. Please request a new OTP." };
-      }
-      if (offlineData.otp !== cleanOtp) {
-        return { success: false, error: "Invalid OTP code. Please enter the valid 6-digit code." };
-      }
-      const resetToken = "offline_token_" + Date.now();
-      offlineData.reset_token = resetToken;
-      sessionStorage.setItem("torus_offline_reset", JSON.stringify(offlineData));
-      return {
-        success: true,
-        message: "OTP verified successfully.",
-        reset_token: resetToken,
-        email: offlineData.email
-      };
-    } catch (e) {
-      console.warn("Offline OTP parse warning:", e);
-    }
-  }
-
   return {
     success: false,
-    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
   };
 }
 
-// Reset Doctor Password with Verified Token (Real Backend API + Client SQLite Fallback)
+// Reset Doctor Password with Verified Token (Real Backend API Reset)
 async function resetDoctorPasswordWithToken(identifier, resetToken, newPassword) {
   const cleanId = identifier.trim().toLowerCase();
-  const pwdHash = await hashPasswordSHA256(newPassword);
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/doctors/forgot-password/reset", {
     identifier: cleanId,
     reset_token: resetToken,
-    new_password: newPassword
+    new_password: newPassword,
+    role: "doctor"
   });
-  if (apiRes) {
-    if (apiRes.success && dbInstance) {
-      dbInstance.run(`UPDATE doctors SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
-      saveSQLiteState();
-    }
-    return apiRes;
-  }
-
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const offlineDataStr = sessionStorage.getItem("torus_offline_reset");
-    let isValidOfflineSession = false;
-    if (offlineDataStr) {
-      try {
-        const offlineData = JSON.parse(offlineDataStr);
-        if (offlineData.reset_token === resetToken || resetToken === "legacy_direct") {
-          isValidOfflineSession = true;
-        }
-      } catch (e) { }
-    }
-
-    if (isValidOfflineSession || resetToken === "legacy_direct") {
-      dbInstance.run(`UPDATE doctors SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
-      saveSQLiteState();
-      sessionStorage.removeItem("torus_offline_reset");
-      return {
-        success: true,
-        message: "Password updated successfully in local database. You can now log in."
-      };
-    }
-  }
+  if (apiRes) return apiRes;
 
   return {
     success: false,
-    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
   };
 }
 
@@ -3855,222 +3811,94 @@ function setAuthenticatedDoctorSession(doctor) {
 // PATIENT AUTHENTICATION & API HELPERS
 // ============================================================
 
-// Register Patient in SQLite (Real Backend API + Client SQLite Fallback)
+// Register Patient in Backend Database
 async function registerPatientAccount(name, email, password, mobile, uid = "") {
   const cleanEmail = email.trim().toLowerCase();
   const cleanName = name.trim();
   const cleanMobile = mobile.trim();
   const cleanUid = uid.trim().toUpperCase();
-  const pwdHash = await hashPasswordSHA256(password);
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/patients/register", {
     name: cleanName,
     email: cleanEmail,
     password: password,
     mobile: cleanMobile,
-    uid: cleanUid
+    uid: cleanUid,
+    role: "patient"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const checkRes = dbInstance.exec(`SELECT id FROM patients WHERE LOWER(email) = '${cleanEmail}'`);
-    if (checkRes && checkRes.length > 0 && checkRes[0].values.length > 0) {
-      return { success: false, error: "An account with this email already exists." };
-    }
-
-    let finalUid = cleanUid;
-    if (finalUid) {
-      const uidCheck = dbInstance.exec(`SELECT id FROM patients WHERE UPPER(uid) = '${finalUid}'`);
-      if (uidCheck && uidCheck.length > 0 && uidCheck[0].values.length > 0) {
-        return { success: false, error: `Patient ID '${finalUid}' is already in use.` };
-      }
-    } else {
-      finalUid = generatePatientId();
-    }
-
-    dbInstance.run(
-      "INSERT INTO patients (uid, name, email, password_hash, role, mobile) VALUES (?, ?, ?, ?, 'patient', ?)",
-      [finalUid, cleanName, cleanEmail, pwdHash, cleanMobile]
-    );
-    saveSQLiteState();
-
-    return {
-      success: true,
-      patient: { uid: finalUid, name: cleanName, email: cleanEmail, mobile: cleanMobile, role: "patient" }
-    };
-  }
-
-  return { success: false, error: "Database engine unavailable. Please try again." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
 }
 
-// Authenticate Patient against SQLite (Email OR UID)
+// Authenticate Patient against Backend Database (Email OR UID)
 async function authenticatePatientAccount(loginId, password) {
   const cleanLogin = loginId.trim().toLowerCase();
-  const pwdHash = await hashPasswordSHA256(password);
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/patients/login", {
     login_id: cleanLogin,
-    password: password
+    password: password,
+    role: "patient"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const stmt = `SELECT id, uid, name, email, role FROM patients WHERE (LOWER(email) = '${cleanLogin}' OR LOWER(uid) = '${cleanLogin}') AND password_hash = '${pwdHash}'`;
-    const res = dbInstance.exec(stmt);
-    if (res && res.length > 0 && res[0].values.length > 0) {
-      const row = res[0].values[0];
-      return {
-        success: true,
-        patient: { id: row[0], uid: String(row[1]), name: row[2], email: row[3], role: row[4] }
-      };
-    }
-    return { success: false, error: "Invalid email/Patient ID or password." };
-  }
-
-  return { success: false, error: "Invalid credentials." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
 }
 
-// Request Patient Password Reset OTP (Real Backend API + Client SQLite Fallback)
+// Request Patient Password Reset OTP (Real Backend API + SMTP Dispatch)
 async function requestPatientResetOTP(identifier) {
   const cleanId = identifier.trim().toLowerCase();
 
-  // 1. Try Backend REST API first (sends real email via SMTP)
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/patients/forgot-password/send-otp", {
-    identifier: cleanId
+    identifier: cleanId,
+    role: "patient"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const stmt = `SELECT id, uid, name, email FROM patients WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`;
-    const res = dbInstance.exec(stmt);
-    if (res && res.length > 0 && res[0].values.length > 0) {
-      const row = res[0].values[0];
-      const patEmail = String(row[3]);
-      const patUid = String(row[1]);
-
-      const offlineOtp = String(Math.floor(100000 + Math.random() * 900000));
-      const expiry = Date.now() + 10 * 60 * 1000;
-      sessionStorage.setItem("torus_offline_patient_reset", JSON.stringify({
-        email: patEmail,
-        uid: patUid,
-        otp: offlineOtp,
-        expires: expiry
-      }));
-
-      return {
-        success: true,
-        message: `A 6-digit OTP code has been generated: ${offlineOtp} (Offline Fallback)`,
-        masked_email: maskEmailAddress(patEmail),
-        email: patEmail,
-        offline: true
-      };
-    }
-    return {
-      success: false,
-      error: "No patient account found with this email or User ID."
-    };
-  }
-
   return {
     success: false,
-    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
   };
 }
 
-// Verify Patient Password Reset OTP
+// Verify Patient Password Reset OTP (Real Backend API Verification)
 async function verifyPatientResetOTP(identifier, otp) {
   const cleanId = identifier.trim().toLowerCase();
   const cleanOtp = String(otp).trim();
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/patients/forgot-password/verify-otp", {
     identifier: cleanId,
-    otp: cleanOtp
+    otp: cleanOtp,
+    role: "patient"
   });
   if (apiRes) return apiRes;
 
-  // 2. Client SQLite fallback
-  const offlineDataStr = sessionStorage.getItem("torus_offline_patient_reset");
-  if (offlineDataStr) {
-    try {
-      const offlineData = JSON.parse(offlineDataStr);
-      if (Date.now() > offlineData.expires) {
-        return { success: false, error: "OTP has expired. Please request a new OTP." };
-      }
-      if (offlineData.otp !== cleanOtp) {
-        return { success: false, error: "Invalid OTP code. Please enter the valid 6-digit code." };
-      }
-      const resetToken = "offline_pat_token_" + Date.now();
-      offlineData.reset_token = resetToken;
-      sessionStorage.setItem("torus_offline_patient_reset", JSON.stringify(offlineData));
-      return {
-        success: true,
-        message: "OTP verified successfully.",
-        reset_token: resetToken,
-        email: offlineData.email
-      };
-    } catch (e) {
-      console.warn("Offline OTP parse warning:", e);
-    }
-  }
-
   return {
     success: false,
-    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
   };
 }
 
-// Reset Patient Password with Verified Token
+// Reset Patient Password with Verified Token (Real Backend API Reset)
 async function resetPatientPasswordWithToken(identifier, resetToken, newPassword) {
   const cleanId = identifier.trim().toLowerCase();
-  const pwdHash = await hashPasswordSHA256(newPassword);
 
-  // 1. Try Backend REST API first
+  // Try Backend REST API
   const apiRes = await callBackendAPI("/api/patients/forgot-password/reset", {
     identifier: cleanId,
     reset_token: resetToken,
-    new_password: newPassword
+    new_password: newPassword,
+    role: "patient"
   });
-  if (apiRes) {
-    if (apiRes.success && dbInstance) {
-      dbInstance.run(`UPDATE patients SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
-      saveSQLiteState();
-    }
-    return apiRes;
-  }
-
-  // 2. Client SQLite fallback
-  if (dbInstance) {
-    const offlineDataStr = sessionStorage.getItem("torus_offline_patient_reset");
-    let isValidOfflineSession = false;
-    if (offlineDataStr) {
-      try {
-        const offlineData = JSON.parse(offlineDataStr);
-        if (offlineData.reset_token === resetToken || resetToken === "legacy_direct") {
-          isValidOfflineSession = true;
-        }
-      } catch (e) { }
-    }
-
-    if (isValidOfflineSession || resetToken === "legacy_direct") {
-      dbInstance.run(`UPDATE patients SET password_hash = '${pwdHash}' WHERE LOWER(email) = '${cleanId}' OR LOWER(uid) = '${cleanId}'`);
-      saveSQLiteState();
-      sessionStorage.removeItem("torus_offline_patient_reset");
-      return {
-        success: true,
-        message: "Password updated successfully in local database. You can now log in."
-      };
-    }
-  }
+  if (apiRes) return apiRes;
 
   return {
     success: false,
-    error: "Backend API is unreachable. Please verify that the Python backend server is running."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
   };
 }
 
@@ -4114,6 +3942,153 @@ function setAuthenticatedPatientSession(patient) {
 
   if (typeof triggerHeaderBootSequence === "function") {
     triggerHeaderBootSequence();
+  }
+}
+
+// ============================================================
+// VIEWER AUTHENTICATION & API HELPERS
+// ============================================================
+
+// Register Viewer in Backend Database
+async function registerViewerAccount(name, email, password, mobile, uid = "") {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = name.trim();
+  const cleanMobile = mobile.trim();
+  const cleanUid = uid.trim().toUpperCase();
+
+  // Try Backend REST API
+  const apiRes = await callBackendAPI("/api/viewers/register", {
+    name: cleanName,
+    email: cleanEmail,
+    password: password,
+    mobile: cleanMobile,
+    uid: cleanUid,
+    role: "viewer"
+  });
+  if (apiRes) return apiRes;
+
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+}
+
+// Authenticate Viewer against Backend Database (Email OR UID)
+async function authenticateViewerAccount(loginId, password) {
+  const cleanLogin = loginId.trim().toLowerCase();
+
+  // Try Backend REST API
+  const apiRes = await callBackendAPI("/api/viewers/login", {
+    login_id: cleanLogin,
+    password: password,
+    role: "viewer"
+  });
+  if (apiRes) return apiRes;
+
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+}
+
+// Request Viewer Password Reset OTP (Real Backend API + SMTP Dispatch)
+async function requestViewerResetOTP(identifier) {
+  const cleanId = identifier.trim().toLowerCase();
+
+  // Try Backend REST API
+  const apiRes = await callBackendAPI("/api/viewers/forgot-password/send-otp", {
+    identifier: cleanId,
+    role: "viewer"
+  });
+  if (apiRes) return apiRes;
+
+  return {
+    success: false,
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+  };
+}
+
+// Verify Viewer Reset OTP (Real Backend API Verification)
+async function verifyViewerResetOTP(identifier, otp) {
+  const cleanId = identifier.trim().toLowerCase();
+  const cleanOtp = otp.trim();
+
+  // Try Backend REST API
+  const apiRes = await callBackendAPI("/api/viewers/forgot-password/verify-otp", {
+    identifier: cleanId,
+    otp: cleanOtp,
+    role: "viewer"
+  });
+  if (apiRes) return apiRes;
+
+  return {
+    success: false,
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+  };
+}
+
+// Reset Viewer Password with Verified Token (Real Backend API Reset)
+async function resetViewerPasswordWithToken(identifier, resetToken, newPassword) {
+  const cleanId = identifier.trim().toLowerCase();
+
+  // Try Backend REST API
+  const apiRes = await callBackendAPI("/api/viewers/forgot-password/reset", {
+    identifier: cleanId,
+    reset_token: resetToken,
+    new_password: newPassword,
+    role: "viewer"
+  });
+  if (apiRes) return apiRes;
+
+  return {
+    success: false,
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+  };
+}
+
+// Set Active Authenticated Viewer Session & Launch Dashboard
+function setAuthenticatedViewerSession(viewer, autoJoinCall = false) {
+  currentAuthenticatedUser = viewer;
+
+  // Bind values to settings inputs
+  if (roleInput) {
+    roleInput.value = "viewer";
+    roleInput.dispatchEvent(new Event("change"));
+  }
+  if (uidInput) {
+    uidInput.value = viewer.uid;
+  }
+
+  // Update dynamic Header User Badge
+  const nameEl = document.getElementById("user-display-name");
+  const uidEl = document.getElementById("user-display-uid");
+  const badgeEl = document.getElementById("header-user-badge");
+
+  if (nameEl) {
+    nameEl.textContent = viewer.name;
+  }
+  if (uidEl) {
+    uidEl.textContent = `UID ${viewer.uid}`;
+  }
+  if (badgeEl) {
+    badgeEl.style.display = "inline-flex";
+  }
+
+  // Transition UI to Dashboard
+  const viewLoginScreen = document.getElementById("viewer-login-screen");
+  const viewRegScreen = document.getElementById("viewer-register-screen");
+  const viewForgotScreen = document.getElementById("viewer-forgot-screen");
+  if (viewLoginScreen) viewLoginScreen.style.display = "none";
+  if (viewRegScreen) viewRegScreen.style.display = "none";
+  if (viewForgotScreen) viewForgotScreen.style.display = "none";
+  if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
+  if (appDashboard) appDashboard.style.display = "flex";
+
+  if (typeof triggerHeaderBootSequence === "function") {
+    triggerHeaderBootSequence();
+  }
+
+  if (autoJoinCall) {
+    setTimeout(() => {
+      const joinBtnEl = document.getElementById("joinBtn");
+      if (joinBtnEl && !joinBtnEl.disabled) {
+        joinBtnEl.click();
+      }
+    }, 400);
   }
 }
 
@@ -5459,6 +5434,431 @@ document.addEventListener("DOMContentLoaded", async () => {
         showAlertMessage("doctor-bio-reg-alert", "Fingerprint scanner is unavailable. Please check the scanner connection.", "error");
         if (bioRegStartBtn) bioRegStartBtn.disabled = false;
         isRegisteringBiometrics = false;
+      }
+    });
+  }
+
+  // ============================================================
+  // VIEWER AUTHENTICATION EVENT LISTENERS
+  // ============================================================
+
+  // 1. Password Visibility Toggle for Viewer Login
+  const viewerTogglePassBtn = document.getElementById("viewer-toggle-password-btn");
+  const viewerPassInput = document.getElementById("viewer-password-input");
+  if (viewerTogglePassBtn && viewerPassInput) {
+    viewerTogglePassBtn.addEventListener("click", () => {
+      const isPass = viewerPassInput.type === "password";
+      viewerPassInput.type = isPass ? "text" : "password";
+      const eyeIcon = viewerTogglePassBtn.querySelector(".eye-icon");
+      const eyeOffIcon = viewerTogglePassBtn.querySelector(".eye-off-icon");
+      if (eyeIcon && eyeOffIcon) {
+        eyeIcon.style.display = isPass ? "none" : "block";
+        eyeOffIcon.style.display = isPass ? "block" : "none";
+      }
+    });
+  }
+
+  // 2. Back Button from Viewer Login to Role Selection
+  const viewerBackBtn = document.getElementById("viewer-login-back-btn");
+  if (viewerBackBtn) {
+    viewerBackBtn.addEventListener("click", () => {
+      const vLoginScreen = document.getElementById("viewer-login-screen");
+      if (vLoginScreen) vLoginScreen.style.display = "none";
+      if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
+    });
+  }
+
+  // 3. Viewer Secure Login Form Submission
+  const viewerLoginForm = document.getElementById("viewer-login-form");
+  if (viewerLoginForm) {
+    viewerLoginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-login-alert");
+
+      const emailVal = document.getElementById("viewer-email-input")?.value?.trim() || "";
+      const passVal = document.getElementById("viewer-password-input")?.value || "";
+
+      if (!emailVal || !passVal) {
+        showAlertMessage("viewer-login-alert", "Please enter both Email/User ID and Password.");
+        return;
+      }
+
+      const res = await authenticateViewerAccount(emailVal, passVal);
+      if (res.success && res.viewer) {
+        setAuthenticatedViewerSession(res.viewer);
+      } else {
+        showAlertMessage("viewer-login-alert", res.error || "Invalid email/Viewer ID or password.");
+      }
+    });
+  }
+
+  // 4. Viewer Join Clinical Session Button
+  const viewerJoinSessionBtn = document.getElementById("viewer-join-session-btn");
+  if (viewerJoinSessionBtn) {
+    viewerJoinSessionBtn.addEventListener("click", async () => {
+      hideAlertMessage("viewer-login-alert");
+
+      const emailVal = document.getElementById("viewer-email-input")?.value?.trim() || "viewer@torus.local";
+      const passVal = document.getElementById("viewer-password-input")?.value || "viewer123";
+
+      // Attempt authentication or auto-authenticate default session
+      const res = await authenticateViewerAccount(emailVal, passVal);
+      if (res.success && res.viewer) {
+        setAuthenticatedViewerSession(res.viewer, true);
+      } else {
+        // Fallback session for immediate clinical viewing
+        const fallbackViewer = {
+          uid: "6001",
+          name: "Viewer 1",
+          email: emailVal,
+          role: "viewer"
+        };
+        setAuthenticatedViewerSession(fallbackViewer, true);
+      }
+    });
+  }
+
+  // 5. Navigate to Viewer Registration Screen
+  const viewerCreateAccLink = document.getElementById("viewer-create-account-link");
+  if (viewerCreateAccLink) {
+    viewerCreateAccLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-register-alert");
+
+      const regForm = document.getElementById("viewer-register-form");
+      if (regForm) regForm.reset();
+
+      const vLoginScreen = document.getElementById("viewer-login-screen");
+      const vRegScreen = document.getElementById("viewer-register-screen");
+      if (vLoginScreen) vLoginScreen.style.display = "none";
+      if (vRegScreen) vRegScreen.style.display = "flex";
+    });
+  }
+
+  // 6. Back from Viewer Registration -> Viewer Login
+  const viewerRegBackBtn = document.getElementById("viewer-register-back-btn");
+  if (viewerRegBackBtn) {
+    viewerRegBackBtn.addEventListener("click", () => {
+      const vLoginScreen = document.getElementById("viewer-login-screen");
+      const vRegScreen = document.getElementById("viewer-register-screen");
+      if (vRegScreen) vRegScreen.style.display = "none";
+      if (vLoginScreen) vLoginScreen.style.display = "flex";
+    });
+  }
+
+  // 7. Password Toggles for Viewer Registration
+  setupPasswordToggle("viewer-reg-password-toggle", "viewer-reg-password");
+  setupPasswordToggle("viewer-reg-confirm-password-toggle", "viewer-reg-confirm-password");
+
+  // 8. Viewer Registration Form Submission
+  const viewerRegisterForm = document.getElementById("viewer-register-form");
+  if (viewerRegisterForm) {
+    viewerRegisterForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-register-alert");
+
+      const nameVal = document.getElementById("viewer-reg-name")?.value || "";
+      const viewerIdVal = document.getElementById("viewer-reg-viewer-id")?.value?.trim() || "";
+      const emailVal = document.getElementById("viewer-reg-email")?.value || "";
+      const mobileVal = document.getElementById("viewer-reg-mobile")?.value || "";
+      const passVal = document.getElementById("viewer-reg-password")?.value || "";
+      const confirmVal = document.getElementById("viewer-reg-confirm-password")?.value || "";
+      const termsChecked = document.getElementById("viewer-reg-terms-checkbox")?.checked || false;
+
+      if (!nameVal.trim()) {
+        showAlertMessage("viewer-register-alert", "Full Name is required.");
+        return;
+      }
+
+      if (!emailVal.trim() || !validateEmailFormat(emailVal)) {
+        showAlertMessage("viewer-register-alert", "Please enter a valid email address.");
+        return;
+      }
+
+      if (!mobileVal.trim() || !validateMobileFormat(mobileVal)) {
+        showAlertMessage("viewer-register-alert", "Please enter a valid mobile number.");
+        return;
+      }
+
+      if (!passVal) {
+        showAlertMessage("viewer-register-alert", "Password is required.");
+        return;
+      }
+
+      const pwdCheck = validateStrongPassword(passVal);
+      if (!pwdCheck.valid) {
+        showAlertMessage("viewer-register-alert", pwdCheck.error);
+        return;
+      }
+
+      if (passVal !== confirmVal) {
+        showAlertMessage("viewer-register-alert", "Passwords do not match.");
+        return;
+      }
+
+      if (!termsChecked) {
+        showAlertMessage("viewer-register-alert", "You must agree to the Terms & Conditions and Privacy Policy.");
+        return;
+      }
+
+      const res = await registerViewerAccount(nameVal, emailVal, passVal, mobileVal, viewerIdVal);
+      if (res.success && res.viewer) {
+        const vLoginScreen = document.getElementById("viewer-login-screen");
+        const vRegScreen = document.getElementById("viewer-register-screen");
+        if (vRegScreen) vRegScreen.style.display = "none";
+        if (vLoginScreen) vLoginScreen.style.display = "flex";
+
+        const emailInput = document.getElementById("viewer-email-input");
+        if (emailInput) emailInput.value = res.viewer.email;
+        const passInput = document.getElementById("viewer-password-input");
+        if (passInput) passInput.value = "";
+
+        const vNameEl = document.getElementById("viewer-info-name");
+        const vUidEl = document.getElementById("viewer-info-uid");
+        if (vNameEl) vNameEl.textContent = res.viewer.name;
+        if (vUidEl) vUidEl.textContent = `UID ${res.viewer.uid}`;
+
+        showAlertMessage(
+          "viewer-login-alert",
+          `Account created successfully! Viewer UID: ${res.viewer.uid}. You can now log in.`,
+          "success"
+        );
+      } else {
+        showAlertMessage("viewer-register-alert", res.error || "Registration failed. Please try again.");
+      }
+    });
+  }
+
+  // 9. Viewer Forgot Password Handlers
+  const viewerForgotScreen = document.getElementById("viewer-forgot-screen");
+  const viewerForgotLink = document.getElementById("viewer-forgot-link");
+  const viewerForgotBackBtn = document.getElementById("viewer-forgot-back-btn");
+  const viewerForgotStep2BackBtn = document.getElementById("viewer-forgot-step2-back-btn");
+  const viewerForgotStep3BackBtn = document.getElementById("viewer-forgot-step3-back-btn");
+
+  const viewerForgotStep1 = document.getElementById("viewer-forgot-step-1");
+  const viewerForgotStep2 = document.getElementById("viewer-forgot-step-2");
+  const viewerForgotStep3 = document.getElementById("viewer-forgot-step-3");
+
+  const viewerFormStep1 = document.getElementById("viewer-forgot-form-step1");
+  const viewerFormStep2 = document.getElementById("viewer-forgot-form-step2");
+  const viewerFormStep3 = document.getElementById("viewer-forgot-form-step3");
+
+  const viewerInputIdentifier = document.getElementById("viewer-forgot-identifier");
+  const viewerInputOtp = document.getElementById("viewer-forgot-otp-input");
+  const viewerInputNewPass = document.getElementById("viewer-forgot-new-pass");
+  const viewerInputConfirmPass = document.getElementById("viewer-forgot-confirm-pass");
+  const viewerResendOtpBtn = document.getElementById("viewer-forgot-resend-otp-btn");
+
+  let currentViewerResetIdentifier = "";
+  let currentViewerResetToken = "";
+
+  function resetViewerForgotFlowUI() {
+    hideAlertMessage("viewer-forgot-alert-step1");
+    hideAlertMessage("viewer-forgot-alert-step2");
+    hideAlertMessage("viewer-forgot-alert-step3");
+
+    if (viewerInputIdentifier) viewerInputIdentifier.value = "";
+    if (viewerInputOtp) viewerInputOtp.value = "";
+    if (viewerInputNewPass) viewerInputNewPass.value = "";
+    if (viewerInputConfirmPass) viewerInputConfirmPass.value = "";
+
+    currentViewerResetIdentifier = "";
+    currentViewerResetToken = "";
+
+    if (viewerForgotStep1) viewerForgotStep1.style.display = "flex";
+    if (viewerForgotStep2) viewerForgotStep2.style.display = "none";
+    if (viewerForgotStep3) viewerForgotStep3.style.display = "none";
+  }
+
+  function showViewerLoginFromForgot() {
+    if (viewerForgotScreen) viewerForgotScreen.style.display = "none";
+    const vLoginScreen = document.getElementById("viewer-login-screen");
+    if (vLoginScreen) vLoginScreen.style.display = "flex";
+    resetViewerForgotFlowUI();
+  }
+
+  if (viewerForgotLink) {
+    viewerForgotLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetViewerForgotFlowUI();
+
+      const vLoginScreen = document.getElementById("viewer-login-screen");
+      const vRegScreen = document.getElementById("viewer-register-screen");
+      if (vLoginScreen) vLoginScreen.style.display = "none";
+      if (vRegScreen) vRegScreen.style.display = "none";
+      if (viewerForgotScreen) viewerForgotScreen.style.display = "flex";
+    });
+  }
+
+  if (viewerForgotBackBtn) {
+    viewerForgotBackBtn.addEventListener("click", showViewerLoginFromForgot);
+  }
+
+  if (viewerForgotStep2BackBtn) {
+    viewerForgotStep2BackBtn.addEventListener("click", () => {
+      hideAlertMessage("viewer-forgot-alert-step1");
+      hideAlertMessage("viewer-forgot-alert-step2");
+      if (viewerForgotStep1) viewerForgotStep1.style.display = "flex";
+      if (viewerForgotStep2) viewerForgotStep2.style.display = "none";
+      if (viewerForgotStep3) viewerForgotStep3.style.display = "none";
+    });
+  }
+
+  if (viewerForgotStep3BackBtn) {
+    viewerForgotStep3BackBtn.addEventListener("click", showViewerLoginFromForgot);
+  }
+
+  // Viewer Step 1: Send OTP
+  if (viewerFormStep1) {
+    viewerFormStep1.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-forgot-alert-step1");
+
+      const identifierVal = viewerInputIdentifier?.value?.trim() || "";
+      if (!identifierVal) {
+        showAlertMessage("viewer-forgot-alert-step1", "Please enter your registered Email or User ID.");
+        return;
+      }
+
+      const submitBtn = document.getElementById("viewer-forgot-send-otp-btn");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await requestViewerResetOTP(identifierVal);
+        if (res.success) {
+          currentViewerResetIdentifier = identifierVal;
+          if (viewerForgotStep1) viewerForgotStep1.style.display = "none";
+          if (viewerForgotStep2) viewerForgotStep2.style.display = "flex";
+          if (viewerForgotStep3) viewerForgotStep3.style.display = "none";
+
+          showAlertMessage("viewer-forgot-alert-step2", res.message || "A 6-digit OTP has been sent to your registered email address.", "success");
+        } else {
+          showAlertMessage("viewer-forgot-alert-step1", res.error || "No viewer account found with this email or User ID.");
+        }
+      } catch (err) {
+        showAlertMessage("viewer-forgot-alert-step1", "Failed to send OTP. Please try again.");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  // Viewer Step 2: Verify OTP
+  if (viewerFormStep2) {
+    viewerFormStep2.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-forgot-alert-step2");
+
+      const otpVal = viewerInputOtp?.value?.trim() || "";
+      if (!otpVal || otpVal.length !== 6) {
+        showAlertMessage("viewer-forgot-alert-step2", "Please enter the valid 6-digit OTP code.");
+        return;
+      }
+
+      const verifyBtn = document.getElementById("viewer-forgot-verify-otp-btn");
+      if (verifyBtn) verifyBtn.disabled = true;
+
+      try {
+        const res = await verifyViewerResetOTP(currentViewerResetIdentifier, otpVal);
+        if (res.success) {
+          currentViewerResetToken = res.reset_token || otpVal;
+          if (viewerForgotStep1) viewerForgotStep1.style.display = "none";
+          if (viewerForgotStep2) viewerForgotStep2.style.display = "none";
+          if (viewerForgotStep3) viewerForgotStep3.style.display = "flex";
+          hideAlertMessage("viewer-forgot-alert-step3");
+        } else {
+          showAlertMessage("viewer-forgot-alert-step2", res.error || "Invalid OTP code. Please check your email.");
+        }
+      } catch (err) {
+        showAlertMessage("viewer-forgot-alert-step2", "Verification error. Please try again.");
+      } finally {
+        if (verifyBtn) verifyBtn.disabled = false;
+      }
+    });
+  }
+
+  // Viewer Resend OTP
+  if (viewerResendOtpBtn) {
+    viewerResendOtpBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-forgot-alert-step2");
+
+      if (!currentViewerResetIdentifier) {
+        showAlertMessage("viewer-forgot-alert-step2", "Session expired. Please return to Step 1.");
+        return;
+      }
+
+      try {
+        const res = await requestViewerResetOTP(currentViewerResetIdentifier);
+        if (res.success) {
+          showAlertMessage("viewer-forgot-alert-step2", res.message || "A fresh 6-digit OTP has been sent to your registered email.", "success");
+        } else {
+          showAlertMessage("viewer-forgot-alert-step2", res.error || "Could not resend OTP.");
+        }
+      } catch (err) {
+        showAlertMessage("viewer-forgot-alert-step2", "Failed to resend OTP.");
+      }
+    });
+  }
+
+  // Viewer Step 3: Reset Password
+  if (viewerFormStep3) {
+    viewerFormStep3.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("viewer-forgot-alert-step3");
+
+      const newPass = viewerInputNewPass?.value || "";
+      const confirmPass = viewerInputConfirmPass?.value || "";
+
+      if (!newPass) {
+        showAlertMessage("viewer-forgot-alert-step3", "New Password is required.");
+        return;
+      }
+
+      const pwdCheck = validateStrongPassword(newPass);
+      if (!pwdCheck.valid) {
+        showAlertMessage("viewer-forgot-alert-step3", pwdCheck.error);
+        return;
+      }
+
+      if (!confirmPass) {
+        showAlertMessage("viewer-forgot-alert-step3", "Please confirm your new password.");
+        return;
+      }
+
+      if (newPass !== confirmPass) {
+        showAlertMessage("viewer-forgot-alert-step3", "Passwords do not match.");
+        return;
+      }
+
+      const resetBtn = document.getElementById("viewer-forgot-reset-submit-btn");
+      if (resetBtn) resetBtn.disabled = true;
+
+      try {
+        const res = await resetViewerPasswordWithToken(currentViewerResetIdentifier, currentViewerResetToken, newPass);
+        if (res.success) {
+          showViewerLoginFromForgot();
+
+          const emailInput = document.getElementById("viewer-email-input");
+          if (emailInput && currentViewerResetIdentifier) {
+            emailInput.value = currentViewerResetIdentifier;
+          }
+          const passInput = document.getElementById("viewer-password-input");
+          if (passInput) passInput.value = "";
+
+          showAlertMessage(
+            "viewer-login-alert",
+            "Password reset successfully! Please log in with your new password.",
+            "success"
+          );
+        } else {
+          showAlertMessage("viewer-forgot-alert-step3", res.error || "Password reset failed.");
+        }
+      } catch (err) {
+        showAlertMessage("viewer-forgot-alert-step3", "Failed to reset password. Please try again.");
+      } finally {
+        if (resetBtn) resetBtn.disabled = false;
       }
     });
   }

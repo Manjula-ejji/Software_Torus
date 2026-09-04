@@ -86,7 +86,20 @@ def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_
     use_ssl = os.environ.get("SMTP_SSL", "false").lower() in ("true", "1") or smtp_port == 465
     use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() in ("true", "1") or smtp_port == 587
 
-    portal_name = "TORUS clinical workspace" if user_role == "doctor" else "TORUS patient portal"
+    role_clean = (user_role or "doctor").lower()
+    if role_clean == "doctor":
+        portal_name = "TORUS clinical workspace (Doctor Portal)"
+        role_label = "Doctor"
+    elif role_clean == "patient":
+        portal_name = "TORUS Patient Portal"
+        role_label = "Patient"
+    elif role_clean == "viewer":
+        portal_name = "TORUS Viewer Portal"
+        role_label = "Viewer"
+    else:
+        portal_name = "TORUS Portal"
+        role_label = "User"
+
     subject = f"Your TORUS Account Password Reset OTP: {otp}"
 
     html_content = f"""
@@ -107,7 +120,7 @@ def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_
                 <td style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
                   <h3 style="color: #FFFFFF; font-size: 18px; margin: 0 0 12px 0;">Reset Your Password</h3>
                   <p style="color: #B7C5D8; font-size: 14px; line-height: 1.5; margin: 0 0 16px 0;">
-                    Hello <strong>{user_name}</strong> (User ID: <code style="color: #00C8FF;">{user_uid}</code>),
+                    Hello <strong>{user_name}</strong> ({role_label} ID: <code style="color: #00C8FF;">{user_uid}</code>),
                   </p>
                   <p style="color: #B7C5D8; font-size: 14px; line-height: 1.5; margin: 0 0 24px 0;">
                     We received a request to reset your password for the {portal_name}. Use the verification code below:
@@ -139,7 +152,7 @@ def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_
     </html>
     """
 
-    text_content = f"Hello {user_name},\n\nYour TORUS password reset verification code is: {otp}\n\nThis OTP is valid for 10 minutes.\nUser ID: {user_uid}\n\nIf you did not request this, please ignore this email."
+    text_content = f"Hello {user_name},\n\nYour TORUS password reset verification code is: {otp}\n\nThis OTP is valid for 10 minutes.\n{role_label} ID: {user_uid}\n\nIf you did not request this, please ignore this email."
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -173,7 +186,7 @@ def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_
         print(f"[SMTP] [OK] OTP email successfully sent to {to_email}")
         return True, "A 6-digit OTP has been sent to your registered email address."
     except smtplib.SMTPAuthenticationError as auth_err:
-        err = f"SMTP Authentication failed for '{smtp_user}'. If using Gmail, please use a 16-character Google App Password (from https://myaccount.google.com/apppasswords)."
+        err = f"SMTP Authentication failed for '{smtp_user}'. If using Gmail, please use a 16-character Google App Password."
         print(f"[SMTP] [ERROR] {err} ({auth_err})")
         return False, err
     except Exception as e:
@@ -182,7 +195,7 @@ def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_
         return False, err
 
 def _migrate_add_mobile_column():
-    """Safely adds 'mobile' column to doctors and patients tables if missing."""
+    """Safely adds 'mobile' column to doctors, patients, and viewers tables if missing."""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -199,13 +212,23 @@ def _migrate_add_mobile_column():
             cursor.execute("ALTER TABLE patients ADD COLUMN mobile TEXT DEFAULT ''")
             conn.commit()
             print("[Database] Migrated: added 'mobile' column to patients table.")
+
+        cursor.execute("PRAGMA table_info(viewers)")
+        view_columns = [row["name"] for row in cursor.fetchall()]
+        if "mobile" not in view_columns and len(view_columns) > 0:
+            cursor.execute("ALTER TABLE viewers ADD COLUMN mobile TEXT DEFAULT ''")
+            conn.commit()
+            print("[Database] Migrated: added 'mobile' column to viewers table.")
     except Exception as e:
         print(f"[Database] Migration warning: {e}")
     finally:
         conn.close()
 
 def init_db():
-    """Initializes the doctors, patients, and password reset tables and seeds defaults."""
+    """
+    Initializes the SQLite schema idempotently for all roles (doctors, patients, viewers)
+    and seeds ONLY the three required default test accounts.
+    """
     conn = get_db()
     cursor = conn.cursor()
     
@@ -236,8 +259,22 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # 3. Viewers Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS viewers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            mobile TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
-    # 3. Doctor Password Reset Table
+    # 4. Doctor Password Reset Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS password_reset_otps (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -253,7 +290,7 @@ def init_db():
         )
     """)
 
-    # 4. Patient Password Reset Table
+    # 5. Patient Password Reset Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS patient_password_reset_otps (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -269,7 +306,23 @@ def init_db():
         )
     """)
 
-    # 5. Doctor Biometrics Table
+    # 6. Viewer Password Reset Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS viewer_password_reset_otps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            viewer_id INTEGER NOT NULL,
+            identifier TEXT NOT NULL,
+            email TEXT NOT NULL,
+            otp TEXT NOT NULL,
+            reset_token TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            used INTEGER DEFAULT 0,
+            FOREIGN KEY(viewer_id) REFERENCES viewers(id)
+        )
+    """)
+
+    # 7. Doctor Biometrics Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS doctor_biometrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -285,27 +338,44 @@ def init_db():
     """)
     conn.commit()
     
-    # Seed default admin doctor
-    cursor.execute("SELECT * FROM doctors WHERE email = ?", ("admin@gmail.com",))
+    # Seed default Doctor: admin@gmail.com / admin123 (role: doctor, UID: 3001)
+    cursor.execute("SELECT * FROM doctors WHERE LOWER(email) = 'admin@gmail.com'")
     if not cursor.fetchone():
         admin_pass = hash_password("admin123")
+        cursor.execute("SELECT id FROM doctors WHERE uid = '3001'")
+        doc_uid = "3001" if not cursor.fetchone() else generate_professional_id()
         cursor.execute("""
-            INSERT INTO doctors (uid, name, email, password_hash, role)
-            VALUES (?, ?, ?, ?, ?)
-        """, ("3001", "Admin Doctor", "admin@gmail.com", admin_pass, "admin"))
+            INSERT INTO doctors (uid, name, email, password_hash, role, mobile)
+            VALUES (?, ?, ?, ?, 'doctor', '')
+        """, (doc_uid, "Admin Doctor", "admin@gmail.com", admin_pass))
         conn.commit()
-        print("[Database] Default Admin Doctor created (UID: 3001, email: admin@gmail.com).")
+        print(f"[Database] Default Doctor created (UID: {doc_uid}, email: admin@gmail.com).")
 
-    # Seed default patient
-    cursor.execute("SELECT * FROM patients WHERE email = ?", ("patient@gmail.com",))
+    # Seed default Patient: patient@gmail.com / patient123 (role: patient, UID: 4001)
+    cursor.execute("SELECT * FROM patients WHERE LOWER(email) = 'patient@gmail.com'")
     if not cursor.fetchone():
         patient_pass = hash_password("patient123")
+        cursor.execute("SELECT id FROM patients WHERE uid = '4001'")
+        pat_uid = "4001" if not cursor.fetchone() else generate_patient_id()
         cursor.execute("""
             INSERT INTO patients (uid, name, email, password_hash, role, mobile)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, ("4001", "Patient User", "patient@gmail.com", patient_pass, "patient", "+91 98765 43210"))
+            VALUES (?, ?, ?, ?, 'patient', ?)
+        """, (pat_uid, "Patient User", "patient@gmail.com", patient_pass, "+91 98765 43210"))
         conn.commit()
-        print("[Database] Default Patient created (UID: 4001, email: patient@gmail.com).")
+        print(f"[Database] Default Patient created (UID: {pat_uid}, email: patient@gmail.com).")
+
+    # Seed default Viewer: user@gmail.com / user123 (role: viewer, UID: 6001)
+    cursor.execute("SELECT * FROM viewers WHERE LOWER(email) = 'user@gmail.com'")
+    if not cursor.fetchone():
+        viewer_pass = hash_password("user123")
+        cursor.execute("SELECT id FROM viewers WHERE uid = '6001'")
+        view_uid = "6001" if not cursor.fetchone() else generate_viewer_id()
+        cursor.execute("""
+            INSERT INTO viewers (uid, name, email, password_hash, role, mobile)
+            VALUES (?, ?, ?, ?, 'viewer', ?)
+        """, (view_uid, "Viewer 1", "user@gmail.com", viewer_pass, "+91 98765 43210"))
+        conn.commit()
+        print(f"[Database] Default Viewer created (UID: {view_uid}, email: user@gmail.com).")
         
     conn.close()
     _migrate_add_mobile_column()
@@ -366,6 +436,27 @@ def generate_patient_id() -> str:
     conn.close()
     return f"PAT-{secrets.token_hex(3).upper()[:5]}"
 
+def generate_viewer_id() -> str:
+    """Generates unique alphanumeric Viewer ID (6001+ or VIEW-XXXXX)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    for num in range(6001, 6100):
+        uid_str = str(num)
+        cursor.execute("SELECT id FROM viewers WHERE uid = ?", (uid_str,))
+        if not cursor.fetchone():
+            conn.close()
+            return uid_str
+    for _ in range(100):
+        chars = string.ascii_uppercase + string.digits
+        random_part = ''.join(random.choices(chars, k=5))
+        viewer_id = f"VIEW-{random_part}"
+        cursor.execute("SELECT id FROM viewers WHERE uid = ?", (viewer_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return viewer_id
+    conn.close()
+    return f"VIEW-{secrets.token_hex(3).upper()[:5]}"
+
 # ============================================================
 # DOCTOR CRUD & AUTHENTICATION
 # ============================================================
@@ -391,6 +482,7 @@ def register_doctor(name: str, email: str, password: str, mobile: str = "", uid:
     conn = get_db()
     cursor = conn.cursor()
     
+    # Check ONLY Doctor table for duplicate email
     cursor.execute("SELECT id FROM doctors WHERE LOWER(email) = LOWER(?)", (clean_email,))
     if cursor.fetchone():
         conn.close()
@@ -453,6 +545,7 @@ def authenticate_doctor(login_id: str, password: str):
     return {"success": False, "error": "Invalid email/UID or password."}
 
 def generate_and_store_reset_otp(identifier: str):
+    """Generates and dispatches OTP for Doctor password reset."""
     clean_id = identifier.strip().lower()
     if not clean_id:
         return {"success": False, "error": "Email or User ID is required."}
@@ -501,7 +594,11 @@ def generate_and_store_reset_otp(identifier: str):
         "email": doctor_email
     }
 
+# Alias for explicit naming
+generate_and_store_doctor_reset_otp = generate_and_store_reset_otp
+
 def verify_reset_otp(identifier: str, otp: str):
+    """Validates 6-digit OTP for Doctor."""
     clean_id = identifier.strip().lower()
     clean_otp = str(otp).strip()
     
@@ -556,7 +653,11 @@ def verify_reset_otp(identifier: str, otp: str):
         "email": doctor["email"]
     }
 
+# Alias for explicit naming
+verify_doctor_reset_otp = verify_reset_otp
+
 def reset_doctor_password_with_token(identifier: str, reset_token: str, new_password: str):
+    """Resets doctor password with verified token."""
     clean_id = identifier.strip().lower()
     clean_token = reset_token.strip()
     
@@ -600,10 +701,31 @@ def reset_doctor_password_with_token(identifier: str, reset_token: str, new_pass
         "email": doctor["email"]
     }
 
+def reset_doctor_password(identifier: str, new_password: str):
+    """Legacy helper for direct reset if called without token."""
+    clean_id = identifier.strip().lower()
+    pwd_valid, pwd_error = validate_strong_password(new_password)
+    if not pwd_valid:
+        return {"success": False, "error": pwd_error}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    doctor = cursor.fetchone()
+    if not doctor:
+        conn.close()
+        return {"success": False, "error": "Doctor account not found."}
+    
+    pwd_hash = hash_password(new_password)
+    cursor.execute("UPDATE doctors SET password_hash = ? WHERE id = ?", (pwd_hash, doctor["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Password updated successfully."}
+
 # ============================================================
 # PATIENT CRUD & AUTHENTICATION
 # ============================================================
-def register_patient(name: str, email: str, password: str, mobile: str = "", uid: str = ""):
+def register_patient(name: str, email: str, password: str, mobile: str = "", uid: str = "", role: str = "patient"):
     """Registers a new patient into SQLite with full backend validation."""
     clean_name = name.strip()
     if not clean_name:
@@ -626,6 +748,7 @@ def register_patient(name: str, email: str, password: str, mobile: str = "", uid
     conn = get_db()
     cursor = conn.cursor()
     
+    # Check ONLY Patient table for duplicate email
     cursor.execute("SELECT id FROM patients WHERE LOWER(email) = LOWER(?)", (clean_email,))
     if cursor.fetchone():
         conn.close()
@@ -813,7 +936,7 @@ def reset_patient_password_with_token(identifier: str, reset_token: str, new_pas
     
     if not patient:
         conn.close()
-        return {"success": False, "error": "Patient account not found."}
+        return {"success": False, "error": "No patient account found with this email or User ID."}
     
     patient_id = patient["id"]
     cursor.execute("""
@@ -838,6 +961,362 @@ def reset_patient_password_with_token(identifier: str, reset_token: str, new_pas
         "message": "Password updated successfully. You can now log in with your new password.",
         "email": patient["email"]
     }
+
+# ============================================================
+# VIEWER CRUD & AUTHENTICATION
+# ============================================================
+def register_viewer(name: str, email: str, password: str, mobile: str = "", uid: str = "", role: str = "viewer"):
+    clean_name = name.strip()
+    if not clean_name:
+        return {"success": False, "error": "Full Name is required."}
+    
+    clean_email = email.strip().lower()
+    if not clean_email or not validate_email_format(clean_email):
+        return {"success": False, "error": "Please enter a valid email address."}
+    
+    clean_mobile = mobile.strip()
+    if not clean_mobile or not validate_mobile_format(clean_mobile):
+        return {"success": False, "error": "Please enter a valid mobile number."}
+    
+    if not password:
+        return {"success": False, "error": "Password is required."}
+    pwd_valid, pwd_error = validate_strong_password(password)
+    if not pwd_valid:
+        return {"success": False, "error": pwd_error}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check ONLY Viewer table for duplicate email
+    cursor.execute("SELECT id FROM viewers WHERE LOWER(email) = LOWER(?)", (clean_email,))
+    if cursor.fetchone():
+        conn.close()
+        return {"success": False, "error": "An account with this email already exists."}
+    
+    final_uid = uid.strip().upper() if uid else ""
+    if final_uid:
+        cursor.execute("SELECT id FROM viewers WHERE UPPER(uid) = UPPER(?)", (final_uid,))
+        if cursor.fetchone():
+            conn.close()
+            return {"success": False, "error": f"Viewer ID '{final_uid}' is already in use."}
+    else:
+        final_uid = generate_viewer_id()
+        
+    pwd_hash = hash_password(password)
+    cursor.execute("""
+        INSERT INTO viewers (uid, name, email, password_hash, role, mobile)
+        VALUES (?, ?, ?, ?, 'viewer', ?)
+    """, (final_uid, clean_name, clean_email, pwd_hash, clean_mobile))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "viewer": {
+            "uid": final_uid,
+            "name": clean_name,
+            "email": clean_email,
+            "mobile": clean_mobile,
+            "role": "viewer"
+        }
+    }
+
+def authenticate_viewer(login_id: str, password: str):
+    """Authenticates viewer against SQLite using Email OR UID."""
+    conn = get_db()
+    cursor = conn.cursor()
+    login_clean = login_id.strip().lower()
+    pwd_hash = hash_password(password)
+    
+    cursor.execute("""
+        SELECT * FROM viewers 
+        WHERE (LOWER(email) = ? OR LOWER(uid) = ?) AND password_hash = ?
+    """, (login_clean, login_clean, pwd_hash))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {
+            "success": True,
+            "viewer": {
+                "id": row["id"],
+                "uid": row["uid"],
+                "name": row["name"],
+                "email": row["email"],
+                "role": row["role"]
+            }
+        }
+    return {"success": False, "error": "Invalid email/Viewer ID or password."}
+
+def generate_and_store_viewer_reset_otp(identifier: str):
+    """Generates and dispatches OTP for viewer password reset."""
+    clean_id = identifier.strip().lower()
+    if not clean_id:
+        return {"success": False, "error": "Email or User ID is required."}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM viewers WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    viewer = cursor.fetchone()
+    
+    if not viewer:
+        conn.close()
+        return {"success": False, "error": "No viewer account found with this email or User ID."}
+    
+    viewer_id = viewer["id"]
+    viewer_email = viewer["email"]
+    viewer_name = viewer["name"]
+    viewer_uid = viewer["uid"]
+    
+    otp = f"{random.randint(100000, 999999)}"
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    
+    cursor.execute("UPDATE viewer_password_reset_otps SET used = 2 WHERE viewer_id = ? AND used = 0", (viewer_id,))
+    cursor.execute("""
+        INSERT INTO viewer_password_reset_otps (viewer_id, identifier, email, otp, expires_at, used)
+        VALUES (?, ?, ?, ?, ?, 0)
+    """, (viewer_id, clean_id, viewer_email, otp, expires_at))
+    conn.commit()
+    conn.close()
+    
+    sent, err_msg = send_otp_email(viewer_email, viewer_name, viewer_uid, otp, "viewer")
+    if not sent:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM viewer_password_reset_otps WHERE email = ? AND otp = ?", (viewer_email, otp))
+        conn.commit()
+        conn.close()
+        return {
+            "success": False,
+            "error": err_msg or "Failed to send OTP to your registered email address. Please verify your SMTP settings in .env."
+        }
+
+    return {
+        "success": True,
+        "message": "A 6-digit OTP has been sent to your registered email address.",
+        "masked_email": mask_email(viewer_email),
+        "email": viewer_email
+    }
+
+def verify_viewer_reset_otp(identifier: str, otp: str):
+    """Validates 6-digit OTP for viewer."""
+    clean_id = identifier.strip().lower()
+    clean_otp = str(otp).strip()
+    
+    if not clean_id:
+        return {"success": False, "error": "Email or User ID is required."}
+    if not clean_otp or len(clean_otp) != 6:
+        return {"success": False, "error": "Please enter a valid 6-digit OTP."}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM viewers WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    viewer = cursor.fetchone()
+    
+    if not viewer:
+        conn.close()
+        return {"success": False, "error": "No viewer account found with this email or User ID."}
+    
+    viewer_id = viewer["id"]
+    cursor.execute("""
+        SELECT * FROM viewer_password_reset_otps 
+        WHERE viewer_id = ? AND used = 0 
+        ORDER BY id DESC LIMIT 1
+    """, (viewer_id,))
+    otp_record = cursor.fetchone()
+    
+    if not otp_record:
+        conn.close()
+        return {"success": False, "error": "No active OTP found. Please request a new OTP."}
+    
+    expires_str = otp_record["expires_at"]
+    try:
+        expires_dt = datetime.strptime(expires_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_dt:
+            conn.close()
+            return {"success": False, "error": "OTP has expired. Please request a new OTP."}
+    except Exception:
+        pass
+    
+    if otp_record["otp"] != clean_otp:
+        conn.close()
+        return {"success": False, "error": "Invalid OTP. Please check the code sent to your email."}
+    
+    reset_token = secrets.token_hex(24)
+    cursor.execute("UPDATE viewer_password_reset_otps SET reset_token = ? WHERE id = ?", (reset_token, otp_record["id"]))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "message": "OTP verified successfully.",
+        "reset_token": reset_token,
+        "email": viewer["email"]
+    }
+
+def reset_viewer_password_with_token(identifier: str, reset_token: str, new_password: str):
+    """Resets viewer password with verified token."""
+    clean_id = identifier.strip().lower()
+    clean_token = reset_token.strip()
+    
+    if not clean_id or not clean_token:
+        return {"success": False, "error": "Invalid session. Please restart password reset."}
+    
+    pwd_valid, pwd_error = validate_strong_password(new_password)
+    if not pwd_valid:
+        return {"success": False, "error": pwd_error}
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM viewers WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    viewer = cursor.fetchone()
+    
+    if not viewer:
+        conn.close()
+        return {"success": False, "error": "No viewer account found with this email or User ID."}
+    
+    viewer_id = viewer["id"]
+    cursor.execute("""
+        SELECT * FROM viewer_password_reset_otps 
+        WHERE viewer_id = ? AND reset_token = ? AND used = 0 
+        ORDER BY id DESC LIMIT 1
+    """, (viewer_id, clean_token))
+    otp_record = cursor.fetchone()
+    
+    if not otp_record:
+        conn.close()
+        return {"success": False, "error": "Invalid or expired session. Please request a new OTP."}
+    
+    pwd_hash = hash_password(new_password)
+    cursor.execute("UPDATE viewers SET password_hash = ? WHERE id = ?", (pwd_hash, viewer_id))
+    cursor.execute("UPDATE viewer_password_reset_otps SET used = 1 WHERE id = ?", (otp_record["id"],))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "message": "Password updated successfully. You can now log in with your new password.",
+        "email": viewer["email"]
+    }
+
+# ============================================================
+# UNIFIED ROLE-AWARE DISPATCHERS
+# ============================================================
+def generate_and_store_otp_for_role(identifier: str, role: str = "doctor"):
+    """Dispatches OTP generation and sending to the correct role account table."""
+    r = (role or "doctor").strip().lower()
+    if r == "doctor":
+        return generate_and_store_reset_otp(identifier)
+    elif r == "patient":
+        return generate_and_store_patient_reset_otp(identifier)
+    elif r == "viewer":
+        return generate_and_store_viewer_reset_otp(identifier)
+    else:
+        # Fallback: search doctor first, then patient, then viewer
+        res = generate_and_store_reset_otp(identifier)
+        if res.get("success"):
+            return res
+        res = generate_and_store_patient_reset_otp(identifier)
+        if res.get("success"):
+            return res
+        return generate_and_store_viewer_reset_otp(identifier)
+
+def verify_otp_for_role(identifier: str, otp: str, role: str = "doctor"):
+    """Dispatches OTP verification to the correct role OTP table."""
+    r = (role or "doctor").strip().lower()
+    if r == "doctor":
+        return verify_reset_otp(identifier, otp)
+    elif r == "patient":
+        return verify_patient_reset_otp(identifier, otp)
+    elif r == "viewer":
+        return verify_viewer_reset_otp(identifier, otp)
+    else:
+        res = verify_reset_otp(identifier, otp)
+        if res.get("success"):
+            return res
+        res = verify_patient_reset_otp(identifier, otp)
+        if res.get("success"):
+            return res
+        return verify_viewer_reset_otp(identifier, otp)
+
+def reset_password_for_role(identifier: str, reset_token: str, new_password: str, role: str = "doctor"):
+    """Dispatches password update to the correct role account table."""
+    r = (role or "doctor").strip().lower()
+    if r == "doctor":
+        return reset_doctor_password_with_token(identifier, reset_token, new_password)
+    elif r == "patient":
+        return reset_patient_password_with_token(identifier, reset_token, new_password)
+    elif r == "viewer":
+        return reset_viewer_password_with_token(identifier, reset_token, new_password)
+    else:
+        res = reset_doctor_password_with_token(identifier, reset_token, new_password)
+        if res.get("success"):
+            return res
+        res = reset_patient_password_with_token(identifier, reset_token, new_password)
+        if res.get("success"):
+            return res
+        return reset_viewer_password_with_token(identifier, reset_token, new_password)
+
+def authenticate_for_role(login_id: str, password: str, role: str = "doctor"):
+    """Dispatches authentication to the correct role account table."""
+    r = (role or "doctor").strip().lower()
+    if r == "doctor":
+        return authenticate_doctor(login_id, password)
+    elif r == "patient":
+        return authenticate_patient(login_id, password)
+    elif r == "viewer":
+        return authenticate_viewer(login_id, password)
+    else:
+        return {"success": False, "error": f"Invalid role '{role}'."}
+
+def register_for_role(name: str, email: str, password: str, mobile: str = "", uid: str = "", role: str = "doctor"):
+    """Dispatches registration to the correct role account table."""
+    r = (role or "doctor").strip().lower()
+    if r == "doctor":
+        return register_doctor(name, email, password, mobile=mobile, uid=uid)
+    elif r == "patient":
+        return register_patient(name, email, password, mobile=mobile, uid=uid)
+    elif r == "viewer":
+        return register_viewer(name, email, password, mobile=mobile, uid=uid)
+    else:
+        return {"success": False, "error": f"Invalid role '{role}'."}
+
+# Aliases for unified naming convention
+unified_authenticate = authenticate_for_role
+unified_register = register_for_role
+unified_request_reset_otp = generate_and_store_otp_for_role
+unified_verify_reset_otp = verify_otp_for_role
+unified_reset_password = reset_password_for_role
+
+request_doctor_reset_otp = generate_and_store_reset_otp
+request_patient_reset_otp = generate_and_store_patient_reset_otp
+request_viewer_reset_otp = generate_and_store_viewer_reset_otp
+
+def clean_and_reinitialize_auth_db():
+    """
+    Cleans all existing authentication and OTP records from the database
+    and cleanly initializes the three default testing accounts:
+    Doctor: admin@gmail.com / admin123
+    Patient: patient@gmail.com / patient123
+    Viewer: user@gmail.com / user123
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.executescript("""
+        DROP TABLE IF EXISTS password_reset_otps;
+        DROP TABLE IF EXISTS patient_password_reset_otps;
+        DROP TABLE IF EXISTS viewer_password_reset_otps;
+        DROP TABLE IF EXISTS doctor_biometrics;
+        DROP TABLE IF EXISTS doctors;
+        DROP TABLE IF EXISTS patients;
+        DROP TABLE IF EXISTS viewers;
+    """)
+    conn.commit()
+    conn.close()
+    init_db()
+    print("[Database] Successfully cleaned and reinitialized authentication database with default accounts.")
+
 
 # ============================================================
 # DOCTOR BIOMETRIC DRIVER
