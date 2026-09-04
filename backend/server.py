@@ -462,6 +462,84 @@ def api_biometrics_verify():
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 
+# -------------------- CLINICAL SESSIONS API --------------------
+@app.route("/api/sessions/create", methods=["POST", "OPTIONS"])
+def api_create_session():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    doctor_id = data.get("doctor_id")
+    doctor_uid = data.get("doctor_uid", "").strip() or data.get("uid", "").strip()
+    doctor_name = data.get("doctor_name", "").strip() or data.get("name", "").strip()
+    doctor_email = data.get("doctor_email", "").strip() or data.get("email", "").strip()
+    channel_name = data.get("channel_name", "").strip() or data.get("channel", "torus").strip() or "torus"
+
+    res = database.create_clinical_session(
+        doctor_id=doctor_id,
+        doctor_uid=doctor_uid,
+        doctor_name=doctor_name,
+        doctor_email=doctor_email,
+        channel_name=channel_name
+    )
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/sessions/join", methods=["POST", "OPTIONS"])
+def api_join_session():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    session_code = data.get("session_code", "").strip() or data.get("sessionCode", "").strip() or data.get("code", "").strip()
+    participant_name = data.get("participant_name", "").strip() or data.get("viewer_name", "").strip() or data.get("name", "").strip()
+    role = data.get("role", "viewer").strip().lower()
+    participant_uid = data.get("participant_uid", "").strip() or data.get("uid", "").strip()
+
+    if not session_code:
+        return jsonify({"success": False, "error": "Please enter the session code."}), 400
+
+    res = database.join_clinical_session(
+        session_code=session_code,
+        participant_name=participant_name,
+        role=role,
+        participant_uid=participant_uid
+    )
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/sessions/validate", methods=["POST", "OPTIONS"])
+def api_validate_session():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    session_code = data.get("session_code", "").strip() or data.get("sessionCode", "").strip() or data.get("code", "").strip()
+
+    if not session_code:
+        return jsonify({"success": False, "error": "Please enter the session code."}), 400
+
+    res = database.validate_clinical_session(session_code)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/sessions/<session_code>", methods=["GET", "OPTIONS"])
+def api_get_session(session_code):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    session = database.get_clinical_session(session_code)
+    if not session:
+        return jsonify({"success": False, "error": "Invalid session code."}), 404
+    return jsonify({"success": True, "session": session})
+
+@app.route("/api/sessions/close", methods=["POST", "OPTIONS"])
+def api_close_session():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    session_code = data.get("session_code", "").strip() or data.get("code", "").strip()
+    if not session_code:
+        return jsonify({"success": False, "error": "Session code is required."}), 400
+    res = database.close_clinical_session(session_code)
+    return jsonify(res)
+
 # -------------------- STATIC FILE SERVING --------------------
 @app.route("/")
 def serve_root():

@@ -336,6 +336,37 @@ def init_db():
             FOREIGN KEY(doctor_id) REFERENCES doctors(id)
         )
     """)
+
+    # 8. Clinical Sessions Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clinical_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_code TEXT UNIQUE NOT NULL,
+            doctor_id INTEGER,
+            doctor_uid TEXT,
+            doctor_name TEXT,
+            doctor_email TEXT,
+            channel_name TEXT NOT NULL DEFAULT 'torus',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME,
+            FOREIGN KEY(doctor_id) REFERENCES doctors(id)
+        )
+    """)
+
+    # 9. Session Participants Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_participants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            session_code TEXT NOT NULL,
+            participant_name TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            participant_uid TEXT DEFAULT '',
+            joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(session_id) REFERENCES clinical_sessions(id)
+        )
+    """)
     conn.commit()
     
     # Seed default Doctor: admin@gmail.com / admin123 (role: doctor, UID: 3001)
@@ -1424,6 +1455,211 @@ def get_doctor_biometric(identifier: str) -> dict:
         }
     }
 
+# ==============================================================================
+# CLINICAL SESSIONS MANAGEMENT & VALIDATION
+# ==============================================================================
+
+def generate_unique_session_code() -> str:
+    """
+    Generates a unique, non-predictable session code (e.g. TORUS-X7K9P2).
+    Ensures the code does not collide with existing active sessions.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # exclude ambiguous 0, O, 1, I
+    for _ in range(100):
+        random_suffix = "".join(random.choices(chars, k=6))
+        code = f"TORUS-{random_suffix}"
+        cursor.execute("SELECT id FROM clinical_sessions WHERE session_code = ?", (code,))
+        if not cursor.fetchone():
+            conn.close()
+            return code
+    conn.close()
+    return f"TORUS-{secrets.token_hex(3).upper()}"
+
+def create_clinical_session(doctor_id: int = None, doctor_uid: str = "", doctor_name: str = "", doctor_email: str = "", channel_name: str = "torus", duration_hours: int = 24) -> dict:
+    """
+    Creates a real clinical session registered in the backend database.
+    Returns session information with the server-generated Session Code.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Look up doctor details if not fully provided
+    if doctor_email or doctor_uid or doctor_id:
+        if doctor_id:
+            cursor.execute("SELECT id, uid, name, email FROM doctors WHERE id = ?", (doctor_id,))
+        elif doctor_uid:
+            cursor.execute("SELECT id, uid, name, email FROM doctors WHERE LOWER(uid) = ?", (doctor_uid.strip().lower(),))
+        else:
+            cursor.execute("SELECT id, uid, name, email FROM doctors WHERE LOWER(email) = ?", (doctor_email.strip().lower(),))
+        doc_row = cursor.fetchone()
+        if doc_row:
+            doctor_id = doc_row["id"]
+            doctor_uid = doc_row["uid"]
+            doctor_name = doc_row["name"]
+            doctor_email = doc_row["email"]
+
+    if not doctor_name:
+        doctor_name = "Dr. Torus"
+    if not doctor_uid:
+        doctor_uid = "3001"
+
+    session_code = generate_unique_session_code()
+    now_utc = datetime.now(timezone.utc)
+    expires_at = (now_utc + timedelta(hours=duration_hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute("""
+        INSERT INTO clinical_sessions (session_code, doctor_id, doctor_uid, doctor_name, doctor_email, channel_name, status, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
+    """, (session_code, doctor_id, doctor_uid, doctor_name, doctor_email, channel_name, expires_at))
+
+    session_id = cursor.lastrowid
+
+    # Record Doctor participant
+    cursor.execute("""
+        INSERT INTO session_participants (session_id, session_code, participant_name, role, participant_uid)
+        VALUES (?, ?, ?, 'doctor', ?)
+    """, (session_id, session_code, doctor_name, doctor_uid))
+
+    conn.commit()
+
+    cursor.execute("SELECT * FROM clinical_sessions WHERE id = ?", (session_id,))
+    session_row = cursor.fetchone()
+    conn.close()
+
+    session_dict = {
+        "id": session_row["id"],
+        "session_code": session_row["session_code"],
+        "doctor_id": session_row["doctor_id"],
+        "doctor_uid": session_row["doctor_uid"],
+        "doctor_name": session_row["doctor_name"],
+        "doctor_email": session_row["doctor_email"],
+        "channel_name": session_row["channel_name"],
+        "status": session_row["status"],
+        "created_at": session_row["created_at"],
+        "expires_at": session_row["expires_at"]
+    }
+
+    print(f"[ClinicalSession] Created new session {session_code} for Doctor {doctor_name} ({doctor_uid}).")
+    return {
+        "success": True,
+        "session_code": session_code,
+        "channel": channel_name,
+        "session": session_dict
+    }
+
+def get_clinical_session(session_code: str) -> dict | None:
+    """Fetches clinical session record by Session Code."""
+    if not session_code:
+        return None
+    code_clean = session_code.strip().upper()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM clinical_sessions WHERE session_code = ?", (code_clean,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "id": row["id"],
+        "session_code": row["session_code"],
+        "doctor_id": row["doctor_id"],
+        "doctor_uid": row["doctor_uid"],
+        "doctor_name": row["doctor_name"],
+        "doctor_email": row["doctor_email"],
+        "channel_name": row["channel_name"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"]
+    }
+
+def validate_clinical_session(session_code: str) -> dict:
+    """
+    Validates that a clinical session exists, is active, and is not expired.
+    Returns:
+      { "success": True, "session": ... } or { "success": False, "error": "..." }
+    """
+    if not session_code or not session_code.strip():
+        return {"success": False, "error": "Please enter the session code."}
+
+    code_clean = session_code.strip().upper()
+    session = get_clinical_session(code_clean)
+
+    if not session:
+        return {"success": False, "error": "Invalid session code."}
+
+    if session["status"] == "closed":
+        return {"success": False, "error": "Session is no longer active."}
+
+    # Check expiration
+    if session.get("expires_at"):
+        try:
+            exp_time = datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00"))
+            if exp_time.tzinfo is None:
+                exp_time = exp_time.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp_time:
+                return {"success": False, "error": "Session has expired."}
+        except Exception:
+            pass
+
+    return {
+        "success": True,
+        "session": session
+    }
+
+def join_clinical_session(session_code: str, participant_name: str = "", role: str = "viewer", participant_uid: str = "") -> dict:
+    """
+    Validates the session and registers the participant (Patient or Viewer) into the existing clinical session.
+    Never creates a new session.
+    """
+    val_res = validate_clinical_session(session_code)
+    if not val_res["success"]:
+        return val_res
+
+    session = val_res["session"]
+    clean_name = participant_name.strip() if participant_name else ("Viewer" if role == "viewer" else "Patient")
+    role_clean = (role or "viewer").lower()
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO session_participants (session_id, session_code, participant_name, role, participant_uid)
+        VALUES (?, ?, ?, ?, ?)
+    """, (session["id"], session["session_code"], clean_name, role_clean, participant_uid))
+    conn.commit()
+    conn.close()
+
+    print(f"[ClinicalSession] Participant '{clean_name}' (role: {role_clean}, UID: {participant_uid}) joined session {session['session_code']}.")
+
+    return {
+        "success": True,
+        "message": f"Successfully joined session {session['session_code']}",
+        "session": session,
+        "channel": session["channel_name"],
+        "session_code": session["session_code"],
+        "participant": {
+            "name": clean_name,
+            "role": role_clean,
+            "uid": participant_uid
+        }
+    }
+
+def close_clinical_session(session_code: str) -> dict:
+    """Closes an active clinical session."""
+    if not session_code:
+        return {"success": False, "error": "Session code is required."}
+    code_clean = session_code.strip().upper()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE clinical_sessions SET status = 'closed' WHERE session_code = ?", (code_clean,))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"Session {code_clean} closed."}
+
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully.")
+

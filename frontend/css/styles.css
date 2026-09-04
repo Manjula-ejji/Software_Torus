@@ -4128,7 +4128,8 @@ select {
 }
 
 /* Secondary Join Clinical Session Button styled like Biometric Verification */
-.viewer-login-card .viewer-join-btn {
+.viewer-login-card .viewer-join-btn,
+.doctor-login-card .viewer-join-btn {
   width: 100%;
   padding: 13px;
   font-size: 14px;
@@ -4147,10 +4148,183 @@ select {
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
 }
 
-.viewer-login-card .viewer-join-btn:hover {
+.viewer-login-card .viewer-join-btn:hover,
+.doctor-login-card .viewer-join-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
   filter: none;
   transform: none;
   box-shadow: none;
-}
+}
+
+/* ==========================================================================
+   JOIN CLINICAL SESSION SCREEN STYLES
+   ========================================================================== */
+.join-session-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #0a1124 0%, #030611 100%);
+  background-size: 100% 100%;
+  padding: 20px;
+}
+
+.join-session-card {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(8, 14, 28, 0.85);
+  border: 1px solid rgba(0, 200, 255, 0.22);
+  border-radius: 20px;
+  padding: 34px 28px 30px;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 180, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  animation: page-entrance 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.join-session-card:hover {
+  border-color: rgba(0, 200, 255, 0.35);
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.7), 0 0 40px rgba(0, 180, 255, 0.18);
+}
+
+.session-code-input {
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: 600;
+  font-family: 'SF Pro Display', 'Inter', monospace, sans-serif;
+  color: #00e5ff;
+}
+
+.session-code-input::placeholder {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-family: 'Inter', sans-serif;
+  color: rgba(183, 197, 216, 0.45);
+}
+
+/* ==========================================================================
+   DOCTOR ACTIVE CLINICAL SESSION BANNER
+   ========================================================================== */
+.doctor-session-banner {
+  width: 100%;
+  max-width: 1100px;
+  margin: 12px auto 6px;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, rgba(10, 22, 45, 0.92) 0%, rgba(5, 12, 28, 0.95) 100%);
+  border: 1px solid rgba(0, 200, 255, 0.3);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 20px rgba(0, 200, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: page-entrance 0.3s ease-out forwards;
+}
+
+.session-banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.session-banner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 200, 255, 0.1);
+  border: 1px solid rgba(0, 200, 255, 0.25);
+  padding: 5px 12px;
+  border-radius: 20px;
+}
+
+.session-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00e5ff;
+  box-shadow: 0 0 8px #00e5ff;
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.session-badge-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #00e5ff;
+  letter-spacing: 0.5px;
+}
+
+.session-code-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-code-label {
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 500;
+}
+
+.session-code-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'SF Pro Display', 'Inter', monospace, sans-serif;
+  color: #ffffff;
+  letter-spacing: 1.5px;
+  background: linear-gradient(135deg, #00f0ff 0%, #38bdf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.copy-session-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #00e5ff;
+  background: rgba(0, 200, 255, 0.12);
+  border: 1px solid rgba(0, 200, 255, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.copy-session-btn:hover {
+  background: rgba(0, 200, 255, 0.25);
+  border-color: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.copy-session-btn.copied {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.session-banner-hint {
+  font-size: 12px;
+  color: rgba(183, 197, 216, 0.75);
+  font-style: italic;
+  flex-basis: 100%;
+}
+

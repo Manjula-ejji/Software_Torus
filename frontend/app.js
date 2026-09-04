@@ -2062,7 +2062,9 @@ const patientForgotScreen = document.getElementById("patient-forgot-screen");
 const viewerLoginScreen = document.getElementById("viewer-login-screen");
 const viewerRegisterScreen = document.getElementById("viewer-register-screen");
 const viewerForgotScreen = document.getElementById("viewer-forgot-screen");
+const joinSessionScreen = document.getElementById("join-session-screen");
 const appDashboard = document.getElementById("app-dashboard");
+let activeJoinSessionSourceRole = "viewer";
 
 roleCards.forEach(card => {
   card.addEventListener("click", () => {
@@ -3761,8 +3763,67 @@ async function resetDoctorPasswordAccount(email, newPassword) {
   return resetDoctorPasswordWithToken(email, "legacy_direct", newPassword);
 }
 
+// ============================================================
+// CLINICAL SESSION API HELPERS
+// ============================================================
+
+// Create Doctor Clinical Session (Backend Generated Unique Code)
+async function createClinicalSessionAPI(doctor) {
+  const doctorUid = doctor?.uid || "3001";
+  const doctorName = doctor?.name || "Dr. Torus";
+  const doctorEmail = doctor?.email || "admin@gmail.com";
+  const doctorId = doctor?.id || null;
+  const channelName = (channelInput && channelInput.value.trim()) ? channelInput.value.trim() : "torus";
+
+  const apiRes = await callBackendAPI("/api/sessions/create", {
+    doctor_id: doctorId,
+    doctor_uid: doctorUid,
+    doctor_name: doctorName,
+    doctor_email: doctorEmail,
+    channel_name: channelName
+  });
+  if (apiRes) return apiRes;
+
+  return { success: false, error: "Unable to connect to the clinical session. Please try again." };
+}
+
+// Join Existing Clinical Session (Backend Validated)
+async function joinClinicalSessionAPI(sessionCode, participantName, role = "viewer", participantUid = "") {
+  const cleanCode = (sessionCode || "").trim().toUpperCase();
+  const cleanName = (participantName || "").trim();
+
+  if (!cleanCode) {
+    return { success: false, error: "Please enter the session code." };
+  }
+
+  const apiRes = await callBackendAPI("/api/sessions/join", {
+    session_code: cleanCode,
+    participant_name: cleanName,
+    role: role,
+    participant_uid: participantUid
+  });
+  if (apiRes) return apiRes;
+
+  return { success: false, error: "Unable to connect to the clinical session. Please try again." };
+}
+
+// Validate Clinical Session
+async function validateClinicalSessionAPI(sessionCode) {
+  const cleanCode = (sessionCode || "").trim().toUpperCase();
+  if (!cleanCode) {
+    return { success: false, error: "Please enter the session code." };
+  }
+
+  const apiRes = await callBackendAPI("/api/sessions/validate", {
+    session_code: cleanCode
+  });
+  if (apiRes) return apiRes;
+
+  return { success: false, error: "Unable to connect to the clinical session. Please try again." };
+}
+
 // Set Active Authenticated Doctor Session & Launch Dashboard
-function setAuthenticatedDoctorSession(doctor) {
+async function setAuthenticatedDoctorSession(doctor) {
   currentAuthenticatedUser = doctor;
 
   // Bind values to settings inputs
@@ -3793,12 +3854,34 @@ function setAuthenticatedDoctorSession(doctor) {
   // Connect Doctor MQTT
   connectDoctorMQTT(appIdInput ? appIdInput.value : "f320d3475b6d4b70ba512b06d09849d7", channelInput ? channelInput.value : "torus");
 
+  // Create real backend clinical session and display on Doctor Screen
+  try {
+    const sessionRes = await createClinicalSessionAPI(doctor);
+    if (sessionRes && sessionRes.success && sessionRes.session_code) {
+      const bannerEl = document.getElementById("doctor-session-banner");
+      const codeDisplay = document.getElementById("doctor-session-code-display");
+      if (codeDisplay) {
+        codeDisplay.textContent = sessionRes.session_code;
+      }
+      if (bannerEl) {
+        bannerEl.style.display = "block";
+      }
+      if (sessionRes.channel && channelInput) {
+        channelInput.value = sessionRes.channel;
+      }
+    }
+  } catch (err) {
+    console.warn("[Doctor Session Creation Warning]", err);
+  }
+
   // Transition UI to Dashboard
   const doctorRegisterScreen = document.getElementById("doctor-register-screen");
   const doctorForgotScreen = document.getElementById("doctor-forgot-screen");
+  const joinScreen = document.getElementById("join-session-screen");
   if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
   if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
   if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
+  if (joinScreen) joinScreen.style.display = "none";
   if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
 
@@ -3934,9 +4017,13 @@ function setAuthenticatedPatientSession(patient) {
   const patLoginScreen = document.getElementById("patient-login-screen");
   const patRegScreen = document.getElementById("patient-register-screen");
   const patForgotScreen = document.getElementById("patient-forgot-screen");
+  const joinScreen = document.getElementById("join-session-screen");
+  const docBanner = document.getElementById("doctor-session-banner");
+  if (docBanner) docBanner.style.display = "none";
   if (patLoginScreen) patLoginScreen.style.display = "none";
   if (patRegScreen) patRegScreen.style.display = "none";
   if (patForgotScreen) patForgotScreen.style.display = "none";
+  if (joinScreen) joinScreen.style.display = "none";
   if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
 
@@ -4072,9 +4159,13 @@ function setAuthenticatedViewerSession(viewer, autoJoinCall = false) {
   const viewLoginScreen = document.getElementById("viewer-login-screen");
   const viewRegScreen = document.getElementById("viewer-register-screen");
   const viewForgotScreen = document.getElementById("viewer-forgot-screen");
+  const joinScreen = document.getElementById("join-session-screen");
+  const docBanner = document.getElementById("doctor-session-banner");
+  if (docBanner) docBanner.style.display = "none";
   if (viewLoginScreen) viewLoginScreen.style.display = "none";
   if (viewRegScreen) viewRegScreen.style.display = "none";
   if (viewForgotScreen) viewForgotScreen.style.display = "none";
+  if (joinScreen) joinScreen.style.display = "none";
   if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
 
@@ -5492,29 +5583,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // 4. Viewer Join Clinical Session Button
+  // 4. Viewer Join Clinical Session Button -> Open Join Screen
   const viewerJoinSessionBtn = document.getElementById("viewer-join-session-btn");
   if (viewerJoinSessionBtn) {
-    viewerJoinSessionBtn.addEventListener("click", async () => {
+    viewerJoinSessionBtn.addEventListener("click", () => {
+      activeJoinSessionSourceRole = "viewer";
       hideAlertMessage("viewer-login-alert");
+      hideAlertMessage("join-session-alert");
 
-      const emailVal = document.getElementById("viewer-email-input")?.value?.trim() || "viewer@torus.local";
-      const passVal = document.getElementById("viewer-password-input")?.value || "viewer123";
+      const sessionCodeInput = document.getElementById("join-session-code-input");
+      if (sessionCodeInput) sessionCodeInput.value = "";
+      const viewerNameInput = document.getElementById("join-viewer-name-input");
+      if (viewerNameInput) viewerNameInput.value = "";
 
-      // Attempt authentication or auto-authenticate default session
-      const res = await authenticateViewerAccount(emailVal, passVal);
-      if (res.success && res.viewer) {
-        setAuthenticatedViewerSession(res.viewer, true);
-      } else {
-        // Fallback session for immediate clinical viewing
-        const fallbackViewer = {
-          uid: "6001",
-          name: "Viewer 1",
-          email: emailVal,
-          role: "viewer"
-        };
-        setAuthenticatedViewerSession(fallbackViewer, true);
-      }
+      const vLoginScreen = document.getElementById("viewer-login-screen");
+      const jScreen = document.getElementById("join-session-screen");
+      if (vLoginScreen) vLoginScreen.style.display = "none";
+      if (jScreen) jScreen.style.display = "flex";
     });
   }
 
@@ -5859,6 +5944,152 @@ document.addEventListener("DOMContentLoaded", async () => {
         showAlertMessage("viewer-forgot-alert-step3", "Failed to reset password. Please try again.");
       } finally {
         if (resetBtn) resetBtn.disabled = false;
+      }
+    });
+  }
+
+  // ============================================================
+  // CLINICAL SESSION EVENT HANDLERS (JOIN & COPY)
+  // ============================================================
+
+  // 1. Patient Join Clinical Session Button -> Open Join Screen
+  const patientJoinSessionBtn = document.getElementById("patient-join-session-btn");
+  if (patientJoinSessionBtn) {
+    patientJoinSessionBtn.addEventListener("click", () => {
+      activeJoinSessionSourceRole = "patient";
+      hideAlertMessage("patient-login-alert");
+      hideAlertMessage("join-session-alert");
+
+      const sessionCodeInput = document.getElementById("join-session-code-input");
+      if (sessionCodeInput) sessionCodeInput.value = "";
+      const viewerNameInput = document.getElementById("join-viewer-name-input");
+      if (viewerNameInput) viewerNameInput.value = "";
+
+      const pLoginScreen = document.getElementById("patient-login-screen");
+      const jScreen = document.getElementById("join-session-screen");
+      if (pLoginScreen) pLoginScreen.style.display = "none";
+      if (jScreen) jScreen.style.display = "flex";
+    });
+  }
+
+  // 2. Back Button from Join Clinical Session -> Previous Screen
+  const joinSessionBackBtn = document.getElementById("join-session-back-btn");
+  if (joinSessionBackBtn) {
+    joinSessionBackBtn.addEventListener("click", () => {
+      hideAlertMessage("join-session-alert");
+      const jScreen = document.getElementById("join-session-screen");
+      if (jScreen) jScreen.style.display = "none";
+
+      if (activeJoinSessionSourceRole === "patient") {
+        const pLoginScreen = document.getElementById("patient-login-screen");
+        if (pLoginScreen) pLoginScreen.style.display = "flex";
+      } else {
+        const vLoginScreen = document.getElementById("viewer-login-screen");
+        if (vLoginScreen) vLoginScreen.style.display = "flex";
+      }
+    });
+  }
+
+  // 3. Join Clinical Session Form Submission (Backend Validation & Join)
+  const joinSessionForm = document.getElementById("join-session-form");
+  if (joinSessionForm) {
+    joinSessionForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlertMessage("join-session-alert");
+
+      const sessionCodeInput = document.getElementById("join-session-code-input");
+      const viewerNameInput = document.getElementById("join-viewer-name-input");
+      const submitBtn = document.getElementById("join-session-submit-btn");
+
+      const sessionCode = sessionCodeInput?.value?.trim() || "";
+      const participantName = viewerNameInput?.value?.trim() || "";
+
+      if (!sessionCode) {
+        showAlertMessage("join-session-alert", "Please enter the session code.");
+        return;
+      }
+
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const roleToJoin = activeJoinSessionSourceRole || "viewer";
+        const uidToJoin = roleToJoin === "patient" ? "4001" : String(6000 + Math.floor(Math.random() * 3000));
+        const defaultDisplayName = roleToJoin === "patient" ? "Patient" : "Viewer 1";
+        const finalDisplayName = participantName || defaultDisplayName;
+
+        const res = await joinClinicalSessionAPI(sessionCode, finalDisplayName, roleToJoin, uidToJoin);
+
+        if (res && res.success) {
+          const jScreen = document.getElementById("join-session-screen");
+          if (jScreen) jScreen.style.display = "none";
+
+          if (res.channel && channelInput) {
+            channelInput.value = res.channel;
+          }
+
+          if (roleToJoin === "patient") {
+            const patObj = {
+              uid: uidToJoin,
+              name: finalDisplayName,
+              email: "patient@torus.local",
+              role: "patient",
+              session_code: res.session_code || sessionCode
+            };
+            setAuthenticatedPatientSession(patObj);
+          } else {
+            const viewerObj = {
+              uid: uidToJoin,
+              name: finalDisplayName,
+              email: "viewer@torus.local",
+              role: "viewer",
+              session_code: res.session_code || sessionCode
+            };
+            setAuthenticatedViewerSession(viewerObj, true);
+          }
+        } else {
+          showAlertMessage("join-session-alert", res?.error || "Invalid session code.");
+        }
+      } catch (err) {
+        console.error("[Join Clinical Session Error]", err);
+        showAlertMessage("join-session-alert", "Unable to connect to the clinical session. Please try again.");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  // 4. Copy Doctor Session Code Button
+  const copySessionBtn = document.getElementById("copy-session-code-btn");
+  const sessionCodeDisplay = document.getElementById("doctor-session-code-display");
+  const copyBtnText = document.getElementById("copy-btn-text");
+
+  if (copySessionBtn && sessionCodeDisplay) {
+    copySessionBtn.addEventListener("click", async () => {
+      const code = sessionCodeDisplay.textContent.trim();
+      if (!code || code === "TORUS-XXXXXX") return;
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(code);
+        } else {
+          // Fallback text copy
+          const tempInput = document.createElement("input");
+          tempInput.value = code;
+          document.body.appendChild(tempInput);
+          tempInput.select();
+          document.execCommand("copy");
+          document.body.removeChild(tempInput);
+        }
+
+        copySessionBtn.classList.add("copied");
+        if (copyBtnText) copyBtnText.textContent = "Copied!";
+
+        setTimeout(() => {
+          copySessionBtn.classList.remove("copied");
+          if (copyBtnText) copyBtnText.textContent = "Copy";
+        }, 2000);
+      } catch (err) {
+        console.warn("Clipboard copy failed:", err);
       }
     });
   }
