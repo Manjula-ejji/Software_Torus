@@ -4,8 +4,9 @@
   "description": "Simple Agora Web Video Call",
   "main": "frontend/app.js",
   "scripts": {
-    "start": "http-server frontend -p 8080",
-    "dev": "http-server frontend -p 8080",
+    "start": "python backend/server.py",
+    "dev": "python backend/server.py",
+    "frontend": "python backend/server.py",
     "server": "python backend/server.py",
     "backend": "python backend/server.py"
   },

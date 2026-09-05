@@ -1505,6 +1505,48 @@ def create_clinical_session(doctor_id: int = None, doctor_uid: str = "", doctor_
     if not doctor_uid:
         doctor_uid = "3001"
 
+    # Check if active non-expired session already exists for this doctor to reuse
+    if doctor_id or doctor_uid or doctor_email:
+        cursor.execute("""
+            SELECT * FROM clinical_sessions 
+            WHERE (
+                (? IS NOT NULL AND ? != '' AND doctor_id = ?) OR
+                (? IS NOT NULL AND ? != '' AND LOWER(doctor_uid) = LOWER(?)) OR
+                (? IS NOT NULL AND ? != '' AND LOWER(doctor_email) = LOWER(?))
+            )
+            AND status = 'active'
+            AND (expires_at IS NULL OR expires_at > datetime('now'))
+            ORDER BY id DESC LIMIT 1
+        """, (
+            doctor_id, str(doctor_id) if doctor_id else "", doctor_id,
+            doctor_uid, doctor_uid, doctor_uid,
+            doctor_email, doctor_email, doctor_email
+        ))
+        existing_session = cursor.fetchone()
+        if existing_session:
+            session_code = existing_session["session_code"]
+            channel_name = existing_session["channel_name"]
+            session_dict = {
+                "id": existing_session["id"],
+                "session_code": existing_session["session_code"],
+                "doctor_id": existing_session["doctor_id"],
+                "doctor_uid": existing_session["doctor_uid"],
+                "doctor_name": existing_session["doctor_name"],
+                "doctor_email": existing_session["doctor_email"],
+                "channel_name": existing_session["channel_name"],
+                "status": existing_session["status"],
+                "created_at": existing_session["created_at"],
+                "expires_at": existing_session["expires_at"]
+            }
+            conn.close()
+            print(f"[ClinicalSession] Reusing existing active session {session_code} for Doctor {doctor_name} ({doctor_uid}).")
+            return {
+                "success": True,
+                "session_code": session_code,
+                "channel": channel_name,
+                "session": session_dict
+            }
+
     session_code = generate_unique_session_code()
     now_utc = datetime.now(timezone.utc)
     expires_at = (now_utc + timedelta(hours=duration_hours)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1625,11 +1667,27 @@ def join_clinical_session(session_code: str, participant_name: str = "", role: s
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO session_participants (session_id, session_code, participant_name, role, participant_uid)
-        VALUES (?, ?, ?, ?, ?)
-    """, (session["id"], session["session_code"], clean_name, role_clean, participant_uid))
-    conn.commit()
+
+    # Avoid duplicate rows for the same participant in the same session
+    if participant_uid:
+        cursor.execute("""
+            SELECT id FROM session_participants 
+            WHERE session_code = ? AND role = ? AND participant_uid = ?
+        """, (session["session_code"], role_clean, participant_uid))
+        existing_p = cursor.fetchone()
+        if not existing_p:
+            cursor.execute("""
+                INSERT INTO session_participants (session_id, session_code, participant_name, role, participant_uid)
+                VALUES (?, ?, ?, ?, ?)
+            """, (session["id"], session["session_code"], clean_name, role_clean, participant_uid))
+            conn.commit()
+    else:
+        cursor.execute("""
+            INSERT INTO session_participants (session_id, session_code, participant_name, role, participant_uid)
+            VALUES (?, ?, ?, ?, ?)
+        """, (session["id"], session["session_code"], clean_name, role_clean, participant_uid))
+        conn.commit()
+
     conn.close()
 
     print(f"[ClinicalSession] Participant '{clean_name}' (role: {role_clean}, UID: {participant_uid}) joined session {session['session_code']}.")

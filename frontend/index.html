@@ -1330,30 +1330,6 @@
       </div>
     </header>
 
-    <!-- Doctor Active Clinical Session Banner -->
-    <div id="doctor-session-banner" class="doctor-session-banner" style="display: none;">
-      <div class="session-banner-content">
-        <div class="session-banner-badge">
-          <span class="session-status-dot"></span>
-          <span class="session-badge-title">Clinical Session Created</span>
-        </div>
-        <div class="session-code-container">
-          <span class="session-code-label">Session Code:</span>
-          <span id="doctor-session-code-display" class="session-code-value">TORUS-XXXXXX</span>
-          <button type="button" id="copy-session-code-btn" class="copy-session-btn" title="Copy Session Code">
-            <svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-            <span id="copy-btn-text">Copy</span>
-          </button>
-        </div>
-        <div class="session-banner-hint">
-          Share this code with the Patient or Viewer to join the clinical session.
-        </div>
-      </div>
-    </div>
-
     <section class="controls">
       <div class="button-row">
         <button id="joinBtn" class="btn btn-primary" type="button">Join Call</button>
@@ -1364,21 +1340,23 @@
 
     <!-- Settings Modal Popup -->
     <div id="settingsModal" class="modal-overlay">
-      <div class="modal-content">
+      <div class="modal-content settings-modal-card">
         <div class="modal-header">
           <h2>Agora Connection Settings</h2>
           <button id="closeModalBtn" class="close-modal-btn" type="button" title="Close Modal">&times;</button>
         </div>
         <div class="modal-body">
           <div class="controls-grid">
-            <label>
+            <!-- Row 1: App ID (Full width) -->
+            <label class="full-width">
               <span>App ID</span>
-              <input id="appId" type="text" placeholder="Enter Agora App ID" value="f320d3475b6d4b70ba512b06d09849d7" />
+              <input id="appId" type="text" placeholder="Enter Agora App ID" value="f320d3475b6d4b70ba512b06d09849d7" spellcheck="false" />
             </label>
 
+            <!-- Row 2: Channel and Role (Side by side) -->
             <label>
               <span>Channel</span>
-              <input id="channel" type="text" value="torus" />
+              <input id="channel" type="text" value="torus" spellcheck="false" />
             </label>
 
             <label>
@@ -1390,24 +1368,35 @@
               </select>
             </label>
 
-            <label id="feed-type-container">
-              <span>Ultrasound Source</span>
-              <select id="feedType">
-                <option value="webcam">Live Feed (USB Camera/Capture Card)</option>
-                <option value="screen">Window Capture (Screen Share)</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Token (optional)</span>
-              <input id="token" type="text" placeholder="RTC Token"
-                value="007eJxTYHj0Vvf6hNIVxccEU106moTWrGPq3RO41qnPIjr58ZfnPH0KDOam5qlmSabJpmmJqSYmaWZJ5mbG5kmGiZaG5ikWhpaJQXunZTUEMjKkxD5hZGSAQBCflaEkv6i0mIEBALodIQI=" />
-            </label>
-
+            <!-- Row 3: UID (optional) and Session Code (Side by side) -->
             <label>
               <span>UID (optional)</span>
               <input id="uid" type="number" min="0" placeholder="Auto" readonly />
             </label>
+
+            <label>
+              <span>Session Code</span>
+              <div class="modal-session-code-wrapper">
+                <input id="settings-session-code" type="text" placeholder="TORUS-XXXXXX" readonly />
+                <button type="button" id="modal-copy-session-btn" class="modal-copy-btn" title="Copy Session Code">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span id="modal-copy-btn-text">Copy</span>
+                </button>
+              </div>
+            </label>
+
+            <!-- Hidden compatibility fields to preserve all existing JS logic -->
+            <input id="token" type="hidden"
+              value="007eJxTYHj0Vvf6hNIVxccEU106moTWrGPq3RO41qnPIjr58ZfnPH0KDOam5qlmSabJpmmJqSYmaWZJ5mbG5kmGiZaG5ikWhpaJQXunZTUEMjKkxD5hZGSAQBCflaEkv6i0mIEBALodIQI=" />
+            <div id="feed-type-container" style="display:none;">
+              <select id="feedType">
+                <option value="webcam">Live Feed (USB Camera/Capture Card)</option>
+                <option value="screen">Window Capture (Screen Share)</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="modal-footer">

@@ -1523,39 +1523,60 @@ let originalSettings = {};
 
 function openSettings() {
   originalSettings = {
-    appId: appIdInput.value,
-    channel: channelInput.value,
-    role: roleInput.value,
-    feedType: feedTypeInput.value,
-    token: tokenInput.value,
-    uid: uidInput.value
+    appId: appIdInput ? appIdInput.value : "",
+    channel: channelInput ? channelInput.value : "",
+    role: roleInput ? roleInput.value : "",
+    feedType: feedTypeInput ? feedTypeInput.value : "",
+    token: tokenInput ? tokenInput.value : "",
+    uid: uidInput ? uidInput.value : ""
   };
+
+  // Synchronize Session Code with active session
+  const modalSessionCodeInput = document.getElementById("settings-session-code");
+  if (modalSessionCodeInput) {
+    let currentCode = "";
+    if (window.activeClinicalSessionCode) {
+      currentCode = window.activeClinicalSessionCode;
+    } else if (sessionStorage.getItem("active_clinical_session_code")) {
+      currentCode = sessionStorage.getItem("active_clinical_session_code");
+    } else if (localStorage.getItem("active_clinical_session_code")) {
+      currentCode = localStorage.getItem("active_clinical_session_code");
+    } else if (typeof currentAuthenticatedUser !== "undefined" && currentAuthenticatedUser && currentAuthenticatedUser.session_code) {
+      currentCode = currentAuthenticatedUser.session_code;
+    }
+    if (currentCode) {
+      modalSessionCodeInput.value = currentCode;
+    }
+  }
+
   settingsModal.classList.add("active");
 }
 
 function closeSettings(save = false) {
   if (!save) {
-    appIdInput.value = originalSettings.appId;
-    channelInput.value = originalSettings.channel;
-    roleInput.value = originalSettings.role;
-    feedTypeInput.value = originalSettings.feedType;
-    tokenInput.value = originalSettings.token;
-    uidInput.value = originalSettings.uid;
-    roleInput.dispatchEvent(new Event("change"));
+    if (appIdInput) appIdInput.value = originalSettings.appId;
+    if (channelInput) channelInput.value = originalSettings.channel;
+    if (roleInput) roleInput.value = originalSettings.role;
+    if (feedTypeInput) feedTypeInput.value = originalSettings.feedType;
+    if (tokenInput) tokenInput.value = originalSettings.token;
+    if (uidInput) uidInput.value = originalSettings.uid;
+    if (roleInput) roleInput.dispatchEvent(new Event("change"));
   }
   settingsModal.classList.remove("active");
 }
 
-settingsBtn.addEventListener("click", openSettings);
-closeModalBtn.addEventListener("click", () => closeSettings(false));
-cancelSettingsBtn.addEventListener("click", () => closeSettings(false));
-saveSettingsBtn.addEventListener("click", () => closeSettings(true));
+if (settingsBtn) settingsBtn.addEventListener("click", openSettings);
+if (closeModalBtn) closeModalBtn.addEventListener("click", () => closeSettings(false));
+if (cancelSettingsBtn) cancelSettingsBtn.addEventListener("click", () => closeSettings(false));
+if (saveSettingsBtn) saveSettingsBtn.addEventListener("click", () => closeSettings(true));
 
-settingsModal.addEventListener("click", (e) => {
-  if (e.target === settingsModal) {
-    closeSettings(false);
-  }
-});
+if (settingsModal) {
+  settingsModal.addEventListener("click", (e) => {
+    if (e.target === settingsModal) {
+      closeSettings(false);
+    }
+  });
+}
 
 // Controls Modal (OpenSonics) UI Interaction
 const controlsModal = document.getElementById("controlsModal");
@@ -3609,22 +3630,11 @@ function validateMobileFormat(mobile) {
 // Register Doctor in SQLite
 // Universal API dispatcher supporting relative routes and local backend ports
 async function callBackendAPI(endpoint, payload) {
-  const isPort8000 = window.location.port === "8000";
-  const candidateUrls = isPort8000
-    ? [
-      endpoint,
-      `http://127.0.0.1:8000${endpoint}`,
-      `http://localhost:8000${endpoint}`
-    ]
-    : [
-      `http://127.0.0.1:8000${endpoint}`,
-      `http://localhost:8000${endpoint}`,
-      endpoint,
-      `http://127.0.0.1:8080${endpoint}`,
-      `http://localhost:8080${endpoint}`,
-      `http://127.0.0.1:5000${endpoint}`,
-      `http://localhost:5000${endpoint}`
-    ];
+  const candidateUrls = [
+    endpoint,
+    `http://127.0.0.1:8000${endpoint}`,
+    `http://localhost:8000${endpoint}`
+  ];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));
 
@@ -3854,17 +3864,16 @@ async function setAuthenticatedDoctorSession(doctor) {
   // Connect Doctor MQTT
   connectDoctorMQTT(appIdInput ? appIdInput.value : "f320d3475b6d4b70ba512b06d09849d7", channelInput ? channelInput.value : "torus");
 
-  // Create real backend clinical session and display on Doctor Screen
+  // Create real backend clinical session and store for Agora Settings
   try {
     const sessionRes = await createClinicalSessionAPI(doctor);
     if (sessionRes && sessionRes.success && sessionRes.session_code) {
-      const bannerEl = document.getElementById("doctor-session-banner");
-      const codeDisplay = document.getElementById("doctor-session-code-display");
-      if (codeDisplay) {
-        codeDisplay.textContent = sessionRes.session_code;
-      }
-      if (bannerEl) {
-        bannerEl.style.display = "block";
+      window.activeClinicalSessionCode = sessionRes.session_code;
+      sessionStorage.setItem("active_clinical_session_code", sessionRes.session_code);
+      localStorage.setItem("active_clinical_session_code", sessionRes.session_code);
+      const modalCodeInput = document.getElementById("settings-session-code");
+      if (modalCodeInput) {
+        modalCodeInput.value = sessionRes.session_code;
       }
       if (sessionRes.channel && channelInput) {
         channelInput.value = sessionRes.channel;
@@ -6027,13 +6036,20 @@ document.addEventListener("DOMContentLoaded", async () => {
             channelInput.value = res.channel;
           }
 
+          const joinedCode = res.session_code || sessionCode;
+          window.activeClinicalSessionCode = joinedCode;
+          const modalCodeInput = document.getElementById("settings-session-code");
+          if (modalCodeInput) {
+            modalCodeInput.value = joinedCode;
+          }
+
           if (roleToJoin === "patient") {
             const patObj = {
               uid: uidToJoin,
               name: finalDisplayName,
               email: "patient@torus.local",
               role: "patient",
-              session_code: res.session_code || sessionCode
+              session_code: joinedCode
             };
             setAuthenticatedPatientSession(patObj);
           } else {
@@ -6042,7 +6058,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               name: finalDisplayName,
               email: "viewer@torus.local",
               role: "viewer",
-              session_code: res.session_code || sessionCode
+              session_code: joinedCode
             };
             setAuthenticatedViewerSession(viewerObj, true);
           }
@@ -6072,7 +6088,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(code);
         } else {
-          // Fallback text copy
           const tempInput = document.createElement("input");
           tempInput.value = code;
           document.body.appendChild(tempInput);
@@ -6090,6 +6105,37 @@ document.addEventListener("DOMContentLoaded", async () => {
         }, 2000);
       } catch (err) {
         console.warn("Clipboard copy failed:", err);
+      }
+    });
+  }
+
+  // 5. Copy Settings Modal Session Code Button
+  const modalCopyBtn = document.getElementById("modal-copy-session-btn");
+  const modalSessionCodeInput = document.getElementById("settings-session-code");
+  const modalCopyBtnText = document.getElementById("modal-copy-btn-text");
+
+  if (modalCopyBtn && modalSessionCodeInput) {
+    modalCopyBtn.addEventListener("click", async () => {
+      const code = modalSessionCodeInput.value.trim();
+      if (!code || code === "TORUS-XXXXXX") return;
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(code);
+        } else {
+          modalSessionCodeInput.select();
+          document.execCommand("copy");
+        }
+
+        modalCopyBtn.classList.add("copied");
+        if (modalCopyBtnText) modalCopyBtnText.textContent = "Copied!";
+
+        setTimeout(() => {
+          modalCopyBtn.classList.remove("copied");
+          if (modalCopyBtnText) modalCopyBtnText.textContent = "Copy";
+        }, 2000);
+      } catch (err) {
+        console.warn("Modal clipboard copy failed:", err);
       }
     });
   }

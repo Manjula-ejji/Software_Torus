@@ -974,15 +974,14 @@ select {
 }
 
 .modal-content {
-  background: rgba(20, 22, 42, 0.85);
+  background: rgba(15, 18, 38, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 26px;
-  /* 26px rounded corners */
+  border-radius: 22px;
   width: 95%;
-  max-width: 580px;
+  max-width: 620px;
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.7),
-    0 0 35px rgba(139, 92, 246, 0.1),
+    0 24px 60px rgba(0, 0, 0, 0.75),
+    0 0 35px rgba(0, 210, 255, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
   transform: scale(0.92);
   transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -998,18 +997,18 @@ select {
 }
 
 .modal-header {
-  padding: 24px 32px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 22px 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .modal-header h2 {
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--text-main);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 
 .close-modal-btn {
@@ -1035,27 +1034,134 @@ select {
 }
 
 .modal-body {
-  padding: 32px;
-  max-height: calc(100vh - 200px);
+  padding: 26px 28px;
+  max-height: calc(100vh - 180px);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 .modal-body .controls-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 22px;
+  gap: 18px 20px;
   margin-bottom: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.modal-body .controls-grid label:nth-child(1),
-.modal-body .controls-grid label:nth-child(5) {
+.modal-body .controls-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.modal-body .controls-grid label.full-width,
+.modal-body .controls-grid label:nth-child(1) {
   grid-column: span 2;
 }
 
+.modal-body .controls-grid label span {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.3px;
+  display: block;
+}
+
+.modal-body .controls-grid input,
+.modal-body .controls-grid select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: rgba(8, 11, 24, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 11px 14px;
+  color: #f8fafc;
+  font-size: 0.92rem;
+  font-family: var(--font-sans);
+  transition: all 0.2s ease;
+  outline: none;
+  text-overflow: ellipsis;
+}
+
+.modal-body .controls-grid input:focus,
+.modal-body .controls-grid select:focus {
+  border-color: #00d2ff;
+  box-shadow: 0 0 0 3px rgba(0, 210, 255, 0.2);
+  background: rgba(12, 16, 36, 0.95);
+}
+
+.modal-body .controls-grid input[readonly] {
+  cursor: default;
+  color: #cbd5e1;
+  background: rgba(8, 11, 24, 0.5);
+}
+
+.modal-session-code-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.modal-session-code-wrapper input {
+  padding-left: 10px !important;
+  padding-right: 56px !important;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace !important;
+  font-weight: 700 !important;
+  font-size: 0.82rem !important;
+  letter-spacing: 0.4px !important;
+  color: #00d2ff !important;
+  text-overflow: clip !important;
+}
+
+.modal-copy-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 7px;
+  background: rgba(0, 210, 255, 0.12);
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  border-radius: 8px;
+  color: #00d2ff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1;
+  user-select: none;
+}
+
+.modal-copy-btn:hover {
+  background: rgba(0, 210, 255, 0.25);
+  border-color: #00d2ff;
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+}
+
+.modal-copy-btn:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
+.modal-copy-btn.copied {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #10b981;
+}
+
 .modal-footer {
-  padding: 20px 32px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(4, 5, 10, 0.25);
+  padding: 18px 28px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 8, 18, 0.45);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
@@ -1066,8 +1172,8 @@ select {
     grid-template-columns: 1fr;
   }
 
-  .modal-body .controls-grid label:nth-child(1),
-  .modal-body .controls-grid label:nth-child(5) {
+  .modal-body .controls-grid label.full-width,
+  .modal-body .controls-grid label:nth-child(1) {
     grid-column: span 1;
   }
 
@@ -1077,7 +1183,7 @@ select {
   }
 
   .modal-body {
-    padding: 20px;
+    padding: 18px;
   }
 }
 
@@ -4211,20 +4317,10 @@ select {
 }
 
 /* ==========================================================================
-   DOCTOR ACTIVE CLINICAL SESSION BANNER
+   DOCTOR ACTIVE CLINICAL SESSION BANNER (HIDDEN - EXCLUSIVE TO AGORA SETTINGS)
    ========================================================================== */
 .doctor-session-banner {
-  width: 100%;
-  max-width: 1100px;
-  margin: 12px auto 6px;
-  padding: 14px 20px;
-  background: linear-gradient(135deg, rgba(10, 22, 45, 0.92) 0%, rgba(5, 12, 28, 0.95) 100%);
-  border: 1px solid rgba(0, 200, 255, 0.3);
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 20px rgba(0, 200, 255, 0.12);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  animation: page-entrance 0.3s ease-out forwards;
+  display: none !important;
 }
 
 .session-banner-content {

@@ -37,6 +37,10 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    if request.path.endswith((".html", ".js", ".css")) or request.path in ["/", "/index.html"]:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     return response
 
 # -------------------- HEALTH CHECK --------------------
@@ -469,10 +473,10 @@ def api_create_session():
         return Response(status=204)
     data = request.get_json(silent=True) or {}
     doctor_id = data.get("doctor_id")
-    doctor_uid = data.get("doctor_uid", "").strip() or data.get("uid", "").strip()
-    doctor_name = data.get("doctor_name", "").strip() or data.get("name", "").strip()
-    doctor_email = data.get("doctor_email", "").strip() or data.get("email", "").strip()
-    channel_name = data.get("channel_name", "").strip() or data.get("channel", "torus").strip() or "torus"
+    doctor_uid = str(data.get("doctor_uid") or data.get("uid") or "").strip()
+    doctor_name = str(data.get("doctor_name") or data.get("name") or "").strip()
+    doctor_email = str(data.get("doctor_email") or data.get("email") or "").strip()
+    channel_name = str(data.get("channel_name") or data.get("channel") or "torus").strip() or "torus"
 
     res = database.create_clinical_session(
         doctor_id=doctor_id,
@@ -489,10 +493,10 @@ def api_join_session():
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    session_code = data.get("session_code", "").strip() or data.get("sessionCode", "").strip() or data.get("code", "").strip()
-    participant_name = data.get("participant_name", "").strip() or data.get("viewer_name", "").strip() or data.get("name", "").strip()
-    role = data.get("role", "viewer").strip().lower()
-    participant_uid = data.get("participant_uid", "").strip() or data.get("uid", "").strip()
+    session_code = str(data.get("session_code") or data.get("sessionCode") or data.get("code") or "").strip()
+    participant_name = str(data.get("participant_name") or data.get("viewer_name") or data.get("name") or "").strip()
+    role = str(data.get("role") or "viewer").strip().lower()
+    participant_uid = str(data.get("participant_uid") or data.get("uid") or "").strip()
 
     if not session_code:
         return jsonify({"success": False, "error": "Please enter the session code."}), 400
@@ -543,6 +547,13 @@ def api_close_session():
 # -------------------- STATIC FILE SERVING --------------------
 @app.route("/")
 def serve_root():
+    return send_from_directory(str(FRONTEND_DIR), "index.html")
+
+@app.route("/frontend/<path:path>")
+def serve_frontend_prefix(path):
+    file_path = FRONTEND_DIR / path
+    if file_path.is_file():
+        return send_from_directory(str(FRONTEND_DIR), path)
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
 @app.route("/<path:path>")
