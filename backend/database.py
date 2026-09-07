@@ -1397,9 +1397,11 @@ def _slot_label_to_int(slot_label: str) -> int:
     except (ValueError, AttributeError):
         return 0
 
-def _slot_int_to_label(slot_int: int) -> str:
-    """Convert 5 -> 'R5'."""
-    return f"R{slot_int}"
+def _slot_int_to_label(slot_int: int) -> str | None:
+    """Convert 5 -> 'R5'. Returns None if out of bounds (1..MAX_BIOMETRIC_SLOTS)."""
+    if isinstance(slot_int, int) and 1 <= slot_int <= MAX_BIOMETRIC_SLOTS:
+        return f"R{slot_int}"
+    return None
 
 def get_next_available_biometric_slot() -> str | None:
     """

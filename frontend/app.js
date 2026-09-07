@@ -5493,12 +5493,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         dots.forEach(d => d.className = "bio-dot active");
 
-        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint verified successfully";
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint verified • Haptic Pad Unlocked";
         if (bioVerifySubtitle) bioVerifySubtitle.textContent = `Welcome back, ${authUser.name}`;
 
         showAlertMessage(
           "doctor-biometric-alert",
-          `Fingerprint verified successfully. Welcome back, ${authUser.name}. Launching TORUS workspace...`,
+          `Fingerprint verified successfully (Haptic Pad Unlocked). Welcome back, ${authUser.name}. Launching TORUS workspace...`,
           "success"
         );
 
@@ -5512,7 +5512,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Real mismatch or failure
       if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
-      if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint does not match";
+      if (bioVerifyTitle) bioVerifyTitle.textContent = (resData && resData.haptic_status === "LOCKED") ? "Fingerprint does not match • Haptic Pad Locked" : "Fingerprint does not match";
       if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please try again.";
 
       const errMsg = resData?.error || "Fingerprint does not match. Please try again.";
