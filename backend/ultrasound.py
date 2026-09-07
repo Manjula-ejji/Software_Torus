@@ -71,7 +71,7 @@ UID = 5001
 # Choose which ultrasound script to launch.
 ULTRASOUND_SCRIPT = "curv_proper_code.py"
 HOST = "127.0.0.1"
-PORT = 8000
+PORT = 3000
 FPS = 15
 
 # Stable canvas output dimensions
@@ -1292,8 +1292,7 @@ def publisher_page():
         }}
         if (client) await client.leave();
       }} catch (_) {{}}
-      } catch (_) {}
-    });
+    }});
   </script>
 </body>
 </html>

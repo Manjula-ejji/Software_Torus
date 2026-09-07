@@ -10,7 +10,7 @@ sys.path.insert(0, str(backend_dir))
 
 import database
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:3000"
 
 def post_json(path, data):
     url = f"{BASE_URL}{path}"
@@ -87,9 +87,28 @@ def test_live_server_endpoints():
     assert data["success"] is True
     assert data["doctor"]["email"] == "admin@gmail.com"
 
-    print("\n==========================================")
+    print("\n--- 8. Restoring Default Doctor Password (admin123) ---")
+    # Restore the default password so the default login credentials still work after tests.
+    import sys
+    from pathlib import Path
+    backend_dir = Path(__file__).resolve().parent.parent / "backend"
+    if str(backend_dir) not in sys.path:
+        sys.path.insert(0, str(backend_dir))
+    import database as _db
+    conn = _db.get_db()
+    cursor = conn.cursor()
+    restored_hash = _db.hash_password("admin123")
+    cursor.execute("UPDATE doctors SET password_hash=? WHERE LOWER(email)=?", (restored_hash, "admin@gmail.com"))
+    conn.commit()
+    conn.close()
+    # Verify restore
+    verify = _db.authenticate_doctor("admin@gmail.com", "admin123")
+    assert verify["success"] is True, "Default password restore failed!"
+    print("Default Doctor password restored to admin123 successfully.")
+
+    print("\n=========================================")
     print("=== ALL LIVE SERVER INTEGRATION TESTS PASSED! ===")
-    print("==========================================")
+    print("=========================================")
 
 if __name__ == "__main__":
     test_live_server_endpoints()

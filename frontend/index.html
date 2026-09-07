@@ -1368,32 +1368,38 @@
               </select>
             </label>
 
-            <!-- Row 3: UID (optional) and Session Code (Side by side) -->
-            <label>
+            <!-- Row 3: UID (optional) and Session Code (Doctor only) -->
+            <label id="settings-uid-wrapper">
               <span>UID (optional)</span>
               <input id="uid" type="number" min="0" placeholder="Auto" readonly />
             </label>
 
-            <label>
+            <label id="settings-session-code-wrapper">
               <span>Session Code</span>
               <div class="modal-session-code-wrapper">
                 <input id="settings-session-code" type="text" placeholder="TORUS-XXXXXX" readonly />
-                <button type="button" id="modal-copy-session-btn" class="modal-copy-btn" title="Copy Session Code">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button type="button" id="modal-copy-session-btn" class="modal-copy-btn" title="Copy Session Code" aria-label="Copy Session Code">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                  <span id="modal-copy-btn-text">Copy</span>
+                  <span id="modal-copy-btn-text" style="display: none;"></span>
                 </button>
               </div>
             </label>
 
-            <!-- Hidden compatibility fields to preserve all existing JS logic -->
-            <input id="token" type="hidden"
-              value="007eJxTYHj0Vvf6hNIVxccEU106moTWrGPq3RO41qnPIjr58ZfnPH0KDOam5qlmSabJpmmJqSYmaWZJ5mbG5kmGiZaG5ikWhpaJQXunZTUEMjKkxD5hZGSAQBCflaEkv6i0mIEBALodIQI=" />
-            <div id="feed-type-container" style="display:none;">
+            <!-- Row 4: Token Section (Doctor, Patient, and Viewer sides) -->
+            <label id="settings-token-wrapper" class="full-width">
+              <span>Token</span>
+              <input id="token" type="text" placeholder="Enter Agora Token"
+                value="007eJxTYHj0Vvf6hNIVxccEU106moTWrGPq3RO41qnPIjr58ZfnPH0KDOam5qlmSabJpmmJqSYmaWZJ5mbG5kmGiZaG5ikWhpaJQXunZTUEMjKkxD5hZGSAQBCflaEkv6i0mIEBALodIQI="
+                spellcheck="false" autocomplete="off" />
+            </label>
+
+            <!-- Compatibility hidden element to preserve existing JS logic without any UI display -->
+            <div id="feed-type-container" style="display: none !important;">
               <select id="feedType">
-                <option value="webcam">Live Feed (USB Camera/Capture Card)</option>
+                <option value="webcam" selected>Live Feed (USB Camera/Capture Card)</option>
                 <option value="screen">Window Capture (Screen Share)</option>
               </select>
             </div>

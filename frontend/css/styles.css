@@ -1111,8 +1111,8 @@ select {
 }
 
 .modal-session-code-wrapper input {
-  padding-left: 10px !important;
-  padding-right: 56px !important;
+  padding-left: 12px !important;
+  padding-right: 38px !important;
   font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace !important;
   font-weight: 700 !important;
   font-size: 0.82rem !important;
@@ -1123,23 +1123,29 @@ select {
 
 .modal-copy-btn {
   position: absolute;
-  right: 4px;
+  right: 5px;
   top: 50%;
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 7px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   background: rgba(0, 210, 255, 0.12);
   border: 1px solid rgba(0, 210, 255, 0.35);
-  border-radius: 8px;
+  border-radius: 7px;
   color: #00d2ff;
-  font-size: 0.72rem;
-  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   line-height: 1;
   user-select: none;
+}
+
+.modal-copy-btn svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
 }
 
 .modal-copy-btn:hover {
@@ -1149,13 +1155,45 @@ select {
 }
 
 .modal-copy-btn:active {
-  transform: translateY(-50%) scale(0.96);
+  transform: translateY(-50%) scale(0.92);
 }
 
 .modal-copy-btn.copied {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: #10b981;
-  color: #10b981;
+  background: rgba(16, 185, 129, 0.25) !important;
+  border-color: #10b981 !important;
+  color: #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4) !important;
+}
+
+/* Strict Role Visibility Security Rules - Session Code Hidden on Patient & Viewer */
+body[data-role="patient"] #settings-session-code-wrapper,
+body[data-role="viewer"] #settings-session-code-wrapper {
+  display: none !important;
+}
+
+body[data-role="patient"] #settings-uid-wrapper,
+body[data-role="viewer"] #settings-uid-wrapper {
+  grid-column: span 2 !important;
+}
+
+/* Token field is visible across Doctor, Patient, and Viewer roles with full plain text display */
+#settings-token-wrapper {
+  display: flex !important;
+}
+
+#token {
+  -webkit-text-security: none !important;
+  text-overflow: clip !important;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace, var(--font-sans) !important;
+  font-size: 0.82rem !important;
+  letter-spacing: 0.2px !important;
+  color: #f8fafc !important;
+  overflow-x: auto !important;
+}
+
+/* Feed Type / USB Camera selector completely removed from UI */
+#feed-type-container {
+  display: none !important;
 }
 
 .modal-footer {

@@ -370,9 +370,10 @@ def init_db():
     conn.commit()
     
     # Seed default Doctor: admin@gmail.com / admin123 (role: doctor, UID: 3001)
+    admin_pass = hash_password("admin123")
     cursor.execute("SELECT * FROM doctors WHERE LOWER(email) = 'admin@gmail.com'")
-    if not cursor.fetchone():
-        admin_pass = hash_password("admin123")
+    existing_doctor = cursor.fetchone()
+    if not existing_doctor:
         cursor.execute("SELECT id FROM doctors WHERE uid = '3001'")
         doc_uid = "3001" if not cursor.fetchone() else generate_professional_id()
         cursor.execute("""
@@ -381,6 +382,13 @@ def init_db():
         """, (doc_uid, "Admin Doctor", "admin@gmail.com", admin_pass))
         conn.commit()
         print(f"[Database] Default Doctor created (UID: {doc_uid}, email: admin@gmail.com).")
+    else:
+        # Ensure the default Doctor password is always 'admin123' on startup.
+        # This prevents test runs or manual resets from permanently breaking the default login.
+        if existing_doctor["password_hash"] != admin_pass:
+            cursor.execute("UPDATE doctors SET password_hash=? WHERE LOWER(email)='admin@gmail.com'", (admin_pass,))
+            conn.commit()
+            print("[Database] Default Doctor password restored to admin123.")
 
     # Seed default Patient: patient@gmail.com / patient123 (role: patient, UID: 4001)
     cursor.execute("SELECT * FROM patients WHERE LOWER(email) = 'patient@gmail.com'")

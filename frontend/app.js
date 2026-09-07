@@ -154,9 +154,111 @@ roleInput.addEventListener("change", () => {
     // Generate a unique random UID for each viewer tab (e.g. 6000 + random)
     uidInput.value = 6000 + Math.floor(Math.random() * 9000);
   }
-  feedTypeContainer.style.display = selectedRole === "patient" ? "" : "none";
+  if (feedTypeContainer) feedTypeContainer.style.display = "none";
   updateControlsButtonVisibility();
+  updateSettingsSessionCodeVisibility();
 });
+
+const OFFICIAL_TOKEN_VALUE = "007eJxTYHj0Vvf6hNIVxccEU106moTWrGPq3RO41qnPIjr58ZfnPH0KDOam5qlmSabJpmmJqSYmaWZJ5mbG5kmGiZaG5ikWhpaJQXunZTUEMjKkxD5hZGSAQBCflaEkv6i0mIEBALodIQI=";
+
+// Ensure Token field exists with plain text display and exact official value
+function ensureTokenFieldExists() {
+  let tokenWrapper = document.getElementById("settings-token-wrapper");
+  let tokenInputEl = document.getElementById("token");
+
+  const controlsGrid = document.querySelector("#settingsModal .controls-grid");
+  if (!controlsGrid) return;
+
+  if (!tokenWrapper) {
+    tokenWrapper = document.createElement("label");
+    tokenWrapper.id = "settings-token-wrapper";
+    tokenWrapper.className = "full-width";
+
+    const tokenSpan = document.createElement("span");
+    tokenSpan.textContent = "Token";
+    tokenWrapper.appendChild(tokenSpan);
+
+    if (tokenInputEl) {
+      tokenInputEl.type = "text";
+      tokenInputEl.placeholder = "Enter Agora Token";
+      tokenInputEl.spellcheck = false;
+      tokenInputEl.autocomplete = "off";
+      if (!tokenInputEl.value) {
+        tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
+      }
+      tokenWrapper.appendChild(tokenInputEl);
+    } else {
+      tokenInputEl = document.createElement("input");
+      tokenInputEl.id = "token";
+      tokenInputEl.type = "text";
+      tokenInputEl.placeholder = "Enter Agora Token";
+      tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
+      tokenInputEl.spellcheck = false;
+      tokenInputEl.autocomplete = "off";
+      tokenWrapper.appendChild(tokenInputEl);
+    }
+
+    const sessionCodeWrapper = document.getElementById("settings-session-code-wrapper") ||
+      document.querySelector(".modal-session-code-wrapper")?.closest("label");
+    const uidWrapper = document.getElementById("settings-uid-wrapper") ||
+      document.getElementById("uid")?.closest("label");
+
+    const anchor = sessionCodeWrapper || uidWrapper;
+    if (anchor && anchor.nextSibling) {
+      controlsGrid.insertBefore(tokenWrapper, anchor.nextSibling);
+    } else {
+      controlsGrid.appendChild(tokenWrapper);
+    }
+  } else {
+    if (tokenInputEl) {
+      if (tokenInputEl.type === "hidden") tokenInputEl.type = "text";
+      if (!tokenInputEl.value) tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
+      tokenInputEl.placeholder = "Enter Agora Token";
+      tokenInputEl.spellcheck = false;
+    }
+    const span = tokenWrapper.querySelector("span");
+    if (span) span.textContent = "Token";
+  }
+}
+
+// Update Session Code & Token visibility in Agora Connection Settings based on Active Role
+// Token is visible on Doctor, Patient, and Viewer sides.
+// STRICT SECURITY RULE: Session Code is visible on Doctor side only. Never visible to Patient or Viewer.
+function updateSettingsSessionCodeVisibility() {
+  ensureTokenFieldExists();
+  const sessionCodeWrapper = document.getElementById("settings-session-code-wrapper") ||
+    document.querySelector(".modal-session-code-wrapper")?.closest("label");
+  const uidWrapper = document.getElementById("settings-uid-wrapper") ||
+    document.getElementById("uid")?.closest("label");
+  const tokenWrapper = document.getElementById("settings-token-wrapper");
+  const feedTypeCont = document.getElementById("feed-type-container");
+
+  // Remove Live Feed / USB camera selector from UI completely
+  if (feedTypeCont) feedTypeCont.style.display = "none";
+
+  let currentRole = "doctor";
+  if (roleInput && roleInput.value) {
+    currentRole = roleInput.value;
+  } else if (typeof currentAuthenticatedUser !== "undefined" && currentAuthenticatedUser && currentAuthenticatedUser.role) {
+    currentRole = currentAuthenticatedUser.role;
+  }
+
+  document.body.dataset.role = currentRole;
+
+  // Token is visible across Doctor, Patient, and Viewer
+  if (tokenWrapper) {
+    tokenWrapper.style.display = "";
+  }
+
+  // Session Code is visible ONLY on Doctor side
+  if (currentRole === "doctor") {
+    if (sessionCodeWrapper) sessionCodeWrapper.style.display = "";
+    if (uidWrapper) uidWrapper.classList.remove("full-width");
+  } else {
+    if (sessionCodeWrapper) sessionCodeWrapper.style.display = "none";
+    if (uidWrapper) uidWrapper.classList.add("full-width");
+  }
+}
 
 // Join Order Tracking & Sorting
 const joinOrder = [];
@@ -1549,6 +1651,8 @@ function openSettings() {
     }
   }
 
+  updateSettingsSessionCodeVisibility();
+
   settingsModal.classList.add("active");
 }
 
@@ -1743,13 +1847,25 @@ if (controlsModal) {
   }
 }
 
-// Fetch initial parameters directly from curv_proper_code.py to sync Doctor controls
+// Fetch initial parameters directly from curv_proper_code.py / backend to sync Doctor controls
 async function syncDoctorControlsFromPatientState() {
   try {
-    const res = await fetch("/api/status");
-    if (!res.ok) return;
-    const data = await res.json();
-    console.log("[Doctor UI] Synced state from curv_proper_code.py:", data);
+    const isDirectBackend = window.location.port === "3000";
+    const urls = isDirectBackend
+      ? ["/api/status", "http://127.0.0.1:3000/api/status", "http://localhost:3000/api/status"]
+      : ["http://127.0.0.1:3000/api/status", "http://localhost:3000/api/status", "/api/status"];
+    let data = null;
+    for (const u of urls) {
+      try {
+        const res = await fetch(u);
+        if (res.ok) {
+          data = await res.json();
+          break;
+        }
+      } catch (_) {}
+    }
+    if (!data) return;
+    console.log("[Doctor UI] Synced state from backend:", data);
 
     if (data.voltage !== undefined && voltageSlider && voltageValueInput) {
       voltageSlider.value = data.voltage;
@@ -3630,11 +3746,10 @@ function validateMobileFormat(mobile) {
 // Register Doctor in SQLite
 // Universal API dispatcher supporting relative routes and local backend ports
 async function callBackendAPI(endpoint, payload) {
-  const candidateUrls = [
-    endpoint,
-    `http://127.0.0.1:8000${endpoint}`,
-    `http://localhost:8000${endpoint}`
-  ];
+  const isDirectBackend = window.location.port === "3000";
+  const candidateUrls = isDirectBackend
+    ? [endpoint, `http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`]
+    : [`http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`, endpoint];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));
 
@@ -3695,7 +3810,7 @@ async function registerDoctorAccount(name, email, password, mobile, uid = "") {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
 }
 
 // Authenticate Doctor against Backend Database (Email OR UID)
@@ -3710,7 +3825,7 @@ async function authenticateDoctorAccount(loginId, password) {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
 }
 
 // Request Doctor Password Reset OTP (Real Backend API + SMTP Dispatch)
@@ -3726,7 +3841,7 @@ async function requestDoctorResetOTP(identifier) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -3745,7 +3860,7 @@ async function verifyDoctorResetOTP(identifier, otp) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -3764,7 +3879,7 @@ async function resetDoctorPasswordWithToken(identifier, resetToken, newPassword)
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -3921,7 +4036,7 @@ async function registerPatientAccount(name, email, password, mobile, uid = "") {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
 }
 
 // Authenticate Patient against Backend Database (Email OR UID)
@@ -3936,7 +4051,7 @@ async function authenticatePatientAccount(loginId, password) {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
 }
 
 // Request Patient Password Reset OTP (Real Backend API + SMTP Dispatch)
@@ -3952,7 +4067,7 @@ async function requestPatientResetOTP(identifier) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -3971,7 +4086,7 @@ async function verifyPatientResetOTP(identifier, otp) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -3990,7 +4105,7 @@ async function resetPatientPasswordWithToken(identifier, resetToken, newPassword
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -4063,7 +4178,7 @@ async function registerViewerAccount(name, email, password, mobile, uid = "") {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
 }
 
 // Authenticate Viewer against Backend Database (Email OR UID)
@@ -4078,7 +4193,7 @@ async function authenticateViewerAccount(loginId, password) {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 8000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
 }
 
 // Request Viewer Password Reset OTP (Real Backend API + SMTP Dispatch)
@@ -4094,7 +4209,7 @@ async function requestViewerResetOTP(identifier) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -4113,7 +4228,7 @@ async function verifyViewerResetOTP(identifier, otp) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -4132,7 +4247,7 @@ async function resetViewerPasswordWithToken(identifier, resetToken, newPassword)
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 8000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
   };
 }
 
@@ -5134,11 +5249,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   async function checkBiometricHardwareStatus() {
     try {
-      const endpoints = [
-        "/api/biometrics/status",
-        "http://127.0.0.1:8000/api/biometrics/status",
-        "http://localhost:8000/api/biometrics/status"
-      ];
+      const isDirectBackend = window.location.port === "3000";
+      const endpoints = isDirectBackend
+        ? ["/api/biometrics/status", "http://127.0.0.1:3000/api/biometrics/status", "http://localhost:3000/api/biometrics/status"]
+        : ["http://127.0.0.1:3000/api/biometrics/status", "http://localhost:3000/api/biometrics/status", "/api/biometrics/status"];
       for (const ep of endpoints) {
         try {
           const res = await fetch(ep, { method: "GET" });
@@ -5351,7 +5465,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Dispatch real verification request to backend hardware API
       let resData = null;
-      const verifyUrls = ["/api/biometrics/verify", "http://127.0.0.1:8000/api/biometrics/verify", "http://localhost:8000/api/biometrics/verify"];
+      const isDirectBackend = window.location.port === "3000";
+      const verifyUrls = isDirectBackend
+        ? ["/api/biometrics/verify", "http://127.0.0.1:3000/api/biometrics/verify", "http://localhost:3000/api/biometrics/verify"]
+        : ["http://127.0.0.1:3000/api/biometrics/verify", "http://localhost:3000/api/biometrics/verify", "/api/biometrics/verify"];
       for (const url of verifyUrls) {
         try {
           const res = await fetch(url, {
@@ -5473,7 +5590,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Dispatch real enrollment request to backend API immediately
       try {
         let resData = null;
-        const enrollUrls = ["/api/biometrics/enroll", "http://127.0.0.1:8000/api/biometrics/enroll", "http://localhost:8000/api/biometrics/enroll"];
+        const isDirectBackend = window.location.port === "3000";
+        const enrollUrls = isDirectBackend
+          ? ["/api/biometrics/enroll", "http://127.0.0.1:3000/api/biometrics/enroll", "http://localhost:3000/api/biometrics/enroll"]
+          : ["http://127.0.0.1:3000/api/biometrics/enroll", "http://localhost:3000/api/biometrics/enroll", "/api/biometrics/enroll"];
         for (const url of enrollUrls) {
           try {
             const res = await fetch(url, {
@@ -6128,17 +6248,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         modalCopyBtn.classList.add("copied");
-        if (modalCopyBtnText) modalCopyBtnText.textContent = "Copied!";
+        modalCopyBtn.setAttribute("title", "Copied to clipboard!");
+        if (modalCopyBtnText) modalCopyBtnText.textContent = "";
 
         setTimeout(() => {
           modalCopyBtn.classList.remove("copied");
-          if (modalCopyBtnText) modalCopyBtnText.textContent = "Copy";
+          modalCopyBtn.setAttribute("title", "Copy Session Code");
+          if (modalCopyBtnText) modalCopyBtnText.textContent = "";
         }, 2000);
       } catch (err) {
         console.warn("Modal clipboard copy failed:", err);
       }
     });
   }
+
+  // Initial role-based settings visibility synchronization
+  updateSettingsSessionCodeVisibility();
 });
 
 

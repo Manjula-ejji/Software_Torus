@@ -22,6 +22,12 @@ import database
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 database.init_db()
 
+try:
+    from flask_cors import CORS
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+except Exception:
+    pass
+
 # -------------------- GLOBAL CORS HEADERS --------------------
 @app.before_request
 def handle_preflight():
@@ -43,10 +49,29 @@ def add_cors_headers(response):
         response.headers["Expires"] = "0"
     return response
 
-# -------------------- HEALTH CHECK --------------------
+# -------------------- HEALTH & STATUS CHECKS --------------------
 @app.route("/api/health", methods=["GET"])
 def api_health():
     return jsonify({"status": "healthy", "service": "TORUS Healthcare Authentication Engine"})
+
+@app.route("/api/status", methods=["GET", "OPTIONS"])
+def api_system_status():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    return jsonify({
+        "status": "STOPPED",
+        "voltage": 50.0,
+        "gain": 40.0,
+        "display": True,
+        "tgc_enabled": False,
+        "tgc_sliders": [50, 12, 3, 77, 90, 30]
+    })
+
+@app.route("/api/remote-input", methods=["POST", "OPTIONS"])
+def api_remote_input():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    return jsonify({"status": "success", "executed": True})
 
 # -------------------- DOCTOR AUTHENTICATION API --------------------
 @app.route("/api/doctors/register", methods=["POST", "OPTIONS"])
@@ -565,7 +590,7 @@ def serve_static_files(path):
 
 def main():
     host = os.environ.get("SERVER_HOST", "0.0.0.0")
-    port = int(os.environ.get("SERVER_PORT", "8000"))
+    port = int(os.environ.get("SERVER_PORT", "3000"))
     print(f"[TORUS Backend] Server starting on http://127.0.0.1:{port} ...")
     app.run(host=host, port=port, threaded=True)
 
