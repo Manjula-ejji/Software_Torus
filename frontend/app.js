@@ -159,7 +159,7 @@ roleInput.addEventListener("change", () => {
   updateSettingsSessionCodeVisibility();
 });
 
-const OFFICIAL_TOKEN_VALUE = "007eJxTYHj0Vvf6hNIVxccEU106moTWrGPq3RO41qnPIjr58ZfnPH0KDOam5qlmSabJpmmJqSYmaWZJ5mbG5kmGiZaG5ikWhpaJQXunZTUEMjKkxD5hZGSAQBCflaEkv6i0mIEBALodIQI=";
+const OFFICIAL_TOKEN_VALUE = "007eJxTYBA3PffTs+xm/1eT01c+tS6o5zDMTfc21jR+6ugo+9zyXoYCg7mlSaJFiqmRgamBhYmZSaJlUqKxuXmyMVDALNXYNDXHY15WQyAjw52G/0yMDBAI4rMylOQXlRYzMAAAU48fsw==";
 
 // Ensure Token field exists with plain text display and exact official value
 function ensureTokenFieldExists() {

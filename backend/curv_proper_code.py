@@ -154,7 +154,7 @@ polar_image_grid = (
 polar_bounds = polar_image_grid.bounds
 display_x_coordinates = np.linspace(
     float(polar_bounds.x_limits[0]),
-    float(polar_bounds.z_limits[0]),
+    float(polar_bounds.x_limits[1]),
     512,
 )
 display_z_coordinates = np.linspace(
@@ -296,8 +296,18 @@ ostb.save_acquisition_archive_hdf5(
     include_rf_data=True,
     include_process_output_data=True,
 )
-print(" OK")
-
 runtime.stop_control_server()
 runtime.disconnect()
 print("Done.")
+
+
+def get_current_status():
+    """Returns current hardware configuration state for remote control/UI synchronization."""
+    return {
+        "status": "RUNNING",
+        "voltage": float(getattr(waveform, "_voltage", 50.0) if hasattr(waveform, "_voltage") else 50.0),
+        "gain": float(gain_analog_db),
+        "display": True,
+        "tgc_enabled": False,
+        "tgc_sliders": [50, 12, 3, 77, 90, 30]
+    }

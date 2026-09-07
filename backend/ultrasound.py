@@ -12,6 +12,7 @@ What it does automatically:
 from __future__ import annotations
 
 import atexit
+import os
 import subprocess
 import sys
 import threading
@@ -64,14 +65,14 @@ if MISSING_MODULES:
 
 # -------------------- USER CONFIG --------------------
 APP_ID = "f320d3475b6d4b70ba512b06d09849d7"
-TOKEN = "007eJxTYDCwCdn4oPNdw3dXncLMp2//OZ6d671sSc3JuN1/TH9ca/+pwJBmbGSQYmxibppklmKSZG6QlGhqaJRkYJZiYGlhYpliXnKxO6shkJHh38GTLIwMEAjiszKU5BeVFjMwAACoZyTD"
+TOKEN = "007eJxTYBA3PffTs+xm/1eT01c+tS6o5zDMTfc21jR+6ugo+9zyXoYCg7mlSaJFiqmRgamBhYmZSaJlUqKxuXmyMVDALNXYNDXHY15WQyAjw52G/0yMDBAI4rMylOQXlRYzMAAAU48fsw=="
 CHANNEL = "torus"
 UID = 5001
 
 # Choose which ultrasound script to launch.
 ULTRASOUND_SCRIPT = "curv_proper_code.py"
 HOST = "127.0.0.1"
-PORT = 3000
+PORT = int(os.environ.get("ULTRASOUND_PORT", "8000"))
 FPS = 15
 
 # Stable canvas output dimensions
@@ -406,13 +407,12 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
 
         # Update stored parameters
         if new_voltage is not None:
-            m.gain_analog_db = getattr(m, "gain_analog_db", 40.0)
+            m._current_voltage = new_voltage
         if new_gain is not None:
             m.gain_analog_db = new_gain
 
-        voltage = new_voltage if new_voltage is not None else getattr(m, "_current_voltage", 50.0)
-        m._current_voltage = voltage
-        gain = m.gain_analog_db
+        voltage = getattr(m, "_current_voltage", 50.0)
+        gain = getattr(m, "gain_analog_db", 40.0)
 
         print(f"[Rebuild] Rebuilding configuration: voltage={voltage}V, gain={gain}dB")
 
@@ -484,6 +484,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
 
         # Apply new configuration to hardware
         _global_ostb_runtime.configure(new_config)
+        m.configuration = new_config
         print(f"[Rebuild] ✅ Hardware reconfigured: voltage={voltage}V, gain={gain}dB")
         return True
 
@@ -596,6 +597,25 @@ def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
         win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
     except Exception as e:
         print(f"[Remote Control Qt] PostMessage error: {e}")
+
+
+def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
+    """
+    Sends raw socket command to OSTB control server at 127.0.0.1:4096 if available.
+    Fails safely without throwing exceptions if server is unreachable.
+    """
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.1)
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                cmd = f"{name}:{value}\n".encode("utf-8")
+                s.sendall(cmd)
+                return True
+    except Exception:
+        # OSTB socket control is optional; hardware is configured directly via runtime
+        pass
+    return False
 
 
 def handle_control_command(name: str, value: any) -> bool:
