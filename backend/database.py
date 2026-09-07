@@ -224,6 +224,28 @@ def _migrate_add_mobile_column():
     finally:
         conn.close()
 
+
+def _migrate_add_fingerprint_slot():
+    """
+    Safely adds 'fingerprint_slot' column to doctor_biometrics if missing.
+    This column stores the R307 hardware slot label (R1-R20) for each registration.
+    Existing rows without a slot are left as NULL (legacy records before multi-user support).
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("PRAGMA table_info(doctor_biometrics)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "fingerprint_slot" not in columns:
+            cursor.execute("ALTER TABLE doctor_biometrics ADD COLUMN fingerprint_slot TEXT DEFAULT NULL")
+            conn.commit()
+            print("[Database] Migrated: added 'fingerprint_slot' column to doctor_biometrics table.")
+            print("[Database] Existing biometric rows will have fingerprint_slot=NULL (legacy). Re-enroll to assign slots.")
+    except Exception as e:
+        print(f"[Database] fingerprint_slot migration warning: {e}")
+    finally:
+        conn.close()
+
 def init_db():
     """
     Initializes the SQLite schema idempotently for all roles (doctors, patients, viewers)
@@ -329,6 +351,7 @@ def init_db():
             doctor_id INTEGER NOT NULL,
             uid TEXT NOT NULL,
             email TEXT NOT NULL,
+            fingerprint_slot TEXT DEFAULT NULL,
             fingerprint_template TEXT NOT NULL,
             scanner_model TEXT DEFAULT 'Arduino/Serial Biometric Scanner',
             enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -418,6 +441,7 @@ def init_db():
         
     conn.close()
     _migrate_add_mobile_column()
+    _migrate_add_fingerprint_slot()
 
 # -------------------- VALIDATION HELPERS --------------------
 def validate_strong_password(password: str) -> tuple:
@@ -1358,31 +1382,169 @@ def clean_and_reinitialize_auth_db():
 
 
 # ============================================================
-# DOCTOR BIOMETRIC DRIVER
+# DOCTOR BIOMETRIC DRIVER — Multi-User Fingerprint Slot System
 # ============================================================
-def register_doctor_biometric(identifier: str, template_data: str, scanner_model: str = "Arduino/Serial Biometric Scanner") -> dict:
+# Slot mapping: R1 = hardware slot 1, R2 = slot 2, ... R20 = slot 20
+# Each doctor gets one unique slot. Slots are never shared or overwritten.
+# ==============================================================================
+
+MAX_BIOMETRIC_SLOTS = 20  # Maximum number of concurrent registered fingerprints
+
+def _slot_label_to_int(slot_label: str) -> int:
+    """Convert 'R5' -> 5. Returns 0 on failure."""
+    try:
+        return int(slot_label.lstrip("Rr"))
+    except (ValueError, AttributeError):
+        return 0
+
+def _slot_int_to_label(slot_int: int) -> str:
+    """Convert 5 -> 'R5'."""
+    return f"R{slot_int}"
+
+def get_next_available_biometric_slot() -> str | None:
+    """
+    Finds the lowest-numbered fingerprint slot (R1-R20) not currently in use.
+    Queries the database for all ACTIVE registrations, finds occupied slots,
+    and returns the first free slot label (e.g. 'R1', 'R2', ...).
+
+    Returns:
+        str: Slot label like 'R1' if available.
+        None: If all MAX_BIOMETRIC_SLOTS slots are occupied.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT fingerprint_slot FROM doctor_biometrics WHERE is_active = 1 AND fingerprint_slot IS NOT NULL"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    occupied_ints = set()
+    for row in rows:
+        n = _slot_label_to_int(row["fingerprint_slot"])
+        if n > 0:
+            occupied_ints.add(n)
+
+    for slot_num in range(1, MAX_BIOMETRIC_SLOTS + 1):
+        if slot_num not in occupied_ints:
+            return _slot_int_to_label(slot_num)
+
+    return None  # All slots full
+
+def get_doctor_biometric_slot(identifier: str) -> str | None:
+    """
+    Returns the fingerprint slot label (e.g. 'R3') assigned to a doctor, or None if not enrolled.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    clean_id = identifier.strip().lower()
+    cursor.execute("""
+        SELECT b.fingerprint_slot
+        FROM doctor_biometrics b
+        JOIN doctors d ON b.doctor_id = d.id
+        WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
+        LIMIT 1
+    """, (clean_id, clean_id))
+    row = cursor.fetchone()
+    conn.close()
+    if row and row["fingerprint_slot"]:
+        return row["fingerprint_slot"]
+    return None
+
+def register_doctor_biometric(
+    identifier: str,
+    fingerprint_slot: str,
+    template_data: str,
+    scanner_model: str = "Arduino/Serial Biometric Scanner"
+) -> dict:
+    """
+    Registers a doctor's fingerprint in the database mapped to a specific hardware slot.
+
+    Rules enforced:
+    - Doctor must exist in the doctors table.
+    - Doctor must NOT already have an active biometric registration (no silent overwrite).
+    - The requested fingerprint_slot must NOT already be occupied by another doctor.
+    - fingerprint_slot must be in the format 'R1' through 'R20'.
+
+    Args:
+        identifier: Doctor email or UID.
+        fingerprint_slot: Hardware slot label e.g. 'R1', 'R2', ... 'R20'.
+        template_data: Reference string confirming hardware storage (e.g. 'R307_SLOT_1_<email>_<ts>').
+        scanner_model: Scanner model name for audit.
+
+    Returns:
+        dict with success/error and assigned fingerprint_id.
+    """
     conn = get_db()
     cursor = conn.cursor()
     clean_id = identifier.strip().lower()
 
-    cursor.execute("SELECT id, uid, name, email FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    # 1. Validate slot label format
+    slot_num = _slot_label_to_int(fingerprint_slot)
+    if slot_num < 1 or slot_num > MAX_BIOMETRIC_SLOTS:
+        conn.close()
+        return {
+            "success": False,
+            "error": f"Invalid fingerprint slot '{fingerprint_slot}'. Must be R1 through R{MAX_BIOMETRIC_SLOTS}."
+        }
+
+    # 2. Look up the doctor
+    cursor.execute(
+        "SELECT id, uid, name, email FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?",
+        (clean_id, clean_id)
+    )
     doctor = cursor.fetchone()
     if not doctor:
         conn.close()
         return {"success": False, "error": f"Doctor account not found for '{identifier}'."}
 
-    cursor.execute("UPDATE doctor_biometrics SET is_active = 0 WHERE doctor_id = ?", (doctor["id"],))
+    # 3. Check if this doctor already has an active registration
+    cursor.execute(
+        "SELECT fingerprint_slot FROM doctor_biometrics WHERE doctor_id = ? AND is_active = 1 LIMIT 1",
+        (doctor["id"],)
+    )
+    existing = cursor.fetchone()
+    if existing:
+        existing_slot = existing["fingerprint_slot"] or "unknown slot"
+        conn.close()
+        return {
+            "success": False,
+            "already_registered": True,
+            "fingerprint_id": existing_slot,
+            "error": f"Fingerprint is already registered for this account (slot {existing_slot}). Remove the existing registration before re-enrolling."
+        }
+
+    # 4. Check if this slot is already taken by ANOTHER doctor
+    cursor.execute(
+        "SELECT doctor_id, email FROM doctor_biometrics WHERE fingerprint_slot = ? AND is_active = 1 LIMIT 1",
+        (fingerprint_slot,)
+    )
+    slot_taken = cursor.fetchone()
+    if slot_taken:
+        conn.close()
+        return {
+            "success": False,
+            "error": f"Fingerprint slot {fingerprint_slot} is already occupied by another account. Please use a different slot."
+        }
+
+    # 5. All checks passed — create new biometric registration record
     cursor.execute("""
-        INSERT INTO doctor_biometrics (doctor_id, uid, email, fingerprint_template, scanner_model, is_active)
-        VALUES (?, ?, ?, ?, ?, 1)
-    """, (doctor["id"], doctor["uid"], doctor["email"], template_data, scanner_model))
+        INSERT INTO doctor_biometrics
+            (doctor_id, uid, email, fingerprint_slot, fingerprint_template, scanner_model, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+    """, (
+        doctor["id"], doctor["uid"], doctor["email"],
+        fingerprint_slot, template_data, scanner_model
+    ))
     conn.commit()
     conn.close()
 
+    print(f"[Database] Biometric registered: {doctor['email']} -> {fingerprint_slot} (hardware slot {slot_num})", flush=True)
     return {
         "success": True,
         "message": "Fingerprint registered successfully.",
-        "subtitle": "Your fingerprint has been securely linked to your account.",
+        "subtitle": f"Your fingerprint has been securely linked to your account ({fingerprint_slot}).",
+        "fingerprint_id": fingerprint_slot,
         "doctor": {
             "id": doctor["id"],
             "uid": doctor["uid"],
@@ -1391,28 +1553,28 @@ def register_doctor_biometric(identifier: str, template_data: str, scanner_model
         }
     }
 
-def verify_doctor_biometric(identifier: str = None, scanned_template: str = None) -> dict:
+def verify_doctor_biometric_by_slot(matched_slot_id: int) -> dict:
+    """
+    After hardware 1:N search returns a matched slot ID, look up which doctor owns that slot.
+    This is the correct multi-user verification: hardware identifies WHICH slot matched,
+    Python then looks up WHO owns that slot.
+
+    Args:
+        matched_slot_id: Integer slot number returned by the hardware (e.g. 3 for R3).
+
+    Returns:
+        dict with success/matched and doctor info.
+    """
+    slot_label = _slot_int_to_label(matched_slot_id)
     conn = get_db()
     cursor = conn.cursor()
-
-    if identifier:
-        clean_id = identifier.strip().lower()
-        cursor.execute("""
-            SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_template
-            FROM doctors d
-            JOIN doctor_biometrics b ON d.id = b.doctor_id
-            WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
-            LIMIT 1
-        """, (clean_id, clean_id))
-    else:
-        cursor.execute("""
-            SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_template
-            FROM doctors d
-            JOIN doctor_biometrics b ON d.id = b.doctor_id
-            WHERE b.is_active = 1
-            LIMIT 1
-        """)
-
+    cursor.execute("""
+        SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_slot
+        FROM doctors d
+        JOIN doctor_biometrics b ON d.id = b.doctor_id
+        WHERE b.fingerprint_slot = ? AND b.is_active = 1
+        LIMIT 1
+    """, (slot_label,))
     row = cursor.fetchone()
     conn.close()
 
@@ -1420,13 +1582,15 @@ def verify_doctor_biometric(identifier: str = None, scanned_template: str = None
         return {
             "success": False,
             "matched": False,
-            "error": "Fingerprint does not match. Please try again."
+            "error": "Fingerprint matched hardware but no registered account found for this slot. Please re-enroll.",
+            "code": "SLOT_NOT_MAPPED"
         }
 
     return {
         "success": True,
         "matched": True,
-        "message": "Fingerprint verified successfully.",
+        "fingerprint_id": slot_label,
+        "message": f"Fingerprint verified successfully ({slot_label}).",
         "doctor": {
             "id": row["id"],
             "uid": row["uid"],
@@ -1436,14 +1600,29 @@ def verify_doctor_biometric(identifier: str = None, scanned_template: str = None
         }
     }
 
-def get_doctor_biometric(identifier: str) -> dict:
+def verify_doctor_biometric_by_email(identifier: str, matched_slot_id: int) -> dict:
+    """
+    Verifies that the hardware-matched slot belongs to the specific doctor identified by email/uid.
+    Used when the login screen has a pre-filled email: confirms that the scanned finger
+    belongs to THAT doctor specifically.
+
+    Args:
+        identifier: Doctor email or UID from login form.
+        matched_slot_id: Integer slot number returned by hardware after 1:N search.
+
+    Returns:
+        dict with success/matched and doctor info.
+    """
+    slot_label = _slot_int_to_label(matched_slot_id)
     conn = get_db()
     cursor = conn.cursor()
     clean_id = identifier.strip().lower()
+
+    # Get what slot THIS doctor is registered to
     cursor.execute("""
-        SELECT b.id, b.enrolled_at, b.scanner_model, d.name, d.email, d.uid
-        FROM doctor_biometrics b
-        JOIN doctors d ON b.doctor_id = d.id
+        SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_slot
+        FROM doctors d
+        JOIN doctor_biometrics b ON d.id = b.doctor_id
         WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
         LIMIT 1
     """, (clean_id, clean_id))
@@ -1451,16 +1630,100 @@ def get_doctor_biometric(identifier: str) -> dict:
     conn.close()
 
     if not row:
+        return {
+            "success": False,
+            "matched": False,
+            "error": "No biometric registration found for this account. Please enroll your fingerprint first.",
+            "code": "NOT_ENROLLED"
+        }
+
+    registered_slot = row["fingerprint_slot"]
+
+    # Critical check: does the hardware-matched slot match THIS doctor's registered slot?
+    if registered_slot != slot_label:
+        return {
+            "success": False,
+            "matched": False,
+            "error": "Fingerprint does not match the registered fingerprint for this account. Access denied.",
+            "code": "SLOT_MISMATCH"
+        }
+
+    return {
+        "success": True,
+        "matched": True,
+        "fingerprint_id": slot_label,
+        "message": f"Fingerprint verified successfully ({slot_label}).",
+        "doctor": {
+            "id": row["id"],
+            "uid": row["uid"],
+            "name": row["name"],
+            "email": row["email"],
+            "role": row["role"]
+        }
+    }
+
+# Keep legacy alias for any other callers
+def verify_doctor_biometric(identifier: str = None, scanned_template: str = None) -> dict:
+    """
+    Legacy compatibility wrapper. Prefer verify_doctor_biometric_by_slot() for new code.
+    If identifier is provided, checks that doctor has an active biometric registration.
+    Does NOT perform hardware slot matching — use biometrics.py for that.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    if identifier:
+        clean_id = identifier.strip().lower()
+        cursor.execute("""
+            SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_slot
+            FROM doctors d
+            JOIN doctor_biometrics b ON d.id = b.doctor_id
+            WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
+            LIMIT 1
+        """, (clean_id, clean_id))
+    else:
+        cursor.execute("""
+            SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_slot
+            FROM doctors d
+            JOIN doctor_biometrics b ON d.id = b.doctor_id
+            WHERE b.is_active = 1
+            LIMIT 1
+        """)
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {"success": False, "matched": False, "error": "Fingerprint does not match. Please try again."}
+    return {
+        "success": True,
+        "matched": True,
+        "fingerprint_id": row["fingerprint_slot"] or "unknown",
+        "message": "Fingerprint verified.",
+        "doctor": {
+            "id": row["id"], "uid": row["uid"],
+            "name": row["name"], "email": row["email"], "role": row["role"]
+        }
+    }
+
+def get_doctor_biometric(identifier: str) -> dict:
+    conn = get_db()
+    cursor = conn.cursor()
+    clean_id = identifier.strip().lower()
+    cursor.execute("""
+        SELECT b.id, b.enrolled_at, b.scanner_model, b.fingerprint_slot, d.name, d.email, d.uid
+        FROM doctor_biometrics b
+        JOIN doctors d ON b.doctor_id = d.id
+        WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
+        LIMIT 1
+    """, (clean_id, clean_id))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
         return {"enrolled": False}
     return {
         "enrolled": True,
         "enrolled_at": row["enrolled_at"],
         "scanner_model": row["scanner_model"],
-        "doctor": {
-            "uid": row["uid"],
-            "name": row["name"],
-            "email": row["email"]
-        }
+        "fingerprint_id": row["fingerprint_slot"],
+        "doctor": {"uid": row["uid"], "name": row["name"], "email": row["email"]}
     }
 
 # ==============================================================================

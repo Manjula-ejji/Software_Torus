@@ -466,15 +466,35 @@ def api_biometrics_status():
     status = biometrics.hardware_manager.get_status()
     return jsonify(status)
 
+@app.route("/api/biometrics/slots", methods=["GET", "OPTIONS"])
+def api_biometrics_slots():
+    """Returns current R1-R20 slot allocation: who is registered in each slot."""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    info = biometrics.hardware_manager.get_slot_info()
+    return jsonify(info)
+
 @app.route("/api/biometrics/enroll", methods=["POST", "OPTIONS"])
 def api_biometrics_enroll():
+    """
+    Enroll a doctor's fingerprint. Automatically assigns the next available slot (R1-R20).
+    Request body: { "identifier": "email_or_uid" }
+    Response: { "success": true, "fingerprint_id": "R3", "message": "..." }
+    """
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
+    identifier = (
+        data.get("identifier", "").strip()
+        or data.get("email", "").strip()
+        or data.get("uid", "").strip()
+    )
 
     if not identifier:
-        return jsonify({"success": False, "error": "Doctor Email or User ID is required for biometric registration."}), 400
+        return jsonify({
+            "success": False,
+            "error": "Doctor Email or User ID is required for biometric registration."
+        }), 400
 
     res = biometrics.hardware_manager.enroll_fingerprint(identifier)
     status_code = 200 if res.get("success") else 400
@@ -482,14 +502,26 @@ def api_biometrics_enroll():
 
 @app.route("/api/biometrics/verify", methods=["POST", "OPTIONS"])
 def api_biometrics_verify():
+    """
+    Verify fingerprint via 1:N hardware search.
+    If identifier is provided: confirms the fingerprint belongs specifically to THAT doctor.
+    If no identifier: looks up whoever owns the matched slot.
+    Request body: { "identifier": "email_or_uid" }  (optional)
+    Response: { "success": true, "matched": true, "fingerprint_id": "R2", "doctor": {...} }
+    """
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
+    identifier = (
+        data.get("identifier", "").strip()
+        or data.get("email", "").strip()
+        or data.get("uid", "").strip()
+    ) or None
 
-    res = biometrics.hardware_manager.verify_fingerprint(identifier or None)
+    res = biometrics.hardware_manager.verify_fingerprint(identifier)
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
+
 
 # -------------------- CLINICAL SESSIONS API --------------------
 @app.route("/api/sessions/create", methods=["POST", "OPTIONS"])
