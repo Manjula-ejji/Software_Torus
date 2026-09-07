@@ -1728,6 +1728,58 @@ def get_doctor_biometric(identifier: str) -> dict:
         "doctor": {"uid": row["uid"], "name": row["name"], "email": row["email"]}
     }
 
+def delete_doctor_biometric(identifier: str) -> dict:
+    """
+    Deletes the biometric registration for a doctor, freeing their slot.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    clean_id = identifier.strip().lower()
+    cursor.execute("""
+        SELECT b.id, b.fingerprint_slot, d.email
+        FROM doctor_biometrics b
+        JOIN doctors d ON b.doctor_id = d.id
+        WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
+        LIMIT 1
+    """, (clean_id, clean_id))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"success": False, "error": f"No active biometric registration found for '{identifier}'."}
+
+    slot = row["fingerprint_slot"]
+    cursor.execute("DELETE FROM doctor_biometrics WHERE id = ?", (row["id"],))
+    conn.commit()
+    conn.close()
+    print(f"[Database] Biometric deleted for {identifier} (freed slot {slot}).", flush=True)
+    return {
+        "success": True,
+        "message": f"Biometric registration for {identifier} deleted successfully.",
+        "freed_slot": slot
+    }
+
+def reset_all_biometrics() -> dict:
+    """
+    Clears all active biometric registrations in the database.
+    All 20 slots (R1..R20) become completely open and ready for fresh registration.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM doctor_biometrics WHERE is_active = 1")
+    count = cursor.fetchone()[0]
+    cursor.execute("DELETE FROM doctor_biometrics")
+    conn.commit()
+    conn.close()
+    print(f"[Database] Reset all biometrics: cleared {count} registrations. All 20 slots are now empty.", flush=True)
+    return {
+        "success": True,
+        "cleared_count": count,
+        "total_slots": MAX_BIOMETRIC_SLOTS,
+        "available_slots": MAX_BIOMETRIC_SLOTS,
+        "next_available_slot": "R1",
+        "message": "All biometric registrations have been cleared. System is ready for fresh registrations starting from slot R1."
+    }
+
 # ==============================================================================
 # CLINICAL SESSIONS MANAGEMENT & VALIDATION
 # ==============================================================================

@@ -522,6 +522,37 @@ def api_biometrics_verify():
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 
+@app.route("/api/biometrics/reset", methods=["POST", "DELETE", "OPTIONS"])
+def api_biometrics_reset():
+    """
+    Clears all active biometric registrations from the database.
+    Frees all 20 slots (R1..R20) for fresh registrations.
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    res = database.reset_all_biometrics()
+    return jsonify(res), 200
+
+@app.route("/api/biometrics/delete", methods=["POST", "DELETE", "OPTIONS"])
+def api_biometrics_delete():
+    """
+    Deletes a specific doctor's biometric registration by email or UID.
+    Request body: { "identifier": "admin@gmail.com" }
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = (
+        data.get("identifier", "").strip()
+        or data.get("email", "").strip()
+        or data.get("uid", "").strip()
+    )
+    if not identifier:
+        return jsonify({"success": False, "error": "Identifier (email or UID) is required."}), 400
+    res = database.delete_doctor_biometric(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
 
 # -------------------- CLINICAL SESSIONS API --------------------
 @app.route("/api/sessions/create", methods=["POST", "OPTIONS"])
