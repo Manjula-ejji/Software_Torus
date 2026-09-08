@@ -5311,7 +5311,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 74px;
+  height: 82px;
   flex-shrink: 0;
   background: rgba(8, 12, 28, 0.95);
   border-bottom: 1px solid rgba(139, 92, 246, 0.2);
@@ -5353,7 +5353,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 6px 14px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -5372,25 +5372,25 @@ body[data-role="viewer"] #settings-uid-wrapper {
   color: #22d3ee;
 }
 
-/* Partner Logo Card (PlebC + IIT Indore) */
+/* Partner Logo Card (PlebC + IIT Indore) - Balanced Visibility */
 .ddash-partner-logo-card {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   background: #ffffff !important;
   border-radius: 8px !important;
-  padding: 4px 12px !important;
-  height: 38px !important;
-  max-height: 38px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28) !important;
+  padding: 4px 10px !important;
+  height: 40px !important;
+  max-height: 40px !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32) !important;
   flex-shrink: 0 !important;
 }
 
 .ddash-partner-logo-img {
-  height: 28px !important;
-  max-height: 28px !important;
+  height: 32px !important;
+  max-height: 32px !important;
   width: auto !important;
-  max-width: 155px !important;
+  max-width: 165px !important;
   object-fit: contain !important;
   display: block !important;
 }
@@ -5413,32 +5413,32 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-center-title {
-  font-size: 22px;
+  font-size: 25px;
   font-weight: 900;
-  letter-spacing: 5px;
+  letter-spacing: 5.5px;
   color: #ffffff;
   text-shadow: 0 0 16px rgba(0, 229, 255, 0.65), 0 0 28px rgba(0, 229, 255, 0.35);
-  line-height: 1.1;
+  line-height: 1.15;
   margin-bottom: 2px;
 }
 
 .ddash-center-system {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 2.6px;
+  letter-spacing: 2.8px;
   color: #00e5ff;
   text-transform: uppercase;
   line-height: 1.2;
   text-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+  margin-bottom: 2px;
 }
 
 .ddash-center-platform {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   color: #94a3b8;
   line-height: 1.2;
-  margin-top: 1px;
 }
 
 /* RIGHT: Controls & Profile */
@@ -5465,8 +5465,13 @@ body[data-role="viewer"] #settings-uid-wrapper {
   white-space: nowrap;
 }
 
-.ddash-haptic-alert { opacity: 0.9; }
-.ddash-haptic-label { color: #94a3b8; }
+.ddash-haptic-alert {
+  opacity: 0.9;
+}
+
+.ddash-haptic-label {
+  color: #94a3b8;
+}
 
 .ddash-haptic-dot {
   width: 7px;
@@ -5478,8 +5483,15 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes ddash-pulse-red {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .ddash-haptic-chip.haptic-chip--connected {
@@ -5495,8 +5507,15 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes ddash-pulse-green {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Adhoc Scan Button */
@@ -5606,8 +5625,15 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes ddash-popover-in {
-  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0)    scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .ddash-popover-header {
@@ -5694,8 +5720,8 @@ body[data-role="viewer"] #settings-uid-wrapper {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
+  gap: 8px;
+  padding-top: 8px;
   position: relative;
   z-index: 1;
   overflow: hidden;
@@ -5740,12 +5766,34 @@ body[data-role="viewer"] #settings-uid-wrapper {
   flex-shrink: 0;
 }
 
-.ddash-icon-purple { background: rgba(168, 85, 247, 0.14); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.25); }
-.ddash-icon-green  { background: rgba(34, 197, 94, 0.14);  color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.25); }
-.ddash-icon-cyan   { background: rgba(6, 182, 212, 0.14);  color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.25); }
-.ddash-icon-gray   { background: rgba(148, 163, 184, 0.12);color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.22); }
+.ddash-icon-purple {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}
 
-.ddash-stat-info { display: flex; flex-direction: column; }
+.ddash-icon-green {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.ddash-icon-cyan {
+  background: rgba(6, 182, 212, 0.14);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
+.ddash-icon-gray {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.ddash-stat-info {
+  display: flex;
+  flex-direction: column;
+}
 
 .ddash-stat-label {
   font-size: 9px;
@@ -5770,10 +5818,21 @@ body[data-role="viewer"] #settings-uid-wrapper {
   flex-shrink: 0;
 }
 
-.ddash-stat-wave.purple { color: #a855f7; }
-.ddash-stat-wave.green  { color: #22c55e; }
-.ddash-stat-wave.cyan   { color: #06b6d4; }
-.ddash-stat-wave.gray   { color: #64748b; }
+.ddash-stat-wave.purple {
+  color: #a855f7;
+}
+
+.ddash-stat-wave.green {
+  color: #22c55e;
+}
+
+.ddash-stat-wave.cyan {
+  color: #06b6d4;
+}
+
+.ddash-stat-wave.gray {
+  color: #64748b;
+}
 
 /* ── PANELS ── */
 .ddash-panel {
@@ -5836,28 +5895,34 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-title-dot.purple {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: #a855f7;
-  box-shadow: 0 0 8px #a855f7;
+  box-shadow: 0 0 10px #a855f7, 0 0 18px rgba(168, 85, 247, 0.5);
+  flex-shrink: 0;
 }
 
 .ddash-title-icon-cyan {
   display: flex;
   align-items: center;
   color: #22d3ee;
-  filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.4));
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.5));
 }
 
 .ddash-panel-title {
-  font-size: 14.5px;
+  font-size: 16.5px;
   font-weight: 700;
-  color: #f8fafc;
+  color: #ffffff;
+  letter-spacing: 0.25px;
   line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
 .ddash-panel-subtitle {
-  font-size: 10px;
-  color: #64748b;
-  margin: 1px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 2px 0 0;
   line-height: 1.2;
 }
 
@@ -6023,9 +6088,23 @@ body[data-role="viewer"] #settings-uid-wrapper {
   font-weight: 600;
 }
 
-.ddash-scan-tag.purple { color: #c084fc; background: rgba(168, 85, 247, 0.12); border: 1px solid rgba(168, 85, 247, 0.3); }
-.ddash-scan-tag.cyan   { color: #22d3ee; background: rgba(6, 182, 212, 0.12);  border: 1px solid rgba(6, 182, 212, 0.3); }
-.ddash-scan-tag.emerald{ color: #34d399; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); }
+.ddash-scan-tag.purple {
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.ddash-scan-tag.cyan {
+  color: #22d3ee;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.ddash-scan-tag.emerald {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
 
 /* Duration / Clock */
 .ddash-clock {
@@ -6152,17 +6231,21 @@ body[data-role="viewer"] #settings-uid-wrapper {
   .ddash-center-platform {
     display: none;
   }
+
   .ddash-center-title {
     font-size: 19px;
     letter-spacing: 4px;
   }
+
   .ddash-center-system {
     font-size: 9px;
     letter-spacing: 2px;
   }
+
   .ddash-topbar-left {
     gap: 8px;
   }
+
   .ddash-topbar-right {
     gap: 8px;
   }
@@ -6172,6 +6255,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   .ddash-haptic-label {
     display: none;
   }
+
   .ddash-partner-logo-card {
     padding: 3px 8px !important;
   }
