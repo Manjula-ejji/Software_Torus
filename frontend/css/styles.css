@@ -5372,27 +5372,29 @@ body[data-role="viewer"] #settings-uid-wrapper {
   color: #22d3ee;
 }
 
-/* Partner Logo Card (PlebC + IIT Indore) - Balanced Visibility */
+/* Partner Logo Card (PlebC + IIT Indore) - Native Capsule Badge, No White Box */
 .ddash-partner-logo-card {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: #ffffff !important;
-  border-radius: 8px !important;
-  padding: 4px 10px !important;
-  height: 40px !important;
-  max-height: 40px !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32) !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  height: 46px !important;
+  max-height: 46px !important;
+  box-shadow: none !important;
   flex-shrink: 0 !important;
 }
 
 .ddash-partner-logo-img {
-  height: 32px !important;
-  max-height: 32px !important;
+  height: 44px !important;
+  max-height: 44px !important;
   width: auto !important;
-  max-width: 165px !important;
+  max-width: 185px !important;
   object-fit: contain !important;
   display: block !important;
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.45)) !important;
 }
 
 /* CENTER: Horizontally Centered relative to entire viewport */
