@@ -23,8 +23,6 @@
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include "r307.h"
 #include "uart.h"
 /* USER CODE END Includes */
@@ -36,7 +34,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NUM_ENROLLED_FINGERS   20U
+#define NUM_ENROLLED_FINGERS   1U
+#define ENROLL_PAGE_ID          0U
 #define SEARCH_START_PAGE      0U
 #define SEARCH_PAGE_COUNT      NUM_ENROLLED_FINGERS
 
@@ -44,49 +43,28 @@
 #define MSG_LOCKED    "Haptic Pad Locked\r\n"
 
 /* Host <-> MCU serial command protocol (over debug UART / USART2).
- * A host-side backend (the "/api/biometrics/*" handlers that app.js
- * calls) writes one command per line and reads back one status token
- * per line.
+ * A host-side backend (the /api/biometrics/* handlers that app.js calls)
+ * writes one command per line and reads back one status token per line.
  *
- * Fingerprints are enrolled ONE AT A TIME, into a specific slot chosen
- * by the host (the host picks the next free R1..R20 slot via its own
- * bookkeeping, e.g. get_next_available_biometric_slot()). The MCU never
- * loops through all 20 slots on its own -- each ENROLL command targets
- * exactly one slot and returns exactly one status line.
- *
- *   Host -> MCU : "ENROLL:<n>\r\n"   n = 1..NUM_ENROLLED_FINGERS (R<n>)
+ *   Host -> MCU : "ENROLL\r\n"
  *   MCU  -> Host: "ENROLL_OK\r\n" | "ENROLL_FAIL\r\n" | "ENROLL_TIMEOUT\r\n"
- *                 | "ERR:BAD_SLOT\r\n"
- *
- * Verification searches the finger against ALL enrolled slots and tells
- * the host which one matched; the host is responsible for checking that
- * slot against the email/doctor that claims it (SLOT_MISMATCH logic
- * lives in the backend, not here).
  *
  *   Host -> MCU : "VERIFY\r\n"
- *   MCU  -> Host: "UNLOCKED:<n>\r\n" | "LOCKED\r\n" | "VERIFY_TIMEOUT\r\n"
- *                 | "VERIFY_ERROR\r\n"
+ *   MCU  -> Host: "UNLOCKED\r\n" | "LOCKED\r\n" | "VERIFY_TIMEOUT\r\n" | "VERIFY_ERROR\r\n"
  *
  * Unknown commands get "ERR:UNKNOWN_CMD\r\n".
  */
 #define CMD_ENROLL          "ENROLL"
 #define CMD_VERIFY          "VERIFY"
-#define CMD_DELETE          "DELETE"
-#define CMD_EMPTY           "EMPTY"
 
 #define RESP_ENROLL_OK       "ENROLL_OK\r\n"
 #define RESP_ENROLL_FAIL     "ENROLL_FAIL\r\n"
 #define RESP_ENROLL_TIMEOUT  "ENROLL_TIMEOUT\r\n"
-#define RESP_BAD_SLOT        "ERR:BAD_SLOT\r\n"
 
+#define RESP_UNLOCKED        "UNLOCKED\r\n"
 #define RESP_LOCKED          "LOCKED\r\n"
 #define RESP_VERIFY_TIMEOUT  "VERIFY_TIMEOUT\r\n"
 #define RESP_VERIFY_ERROR    "VERIFY_ERROR\r\n"
-
-#define RESP_DELETE_OK       "DELETE_OK\r\n"
-#define RESP_DELETE_FAIL     "DELETE_FAIL\r\n"
-#define RESP_EMPTY_OK        "EMPTY_OK\r\n"
-#define RESP_EMPTY_FAIL      "ERROR:EMPTY_FAILED\r\n"
 
 #define RESP_UNKNOWN_CMD     "ERR:UNKNOWN_CMD\r\n"
 
@@ -249,22 +227,12 @@ static uint8_t enroll_finger(uint8_t page_id)
     return R307_OK;
 }
 
-/* Handles a host "ENROLL:<n>" command (n = 1..NUM_ENROLLED_FINGERS):
- * runs the two-scan enrollment into that one slot (overwriting any
- * previous fingerprint there) and writes exactly one status line back
- * to the host. Only that single slot is touched -- the other 19 are
- * left untouched, so slots keep getting filled one at a time as the
- * host registers more doctors. */
-static void handle_enroll_command(uint8_t slot_1_based)
+/* Handles a host "ENROLL" command: runs the two-scan enrollment into
+ * the single reserved slot (overwriting any previous fingerprint
+ * there) and writes exactly one status line back to the host. */
+static void handle_enroll_command(void)
 {
-    uint8_t status;
-
-    if (slot_1_based < 1U || slot_1_based > NUM_ENROLLED_FINGERS) {
-        debug_print(RESP_BAD_SLOT);
-        return;
-    }
-
-    status = enroll_finger((uint8_t)(slot_1_based - 1U)); /* page_id is 0-based */
+    uint8_t status = enroll_finger(ENROLL_PAGE_ID);
 
     if (status == R307_OK) {
         debug_print(RESP_ENROLL_OK);
@@ -275,18 +243,15 @@ static void handle_enroll_command(uint8_t slot_1_based)
     }
 }
 
-/* Handles a host "VERIFY" command: waits for a finger, searches it
- * against ALL enrolled templates, and writes exactly one status line
- * back to the host: "UNLOCKED:<n>" with the 1-based slot that matched,
- * or LOCKED/VERIFY_TIMEOUT/VERIFY_ERROR. It also prints the
- * human-readable MSG_UNLOCKED/MSG_LOCKED lines for anyone watching the
- * debug console directly. The host is responsible for checking the
- * returned slot against whichever email is trying to log in. */
+/* Handles a host "VERIFY" command: waits for a finger, matches it
+ * against the enrolled template, and writes exactly one status line
+ * back to the host (UNLOCKED/LOCKED/VERIFY_TIMEOUT/VERIFY_ERROR). It
+ * also prints the human-readable MSG_UNLOCKED/MSG_LOCKED lines for
+ * anyone watching the debug console directly. */
 static void handle_verify_command(void)
 {
     r307_ack_t ack;
     uint8_t status;
-    char resp_buf[24];
 
     debug_print("Place finger to verify\r\n");
     delay_ms(PROMPT_GRACE_DELAY_MS);
@@ -311,17 +276,8 @@ static void handle_verify_command(void)
     }
 
     if (ack.confirm_code == 0x00) {
-        /* R307 SEARCH (0x04) reply payload layout after confirm_code:
-         *   payload[0..1] = matched pageID   (big-endian, 0-based)
-         *   payload[2..3] = matchScore       (big-endian, unused here)
-         * Report the slot 1-based so it lines up with the host's R1..R20. */
-        uint16_t matched_page_id = ((uint16_t)ack.payload[0] << 8) | ack.payload[1];
-        uint8_t matched_slot_1_based = (uint8_t)(matched_page_id + 1U);
-
         debug_print(MSG_UNLOCKED);
-        (void)snprintf(resp_buf, sizeof(resp_buf), "UNLOCKED:%u\r\n",
-                        (unsigned)matched_slot_1_based);
-        debug_print(resp_buf);
+        debug_print(RESP_UNLOCKED);
     } else {
         debug_print(MSG_LOCKED);
         debug_print(RESP_LOCKED);
@@ -332,82 +288,19 @@ static void handle_verify_command(void)
     wait_for_finger_removed_timeout(VERIFY_TIMEOUT_MS);
 }
 
-/* Handles a host "DELETE <n>" or "DELETE:<n>" command:
- * clears the template from hardware slot n (1-based, page_id = n - 1). */
-static void handle_delete_command(uint8_t slot_1_based)
-{
-    char resp_buf[32];
-
-    if (slot_1_based < 1U || slot_1_based > NUM_ENROLLED_FINGERS) {
-        debug_print(RESP_BAD_SLOT);
-        return;
-    }
-
-#if defined(R307_HAS_DELETCHAR) || defined(__GNUC__)
-    r307_ack_t ack;
-    uint8_t status = r307_deletchar((uint16_t)(slot_1_based - 1U), 1U, &ack);
-    if (status == R307_OK && ack.confirm_code == 0x00) {
-        (void)snprintf(resp_buf, sizeof(resp_buf), "DELETE:SUCCESS:%u\r\n", (unsigned)slot_1_based);
-        debug_print(resp_buf);
-        return;
-    }
-#endif
-    (void)snprintf(resp_buf, sizeof(resp_buf), "DELETE:SUCCESS:%u\r\n", (unsigned)slot_1_based);
-    debug_print(resp_buf);
-}
-
-/* Handles a host "EMPTY" or "DELETE_ALL" command:
- * removes all templates from the R307 hardware flash library. */
-static void handle_empty_command(void)
-{
-#if defined(R307_HAS_EMPTY) || defined(__GNUC__)
-    r307_ack_t ack;
-    (void)r307_empty(&ack);
-#endif
-    debug_print("EMPTY:SUCCESS\r\n");
-}
-
 /* Reads one command line from the host and dispatches it. Unknown or
  * empty lines get a one-line error response so the host never blocks
- * waiting on a reply that will never come.
- *
- * ENROLL accepts both ECE space format "ENROLL <n>" and colon format "ENROLL:<n>"
- * (n = 1..NUM_ENROLLED_FINGERS). */
+ * waiting on a reply that will never come. */
 static void process_host_command(void)
 {
     char cmd[UART_CMD_BUF_LEN];
-    size_t enroll_prefix_len = strlen(CMD_ENROLL);
 
     uart_read_line(cmd, sizeof(cmd));
 
-    if (strncmp(cmd, CMD_ENROLL, enroll_prefix_len) == 0) {
-        char delim = cmd[enroll_prefix_len];
-        if ((delim == ':' || delim == ' ') && cmd[enroll_prefix_len + 1] != '\0') {
-            long slot = strtol(&cmd[enroll_prefix_len + 1], NULL, 10);
-            if (slot >= 1L && slot <= (long)NUM_ENROLLED_FINGERS) {
-                handle_enroll_command((uint8_t)slot);
-            } else {
-                debug_print(RESP_BAD_SLOT);
-            }
-        } else {
-            debug_print(RESP_BAD_SLOT);
-        }
+    if (strcmp(cmd, CMD_ENROLL) == 0) {
+        handle_enroll_command();
     } else if (strcmp(cmd, CMD_VERIFY) == 0) {
         handle_verify_command();
-    } else if (strncmp(cmd, CMD_DELETE, 6) == 0) {
-        char delim = cmd[6];
-        if ((delim == ':' || delim == ' ') && cmd[7] != '\0') {
-            long slot = strtol(&cmd[7], NULL, 10);
-            if (slot >= 1L && slot <= (long)NUM_ENROLLED_FINGERS) {
-                handle_delete_command((uint8_t)slot);
-            } else {
-                debug_print(RESP_BAD_SLOT);
-            }
-        } else {
-            debug_print(RESP_BAD_SLOT);
-        }
-    } else if (strcmp(cmd, CMD_EMPTY) == 0 || strcmp(cmd, "DELETE_ALL") == 0) {
-        handle_empty_command();
     } else if (cmd[0] != '\0') {
         debug_print(RESP_UNKNOWN_CMD);
     }

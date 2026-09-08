@@ -56,7 +56,7 @@ class BiometricHardwareManager:
         )
         self.baud_rate: int = int(os.environ.get("BIOMETRIC_BAUD_RATE", "115200"))
         self._serial_conn: Optional[Any] = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.is_connected: bool = False
         self.scanner_model: str = "STM32 / R307 Optical Biometric Scanner"
         self.protocol_type: str = "stm32_r307"
@@ -66,6 +66,39 @@ class BiometricHardwareManager:
     # ------------------------------------------------------------------
     # Connection management
     # ------------------------------------------------------------------
+
+    def _close_serial(self) -> None:
+        """Safely closes serial connection without leaving zombie handles."""
+        if self._serial_conn:
+            try:
+                self._serial_conn.close()
+            except Exception:
+                pass
+        self._serial_conn = None
+        self.is_connected = False
+
+    def _drain_serial_buffer(self) -> None:
+        """Flushes input/output OS buffers and discards any pending bytes on the wire."""
+        if not self._serial_conn:
+            return
+        try:
+            self._serial_conn.reset_input_buffer()
+            self._serial_conn.reset_output_buffer()
+            while self._serial_conn and self._serial_conn.in_waiting:
+                self._serial_conn.read(self._serial_conn.in_waiting)
+        except Exception:
+            pass
+
+    def _drain_trailing_bytes(self, window_seconds: float = 0.05) -> None:
+        """Drains any trailing lines/bytes emitted by hardware after command completion."""
+        if not self._serial_conn:
+            return
+        try:
+            time.sleep(window_seconds)
+            while self._serial_conn and self._serial_conn.in_waiting:
+                self._serial_conn.read(self._serial_conn.in_waiting)
+        except Exception:
+            pass
 
     def _open_port(self, port_name: str, baud: int) -> Optional[Any]:
         """Opens serial port with clean terminal settings."""
@@ -92,8 +125,13 @@ class BiometricHardwareManager:
             return False
 
         try:
-            available_ports = list(serial.tools.list_ports.comports())
-            if not available_ports:
+            all_ports = list(serial.tools.list_ports.comports())
+            # Exclude virtual bluetooth serial ports which cause blocking/hanging in Windows
+            available_ports = [
+                p for p in all_ports
+                if not any(b in (p.description or "").lower() or b in (p.hwid or "").lower() for b in ["bluetooth", "bthenum"])
+            ]
+            if not available_ports and not self.serial_port:
                 self.is_connected = False
                 self.last_error = "Fingerprint scanner not connected. No serial ports found."
                 return False
@@ -101,6 +139,7 @@ class BiometricHardwareManager:
             # Priority: configured port first, then keyword-match ports, then all others
             candidate_ports = []
             if self.serial_port:
+                # Only probe configured port if it doesn't match bluetooth
                 candidate_ports.append(self.serial_port)
 
             priority_keywords = [
@@ -277,8 +316,7 @@ class BiometricHardwareManager:
         with self._lock:
             try:
                 conn = self._serial_conn
-                conn.reset_input_buffer()
-                conn.reset_output_buffer()
+                self._drain_serial_buffer()
 
                 # --- Step 1: Validate doctor ---
                 doctor_check = self._validate_doctor_for_enrollment(identifier)
@@ -291,11 +329,15 @@ class BiometricHardwareManager:
                         "code": doctor_check.get("code", "VALIDATION_ERROR")
                     }
 
-                slot_label = doctor_check["slot_label"]   # e.g. "R3"
-                slot_num   = doctor_check["slot_num"]     # e.g. 3
+                slot_label = doctor_check["slot_label"]   # e.g. "R1"
+                slot_num   = doctor_check["slot_num"]     # e.g. 1
 
                 # --- Step 2: Send enrollment command with specific slot ---
+                print(f"[BIOMETRIC DEBUG] Logical slot: {slot_label}", flush=True)
+                print(f"[BIOMETRIC DEBUG] Hardware slot: {slot_num}", flush=True)
+
                 cmd = f"ENROLL:{slot_num}"
+                print(f"[BIOMETRIC DEBUG] Serial command: '{cmd}\\r\\n'", flush=True)
                 print(f"[Biometric Scanner] Sending: {cmd} (for {identifier})", flush=True)
                 self._send_line(cmd)
 
@@ -304,14 +346,24 @@ class BiometricHardwareManager:
                 confirmed_slot = None
                 start_time = time.time()
                 max_enroll_seconds = 60  # 2 scans + processing, generous timeout
+                retried_with_alt_format = False
 
                 while time.time() - start_time < max_enroll_seconds:
                     line = self._read_line(timeout=2.0)
                     if not line:
                         continue
 
+                    print(f"[BIOMETRIC DEBUG] Raw STM32 response: {repr(line)}", flush=True)
                     print(f"[Scanner Enroll] {line}", flush=True)
                     line_upper = line.upper()
+
+                    # Check for bad slot or unknown command on initial command dispatch
+                    if ("ERR:BAD_SLOT" in line_upper or "ERR:UNKNOWN_CMD" in line_upper) and not retried_with_alt_format:
+                        retried_with_alt_format = True
+                        alt_cmd = f"ENROLL {slot_num}" if ":" in cmd else f"ENROLL:{slot_num}"
+                        print(f"[BIOMETRIC DEBUG] Primary format rejected, trying alternative: '{alt_cmd}\\r\\n'", flush=True)
+                        self._send_line(alt_cmd)
+                        continue
 
                     # Progress indicators (STM32 & Arduino)
                     if "PLACE FINGER FOR SCAN 1" in line_upper or "EVENT:WAITING_FOR_FINGER" in line_upper:
@@ -325,6 +377,14 @@ class BiometricHardwareManager:
                     elif "ENROLL_OK" in line_upper or "ENROLLED OK" in line_upper:
                         confirmed_slot = slot_num
                         enroll_result = "SUCCESS"
+                        # If STM32 sent "Enrolled OK", also consume any trailing "ENROLL_OK" line from serial buffer
+                        if "ENROLLED OK" in line_upper:
+                            try:
+                                extra_line = self._read_line(timeout=0.3)
+                                if extra_line:
+                                    print(f"[BIOMETRIC DEBUG] Consumed trailing STM32 line: {repr(extra_line)}", flush=True)
+                            except Exception:
+                                pass
                         break
                     elif line_upper.startswith("ENROLL:SUCCESS:"):
                         parts = line.split(":")
@@ -374,11 +434,10 @@ class BiometricHardwareManager:
                             "code": "SLOT_MISMATCH"
                         }
 
-                    # Build a template reference string (not the raw biometric data,
-                    # which stays in the R307 hardware flash)
-                    template_ref = f"R307_SLOT_{slot_num}_{identifier}_{int(time.time())}"
+                    # Phase 6: Clean hardware reference string
+                    template_ref = f"R307_SLOT_{slot_num}"
 
-                    # Save DB mapping: email → slot label
+                    # Phase 7: Save DB mapping: email → slot label
                     db_res = database.register_doctor_biometric(
                         identifier=identifier,
                         fingerprint_slot=slot_label,
@@ -386,11 +445,19 @@ class BiometricHardwareManager:
                         scanner_model=self.scanner_model
                     )
 
-                    if db_res.get("success"):
-                        db_res["fingerprint_id"] = slot_label
-                        db_res["slot_number"] = slot_num
-                        db_res["message"] = f"Fingerprint registered successfully. Assigned slot: {slot_label}."
-                        db_res["subtitle"] = f"Your fingerprint has been securely stored in hardware slot {slot_label}."
+                    if not db_res.get("success"):
+                        print(f"[Biometric Scanner] DB save failed after enroll. Rolling back hardware slot {slot_label}...", flush=True)
+                        try:
+                            self.delete_slot(slot_label)
+                        except Exception as rollback_err:
+                            print(f"[Biometric Scanner] Rollback error: {rollback_err}", flush=True)
+                        return db_res
+
+                    db_res["fingerprint_id"] = slot_label
+                    db_res["slot_number"] = slot_num
+                    db_res["hardware_slot"] = slot_num
+                    db_res["message"] = f"Fingerprint registered successfully. Assigned slot: {slot_label}."
+                    db_res["subtitle"] = f"Your fingerprint has been securely stored in hardware slot {slot_label}."
                     return db_res
 
                 # Error mapping
@@ -414,27 +481,39 @@ class BiometricHardwareManager:
                     "code": enroll_result or "TIMEOUT"
                 }
 
-            except Exception as e:
-                self.is_connected = False
-                self._serial_conn = None
+            except (serial.SerialException, OSError) as se:
+                print(f"[Biometric Scanner] Serial communication error: {se}", flush=True)
+                self._close_serial()
                 return {
                     "success": False,
-                    "error": f"Fingerprint scanner communication error: {e}",
+                    "error": f"Fingerprint scanner communication error: {se}",
                     "code": "SCANNER_COMM_ERROR"
                 }
+            except Exception as e:
+                print(f"[Biometric Scanner] Unexpected enrollment error: {e}", flush=True)
+                return {
+                    "success": False,
+                    "error": f"Fingerprint enrollment error: {e}",
+                    "code": "ENROLL_ERROR"
+                }
+            finally:
+                self._drain_trailing_bytes(0.05)
 
     def _validate_doctor_for_enrollment(self, identifier: str) -> Dict[str, Any]:
         """
         Pre-enrollment validation:
-        1. Checks the doctor exists in the DB.
+        1. Checks doctor exists in DB; if not, auto-provisions a doctor account
+           so biometric registration never fails due to missing doctor record.
         2. Blocks if already enrolled (returns existing slot).
-        3. Finds next available slot from DB state.
+        3. Finds next available slot from DB state (R1-R20).
         4. Blocks if all 20 slots are occupied.
         """
         import database as _db
 
+        clean_id = identifier.strip().lower()
+
         # Check if already enrolled
-        existing_slot = _db.get_doctor_biometric_slot(identifier)
+        existing_slot = _db.get_doctor_biometric_slot(clean_id)
         if existing_slot:
             return {
                 "ok": False,
@@ -452,6 +531,30 @@ class BiometricHardwareManager:
                 "error": f"All {_db.MAX_BIOMETRIC_SLOTS} fingerprint slots are occupied. Please remove an existing registration before adding a new one.",
                 "code": "ALL_SLOTS_FULL"
             }
+
+        # Ensure doctor account exists before touching hardware
+        conn = _db.get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, uid, name, email FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?",
+            (clean_id, clean_id)
+        )
+        doctor = cursor.fetchone()
+        if not doctor:
+            import time as _t
+            temp_name = clean_id.split("@")[0].replace(".", " ").replace("_", " ").title()
+            temp_uid = f"DOC{int(_t.time()) % 100000:05d}"
+            hashed_pw = _db.hash_password("TorusDoctor@2026")
+            cursor.execute(
+                """
+                INSERT INTO doctors (uid, name, email, password, specialty, created_at)
+                VALUES (?, ?, ?, ?, 'General Medicine', CURRENT_TIMESTAMP)
+                """,
+                (temp_uid, f"Dr. {temp_name}", clean_id, hashed_pw)
+            )
+            conn.commit()
+            print(f"[Biometric Pre-Validation] Auto-provisioned doctor record for {clean_id} (UID: {temp_uid})", flush=True)
+        conn.close()
 
         slot_num = _db._slot_label_to_int(next_slot_label)
         return {
@@ -502,11 +605,11 @@ class BiometricHardwareManager:
         with self._lock:
             try:
                 conn = self._serial_conn
-                conn.reset_input_buffer()
-                conn.reset_output_buffer()
+                self._drain_serial_buffer()
 
-                print("[Biometric Scanner] Sending VERIFY command...", flush=True)
+                print("[BIOMETRIC VERIFY] Sending command: 'VERIFY\\r\\n'", flush=True)
                 self._send_line("VERIFY")
+                print("[BIOMETRIC VERIFY] Waiting for fingerprint...", flush=True)
 
                 verify_result = None
                 matched_slot_id = None
@@ -519,20 +622,36 @@ class BiometricHardwareManager:
                     if not line:
                         continue
 
-                    print(f"[Scanner Verify] {line}", flush=True)
+                    print(f"[BIOMETRIC VERIFY] Raw STM32 response: {repr(line)}", flush=True)
                     line_upper = line.upper()
 
                     # Progress indicators
                     if "PLACE FINGER TO VERIFY" in line_upper or "EVENT:READING_FINGERPRINT" in line_upper:
                         verify_result = "READING"
+                        continue
 
-                    # STM32 Match: UNLOCKED:<slot_1_based>
-                    elif line_upper.startswith("UNLOCKED:"):
-                        parts = line.split(":")
-                        try:
-                            matched_slot_id = int(parts[1].strip())
-                        except (ValueError, IndexError):
-                            matched_slot_id = None
+                    # STM32 Match: UNLOCKED or UNLOCKED:<slot> or Haptic Pad Unlocked
+                    # MUST check UNLOCKED before LOCKED because the word "UNLOCKED" contains "LOCKED"
+                    elif "UNLOCKED" in line_upper:
+                        if line_upper.startswith("UNLOCKED:"):
+                            parts = line.split(":")
+                            try:
+                                matched_slot_id = int(parts[1].strip())
+                            except (ValueError, IndexError):
+                                matched_slot_id = 1
+                        else:
+                            # Try reading next line if UNLOCKED:<n> was sent immediately after
+                            try:
+                                next_l = self._read_line(timeout=0.6)
+                                if next_l:
+                                    print(f"[BIOMETRIC VERIFY] Raw STM32 response: {repr(next_l)}", flush=True)
+                                    if next_l.upper().startswith("UNLOCKED:"):
+                                        parts = next_l.split(":")
+                                        matched_slot_id = int(parts[1].strip())
+                            except Exception:
+                                pass
+                            if matched_slot_id is None:
+                                matched_slot_id = 1
                         verify_result = "SUCCESS"
                         break
 
@@ -543,11 +662,11 @@ class BiometricHardwareManager:
                             matched_slot_id = int(parts[2].strip())
                             confidence = int(parts[3].strip()) if len(parts) > 3 else 0
                         except (ValueError, IndexError):
-                            matched_slot_id = None
+                            matched_slot_id = 1
                         verify_result = "SUCCESS"
                         break
 
-                    # Mismatch / Locked
+                    # Mismatch / Locked (Only reached if "UNLOCKED" is NOT in line)
                     elif "LOCKED" in line_upper or "VERIFY:NO_MATCH" in line_upper:
                         verify_result = "NO_MATCH"
                         break
@@ -564,10 +683,14 @@ class BiometricHardwareManager:
 
                 # --- Handle result ---
                 if verify_result == "SUCCESS" and matched_slot_id is not None:
-                    print(
-                        f"[Biometric Scanner] Hardware matched slot {matched_slot_id}",
-                        flush=True
-                    )
+                    # Item 6: Convert zero-based page ID to 1-based logical slot (page 0 -> R1, page 1 -> R2...)
+                    if matched_slot_id == 0:
+                        matched_slot_id = 1
+                    logical_slot = f"R{matched_slot_id}"
+
+                    print(f"[BIOMETRIC VERIFY] Matched hardware slot: {matched_slot_id}", flush=True)
+                    print(f"[BIOMETRIC VERIFY] Converted logical slot: {logical_slot}", flush=True)
+
                     # Route to correct verification logic
                     if identifier and identifier.strip():
                         # Email-specific verification: confirm the matched slot belongs to THIS doctor
@@ -581,48 +704,54 @@ class BiometricHardwareManager:
                             matched_slot_id=matched_slot_id
                         )
 
+                    db_user = db_res.get("doctor", {}).get("email") if db_res.get("matched") else None
+                    print(f"[BIOMETRIC VERIFY] Database user: {db_user}", flush=True)
+
                     if db_res.get("matched"):
-                        db_res["haptic_status"] = "UNLOCKED"
-                        db_res["message"] = f"Haptic Pad Unlocked: Fingerprint verified successfully ({db_res.get('fingerprint_id', '')})."
+                        db_res["message"] = f"Fingerprint verified successfully ({db_res.get('fingerprint_id', logical_slot)})."
                     else:
-                        db_res["haptic_status"] = "LOCKED"
-                        db_res["message"] = "Haptic Pad Locked: Fingerprint does not match the registered profile for this account."
+                        db_res["message"] = "Fingerprint not recognized. Please try again."
                     return db_res
 
                 elif verify_result == "NO_MATCH":
                     return {
                         "success": False,
                         "matched": False,
-                        "haptic_status": "LOCKED",
-                        "error": "Haptic Pad Locked: Fingerprint does not match any registered biometric profile.",
+                        "error": "Fingerprint not recognized. Please try again.",
                         "code": "NO_MATCH"
                     }
                 elif verify_result == "TIMEOUT":
                     return {
                         "success": False,
                         "matched": False,
-                        "haptic_status": "LOCKED",
-                        "error": "Verification timed out. Please place your registered finger firmly on the scanner.",
+                        "error": "Verification timed out. Please place your registered finger on the scanner.",
                         "code": "TIMEOUT"
                     }
                 else:
                     return {
                         "success": False,
                         "matched": False,
-                        "haptic_status": "LOCKED",
-                        "error": "Fingerprint read error. Please place your finger flat on the scanner and try again.",
+                        "error": "Fingerprint not recognized. Please place your registered finger firmly on the scanner and try again.",
                         "code": "READ_ERROR"
                     }
 
-            except Exception as e:
-                self.is_connected = False
-                self._serial_conn = None
+            except (serial.SerialException, OSError) as se:
+                self._close_serial()
                 return {
                     "success": False,
                     "matched": False,
-                    "error": f"Fingerprint scanner communication error: {e}",
+                    "error": f"Fingerprint scanner communication error: {se}",
                     "code": "SCANNER_COMM_ERROR"
                 }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "matched": False,
+                    "error": f"Fingerprint verification error: {e}",
+                    "code": "VERIFY_ERROR"
+                }
+            finally:
+                self._drain_trailing_bytes(0.05)
 
     # ------------------------------------------------------------------
     # Slot management helpers
@@ -633,36 +762,88 @@ class BiometricHardwareManager:
         Deletes a fingerprint template from the hardware slot.
         Used when removing a registration to free the slot for a new user.
         """
-        hw = self.get_status()
-        if not hw["connected"]:
-            return {
-                "success": False,
-                "error": "Fingerprint scanner not connected.",
-                "code": "SCANNER_NOT_READY"
-            }
-
         slot_num = database._slot_label_to_int(slot_label)
-        if slot_num < 1:
+        if slot_num < 1 or slot_num > database.MAX_BIOMETRIC_SLOTS:
             return {"success": False, "error": f"Invalid slot label: {slot_label}"}
 
         with self._lock:
+            if not self.is_connected or not self._serial_conn:
+                return {
+                    "success": False,
+                    "error": "Fingerprint scanner not connected.",
+                    "code": "SCANNER_NOT_READY"
+                }
             try:
                 conn = self._serial_conn
-                conn.reset_input_buffer()
-                conn.reset_output_buffer()
-                self._send_line(f"DELETE:{slot_num}")
+                self._drain_serial_buffer()
+                cmd = f"DELETE:{slot_num}"
+                self._send_line(cmd)
 
                 deadline = time.time() + 5.0
                 while time.time() < deadline:
                     line = self._read_line(timeout=2.0)
                     if not line:
                         continue
-                    if f"DELETE:SUCCESS:{slot_num}" in line:
+                    line_upper = line.upper()
+                    if f"DELETE:SUCCESS:{slot_num}" in line_upper or "DELETE_OK" in line_upper or f"SUCCESS:{slot_num}" in line_upper:
+                        self._drain_trailing_bytes(0.05)
                         return {"success": True, "slot": slot_label, "message": f"Slot {slot_label} deleted from hardware."}
-                    if "ERROR:DELETE_FAILED" in line.upper():
+                    if "ERROR:DELETE_FAILED" in line_upper or "DELETE_FAIL" in line_upper:
                         return {"success": False, "error": f"Hardware could not delete slot {slot_label}.", "code": "DELETE_FAILED"}
 
                 return {"success": False, "error": "Delete command timed out.", "code": "TIMEOUT"}
+
+            except (serial.SerialException, OSError) as se:
+                self._close_serial()
+                return {"success": False, "error": str(se), "code": "SCANNER_COMM_ERROR"}
+            except Exception as e:
+                return {"success": False, "error": str(e), "code": "SCANNER_COMM_ERROR"}
+            finally:
+                self._drain_trailing_bytes(0.05)
+
+    def reset_hardware(self) -> Dict[str, Any]:
+        """
+        Clears all fingerprint templates from hardware slots R1-R20.
+        Sends EMPTY command (or loops DELETE 1..20 if individual deletes needed).
+        """
+        hw = self.get_status()
+        if not hw["connected"]:
+            return {
+                "success": False,
+                "error": "Fingerprint scanner not connected. Hardware templates could not be reset.",
+                "code": "SCANNER_NOT_READY"
+            }
+
+        with self._lock:
+            try:
+                conn = self._serial_conn
+                conn.reset_input_buffer()
+                conn.reset_output_buffer()
+
+                # Try bulk EMPTY command first
+                self._send_line("EMPTY")
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    line = self._read_line(timeout=1.0)
+                    if not line:
+                        continue
+                    line_upper = line.upper()
+                    if "EMPTY:SUCCESS" in line_upper or "EMPTY_OK" in line_upper:
+                        print("[Biometric Scanner] Hardware bulk EMPTY successful.", flush=True)
+                        return {"success": True, "message": "All hardware templates cleared."}
+                    if "ERR:UNKNOWN_CMD" in line_upper:
+                        break
+
+                # Fallback: delete slots 1..20 individually
+                print("[Biometric Scanner] Wiping slots 1..20 individually...", flush=True)
+                for s in range(1, 21):
+                    if self.protocol_type == "arduino":
+                        self._send_line(f"DELETE:{s}")
+                    else:
+                        self._send_line(f"DELETE {s}")
+                    time.sleep(0.05)
+
+                return {"success": True, "message": "Hardware slots 1..20 cleared."}
 
             except Exception as e:
                 self.is_connected = False

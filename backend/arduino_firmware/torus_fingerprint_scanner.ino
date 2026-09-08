@@ -103,6 +103,14 @@ void loop() {
       Serial.print("COUNT:");
       Serial.println(finger.templateCount);
     }
+    else if (command == "EMPTY" || command == "DELETE_ALL") {
+      int p = finger.emptyDatabase();
+      if (p == FINGERPRINT_OK) {
+        Serial.println("EMPTY:SUCCESS");
+      } else {
+        Serial.println("ERROR:EMPTY_FAILED");
+      }
+    }
   }
 }
 

@@ -484,11 +484,8 @@ def api_biometrics_enroll():
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    identifier = (
-        data.get("identifier", "").strip()
-        or data.get("email", "").strip()
-        or data.get("uid", "").strip()
-    )
+    raw_ident = data.get("identifier") or data.get("email") or data.get("uid") or ""
+    identifier = str(raw_ident).strip()
 
     if not identifier:
         return jsonify({
@@ -512,11 +509,8 @@ def api_biometrics_verify():
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    identifier = (
-        data.get("identifier", "").strip()
-        or data.get("email", "").strip()
-        or data.get("uid", "").strip()
-    ) or None
+    raw_ident = data.get("identifier") or data.get("email") or data.get("uid") or ""
+    identifier = str(raw_ident).strip() if raw_ident else None
 
     res = biometrics.hardware_manager.verify_fingerprint(identifier)
     status_code = 200 if res.get("success") else 400

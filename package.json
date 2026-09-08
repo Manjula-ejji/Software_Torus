@@ -8,7 +8,9 @@
     "dev": "python backend/server.py",
     "frontend": "python backend/server.py",
     "server": "python backend/server.py",
-    "backend": "python backend/server.py"
+    "backend": "python backend/server.py",
+    "test": "python backend/test_biometric_strict_verification.py",
+    "test:biometrics": "python backend/test_biometric_strict_verification.py"
   },
   "keywords": [],
   "author": "",

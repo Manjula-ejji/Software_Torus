@@ -3993,25 +3993,426 @@ async function setAuthenticatedDoctorSession(doctor) {
       if (sessionRes.channel && channelInput) {
         channelInput.value = sessionRes.channel;
       }
+      if (window.torusSessions?.active?.[0]) {
+        window.torusSessions.active[0].clinicalSessionCode = sessionRes.session_code;
+        saveTorusSessions();
+      }
     }
   } catch (err) {
     console.warn("[Doctor Session Creation Warning]", err);
   }
 
-  // Transition UI to Dashboard
+  // Hide all login, registration, and biometric screens
   const doctorRegisterScreen = document.getElementById("doctor-register-screen");
   const doctorForgotScreen = document.getElementById("doctor-forgot-screen");
+  const doctorBioScreen = document.getElementById("doctor-biometric-screen");
+  const doctorBioRegScreen = document.getElementById("doctor-bio-register-screen");
   const joinScreen = document.getElementById("join-session-screen");
+
   if (doctorLoginScreen) doctorLoginScreen.style.display = "none";
   if (doctorRegisterScreen) doctorRegisterScreen.style.display = "none";
   if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
+  if (doctorBioScreen) doctorBioScreen.style.display = "none";
+  if (doctorBioRegScreen) doctorBioRegScreen.style.display = "none";
   if (joinScreen) joinScreen.style.display = "none";
   if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
+
+  // The Live Consultation page must NOT open directly before the Doctor Dashboard.
+  if (appDashboard) appDashboard.style.display = "none";
+
+  // The Doctor Dashboard MUST be the default landing page after successful Doctor authentication.
+  const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+  if (docPortalDashboard) {
+    docPortalDashboard.style.display = "flex";
+  }
+
+  // Populate Dashboard Header & Render Sessions
+  updateDoctorPortalHeader(doctor);
+  renderDoctorDashboard();
+}
+
+// ============================================================
+// DOCTOR PORTAL DASHBOARD & CLINICAL SESSIONS STATE ENGINE
+// ============================================================
+
+// Structured session data model (Separate from Doctor Biometrics)
+window.torusSessions = {
+  active: [
+    {
+      sessionId: "S-001",
+      patientId: "P-12345",
+      patientName: "Patient A",
+      deviceId: "TORUS-A12",
+      scanType: "Abdominal",
+      duration: "12:34",
+      diagnosticCenter: "Apex Diagnostic Center",
+      scheduledTime: "10:30 AM",
+      status: "active", // "active" | "disconnected" | "completed"
+      doctorConnectionState: "not_joined", // "not_joined" | "connected" | "disconnected"
+      clinicalSessionCode: null
+    }
+  ],
+  upcoming: [
+    {
+      sessionId: "S-002",
+      patientId: "P-8821",
+      patientName: "John Doe",
+      deviceId: "TORUS-A12",
+      scanType: "Abdominal",
+      diagnosticCenter: "NYC Medical",
+      scheduledTime: "10:30 AM",
+      timeLabel: "10:30 AM",
+      ageGender: "42 | Male",
+      contact: "+1 (555) 019-2834",
+      clinicalNotes: "Patient complaining of abdominal discomfort. Fasting for 8 hours prior to scan.",
+      previousReports: "2025-05-12 - Normal Abdominal Scan",
+      status: "scheduled",
+      doctorConnectionState: "not_joined"
+    },
+    {
+      sessionId: "S-003",
+      patientId: "P-9104",
+      patientName: "Jane Smith",
+      deviceId: "TORUS-B08",
+      scanType: "Cardiac",
+      diagnosticCenter: "Boston General",
+      scheduledTime: "12:00 PM",
+      timeLabel: "12:00 PM",
+      ageGender: "38 | Female",
+      contact: "+1 (555) 084-9123",
+      clinicalNotes: "Follow-up for mild mitral valve regurgitation. Routine cardiac scan.",
+      previousReports: "2025-08-20 - Mild Mitral Regurgitation",
+      status: "scheduled",
+      doctorConnectionState: "not_joined"
+    },
+    {
+      sessionId: "S-004",
+      patientId: "P-7543",
+      patientName: "Robert Brown",
+      deviceId: "TORUS-C15",
+      scanType: "Pelvic",
+      diagnosticCenter: "Apollo Hyderabad",
+      scheduledTime: "02:15 PM",
+      timeLabel: "02:15 PM",
+      ageGender: "55 | Male",
+      contact: "+91 98490 12345",
+      clinicalNotes: "Pelvic discomfort and suspected lower urinary tract symptoms.",
+      previousReports: "None on record",
+      status: "scheduled",
+      doctorConnectionState: "not_joined"
+    }
+  ]
+};
+
+function saveTorusSessions() {
+  try {
+    sessionStorage.setItem("torus_doctor_sessions", JSON.stringify(window.torusSessions));
+  } catch (e) {
+    console.warn("Could not save session state:", e);
+  }
+}
+
+function loadTorusSessions() {
+  try {
+    const saved = sessionStorage.getItem("torus_doctor_sessions");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && Array.isArray(parsed.active) && Array.isArray(parsed.upcoming)) {
+        window.torusSessions = parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not load session state:", e);
+  }
+}
+
+// Update Topbar in Doctor Dashboard
+function updateDoctorPortalHeader(doctor) {
+  const avatarEl = document.getElementById("docDashAvatarChip");
+  const popoverName = document.getElementById("popoverDoctorName");
+  const popoverUid = document.getElementById("popoverDoctorId");
+
+  const docName = doctor?.name || (currentAuthenticatedUser?.name) || "Admin Doctor";
+  const docUid = doctor?.uid || (currentAuthenticatedUser?.uid) || "3001";
+
+  // Update popover fields
+  if (popoverName) popoverName.textContent = docName.replace(/^Dr\.\s*/i, "").trim();
+  if (popoverUid) popoverUid.textContent = docUid;
+
+  if (avatarEl) {
+    const cleanName = docName.replace(/^Dr\.\s*/i, "").trim();
+    const initials = cleanName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(part => part[0].toUpperCase())
+      .slice(0, 2)
+      .join("") || "AD";
+    avatarEl.textContent = initials;
+  }
+}
+
+// Render Doctor Dashboard (Active & Upcoming Sessions)
+function renderDoctorDashboard() {
+  loadTorusSessions();
+
+  const activeContainer = document.getElementById("activeSessionsList");
+  const upcomingContainer = document.getElementById("upcomingSessionsList");
+  const liveBadge = document.getElementById("activeLiveBadge");
+  const scheduleBadge = document.getElementById("upcomingScheduleBadge");
+  const statTotal = document.getElementById("statTotalSessions");
+  const statLive = document.getElementById("statLiveSessions");
+  const statScheduled = document.getElementById("statScheduledSessions");
+  const statCompleted = document.getElementById("statCompletedSessions");
+
+  const activeList = window.torusSessions?.active || [];
+  const upcomingList = window.torusSessions?.upcoming || [];
+
+  const liveCount = activeList.filter(s => s.status === "active" && s.doctorConnectionState !== "disconnected").length;
+  if (liveBadge) liveBadge.textContent = `${activeList.length} Active`;
+  if (scheduleBadge) scheduleBadge.textContent = `${upcomingList.length} Scheduled`;
+
+  if (statTotal) statTotal.textContent = "16";
+  if (statLive) statLive.textContent = String(activeList.length || 1);
+  if (statScheduled) statScheduled.textContent = String(upcomingList.length || 3);
+  if (statCompleted) statCompleted.textContent = "12";
+
+  // 1. Render Active Sessions (JOIN or REJOIN based on state)
+  if (activeContainer) {
+    if (activeList.length === 0) {
+      activeContainer.innerHTML = `<div class="ddash-empty">No active sessions right now.</div>`;
+    } else {
+      activeContainer.innerHTML = activeList.map(session => {
+        let scanColor = "purple";
+        if (session.scanType === "Cardiac") scanColor = "cyan";
+        else if (session.scanType === "Pelvic") scanColor = "emerald";
+
+        const isDisconnected = session.status === "disconnected" || session.doctorConnectionState === "disconnected";
+
+        const statusBadgeHtml = isDisconnected
+          ? `<span class="ddash-status-tag disconnected">● Disconnected</span>`
+          : `<span class="ddash-status-tag in-progress">● In Progress</span>`;
+
+        const actionBtnHtml = isDisconnected
+          ? `<button class="ddash-rejoin-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+               <span>Rejoin</span>
+             </button>`
+          : `<button class="ddash-join-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+               <span>Join</span>
+             </button>`;
+
+        return `
+          <div class="ddash-row-active">
+            <div class="ddash-patient-block">
+              <div class="ddash-patient-icon">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+              </div>
+              <div>
+                <p class="ddash-patient-name">${session.patientName}</p>
+                <p class="ddash-patient-meta">${session.deviceId}</p>
+                <span class="ddash-id-badge">ID: ${session.patientId}</span>
+              </div>
+            </div>
+            <div>
+              <span class="ddash-scan-tag ${scanColor}">${session.scanType}</span>
+            </div>
+            <div>
+              <span class="ddash-clock">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                ${session.duration}
+              </span>
+            </div>
+            <div>${statusBadgeHtml}</div>
+            <div class="ddash-action-cell">${actionBtnHtml}</div>
+          </div>
+        `;
+      }).join("");
+
+      // Bind Join click handlers
+      activeContainer.querySelectorAll(".ddash-join-btn").forEach(btn => {
+        btn.addEventListener("click", () => joinClinicalSession(btn.getAttribute("data-session-id")));
+      });
+
+      // Bind Rejoin click handlers
+      activeContainer.querySelectorAll(".ddash-rejoin-btn").forEach(btn => {
+        btn.addEventListener("click", () => rejoinClinicalSession(btn.getAttribute("data-session-id")));
+      });
+    }
+  }
+
+  // 2. Render Upcoming Sessions
+  if (upcomingContainer) {
+    if (upcomingList.length === 0) {
+      upcomingContainer.innerHTML = `<div class="ddash-empty">No scheduled sessions.</div>`;
+    } else {
+      upcomingContainer.innerHTML = upcomingList.map(session => {
+        let scanColor = "purple";
+        if (session.scanType === "Cardiac") scanColor = "cyan";
+        else if (session.scanType === "Pelvic") scanColor = "emerald";
+
+        return `
+          <div class="ddash-row-upcoming">
+            <div class="ddash-patient-block">
+              <div class="ddash-patient-icon cyan">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              </div>
+              <div>
+                <p class="ddash-patient-name">${session.patientName}</p>
+                <p class="ddash-patient-meta">${session.deviceId}</p>
+                <span class="ddash-id-badge">ID: ${session.patientId}</span>
+              </div>
+            </div>
+            <div>
+              <span class="ddash-scan-tag ${scanColor}">${session.scanType}</span>
+            </div>
+            <div class="ddash-center-row">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+              <span>${session.diagnosticCenter}</span>
+            </div>
+            <div>
+              <span class="ddash-clock">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span class="ddash-time-hl">${session.scheduledTime}</span>
+              </span>
+            </div>
+            <div class="ddash-action-cell">
+              <button class="ddash-view-btn" type="button" data-session-id="${session.sessionId}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                View Details
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // Bind View Details click handlers
+      upcomingContainer.querySelectorAll(".ddash-view-btn").forEach(btn => {
+        btn.addEventListener("click", () => openUpcomingSessionModal(btn.getAttribute("data-session-id")));
+      });
+    }
+  }
+}
+
+// JOIN Session: Transitions from Doctor Dashboard to Live Consultation
+function joinClinicalSession(sessionId) {
+  const session = window.torusSessions?.active?.find(s => s.sessionId === sessionId) || window.torusSessions?.active?.[0];
+  if (!session) return;
+
+  session.doctorConnectionState = "connected";
+  session.status = "active";
+  window.currentActiveConsultationSessionId = session.sessionId;
+  saveTorusSessions();
+
+  // Hide Doctor Dashboard, Show Live Consultation
+  const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+  if (docPortalDashboard) docPortalDashboard.style.display = "none";
+  if (appDashboard) appDashboard.style.display = "flex";
+
+  // Trigger boot sequence animation
+  if (typeof triggerHeaderBootSequence === "function") {
+    triggerHeaderBootSequence();
+  }
+}
+
+// REJOIN Session: Reconnects Doctor to the SAME consultation session without duplicate creation
+function rejoinClinicalSession(sessionId) {
+  const session = window.torusSessions?.active?.find(s => s.sessionId === sessionId) || window.torusSessions?.active?.[0];
+  if (!session) return;
+
+  // Preserve existing patient, patient ID, session ID, scan type, session data
+  session.doctorConnectionState = "connected";
+  session.status = "active";
+  window.currentActiveConsultationSessionId = session.sessionId;
+  saveTorusSessions();
+
+  // Re-use existing session code if available
+  if (session.clinicalSessionCode) {
+    window.activeClinicalSessionCode = session.clinicalSessionCode;
+    sessionStorage.setItem("active_clinical_session_code", session.clinicalSessionCode);
+    localStorage.setItem("active_clinical_session_code", session.clinicalSessionCode);
+  }
+
+  // Hide Doctor Dashboard, Show Live Consultation
+  const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+  if (docPortalDashboard) docPortalDashboard.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
 
   if (typeof triggerHeaderBootSequence === "function") {
     triggerHeaderBootSequence();
   }
+}
+
+// Upcoming Session Modal Logic
+let currentModalSessionId = null;
+
+function openUpcomingSessionModal(sessionId) {
+  const session = window.torusSessions?.upcoming?.find(s => s.sessionId === sessionId);
+  if (!session) return;
+
+  currentModalSessionId = sessionId;
+
+  const modal = document.getElementById("sessionDetailsModalOverlay");
+  const pName = document.getElementById("sdPatientName");
+  const pId = document.getElementById("sdPatientId");
+  const pAge = document.getElementById("sdAgeGender");
+  const pContact = document.getElementById("sdContact");
+  const dev = document.getElementById("sdDevice");
+  const sType = document.getElementById("sdScanType");
+  const center = document.getElementById("sdCenter");
+  const sTime = document.getElementById("sdTime");
+  const notes = document.getElementById("sdClinicalNotes");
+  const prevReports = document.getElementById("sdPreviousReports");
+
+  if (pName) pName.textContent = session.patientName;
+  if (pId) pId.textContent = session.patientId;
+  if (pAge) pAge.textContent = session.ageGender || "42 | Male";
+  if (pContact) pContact.textContent = session.contact || "+1 (555) 019-2834";
+  if (dev) dev.textContent = session.deviceId;
+  if (sType) sType.textContent = session.scanType;
+  if (center) center.textContent = session.diagnosticCenter;
+  if (sTime) sTime.textContent = session.scheduledTime;
+  if (notes) notes.textContent = session.clinicalNotes || "--";
+  if (prevReports) prevReports.textContent = session.previousReports || "--";
+
+  if (modal) modal.style.display = "flex";
+}
+
+function closeUpcomingSessionModal() {
+  const modal = document.getElementById("sessionDetailsModalOverlay");
+  if (modal) modal.style.display = "none";
+  currentModalSessionId = null;
+}
+
+function startUpcomingSessionConsultation(sessionId) {
+  closeUpcomingSessionModal();
+  const session = window.torusSessions?.upcoming?.find(s => s.sessionId === sessionId);
+  if (!session) return;
+
+  // Promote to active session list if not already present
+  let activeEntry = window.torusSessions.active.find(s => s.sessionId === session.sessionId);
+  if (!activeEntry) {
+    activeEntry = {
+      sessionId: session.sessionId,
+      patientId: session.patientId,
+      patientName: session.patientName,
+      deviceId: session.deviceId,
+      scanType: session.scanType,
+      duration: "00:00",
+      diagnosticCenter: session.diagnosticCenter,
+      scheduledTime: session.scheduledTime,
+      status: "active",
+      doctorConnectionState: "connected",
+      clinicalSessionCode: window.activeClinicalSessionCode || `TORUS-CLI-${session.patientId}`
+    };
+    window.torusSessions.active.unshift(activeEntry);
+  } else {
+    activeEntry.status = "active";
+    activeEntry.doctorConnectionState = "connected";
+  }
+
+  saveTorusSessions();
+  joinClinicalSession(session.sessionId);
 }
 
 // ============================================================
@@ -4364,10 +4765,91 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Main Dashboard Back Button -> Return to Role Selection
+  // Doctor Portal Dashboard Back Button -> Return to Role Selection / Logout
+  const docDashBackBtn = document.getElementById("docDashBackBtn");
+  if (docDashBackBtn) {
+    docDashBackBtn.addEventListener("click", () => {
+      const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+      if (docPortalDashboard) docPortalDashboard.style.display = "none";
+      if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
+      const badgeEl = document.getElementById("header-user-badge");
+      if (badgeEl) badgeEl.style.display = "none";
+    });
+  }
+
+  // Doctor Dashboard Adhoc Scan Button
+  const docDashAdhocBtn = document.getElementById("docDashAdhocScanBtn");
+  if (docDashAdhocBtn) {
+    docDashAdhocBtn.addEventListener("click", () => {
+      joinClinicalSession("S-001");
+    });
+  }
+
+  // Profile Avatar Popover Toggle
+  const ddashAvatar = document.getElementById("docDashAvatarChip");
+  const ddashPopover = document.getElementById("docDashProfilePopover");
+  if (ddashAvatar && ddashPopover) {
+    ddashAvatar.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = ddashPopover.style.display === "block";
+      ddashPopover.style.display = isOpen ? "none" : "block";
+    });
+    // Close popover when clicking anywhere outside
+    document.addEventListener("click", (e) => {
+      if (!ddashAvatar.contains(e.target) && !ddashPopover.contains(e.target)) {
+        ddashPopover.style.display = "none";
+      }
+    });
+    // Close popover on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && ddashPopover.style.display === "block") {
+        ddashPopover.style.display = "none";
+      }
+    });
+  }
+
+  // Upcoming Session Details Modal Close & Start Handlers
+  const sCloseBtn = document.getElementById("sessionDetailsCloseBtn");
+  const sCancelBtn = document.getElementById("sessionDetailsCancelBtn");
+  const sStartBtn = document.getElementById("sessionDetailsStartBtn");
+  if (sCloseBtn) sCloseBtn.addEventListener("click", closeUpcomingSessionModal);
+  if (sCancelBtn) sCancelBtn.addEventListener("click", closeUpcomingSessionModal);
+  if (sStartBtn) {
+    sStartBtn.addEventListener("click", () => {
+      if (currentModalSessionId) {
+        startUpcomingSessionConsultation(currentModalSessionId);
+      }
+    });
+  }
+
+  // Main Dashboard Back Button -> Return to Doctor Dashboard (if Doctor) or Role Selection
   const mainBackBtn = document.getElementById("backBtn");
   if (mainBackBtn) {
     mainBackBtn.addEventListener("click", () => {
+      const isDoctorRole = (roleInput && roleInput.value === "doctor") ||
+                           (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor");
+
+      if (isDoctorRole) {
+        // Disconnect doctor from active session and return to Doctor Dashboard
+        if (window.currentActiveConsultationSessionId) {
+          const sess = window.torusSessions?.active?.find(s => s.sessionId === window.currentActiveConsultationSessionId);
+          if (sess) {
+            sess.doctorConnectionState = "disconnected";
+            sess.status = "disconnected";
+          }
+        } else if (window.torusSessions?.active?.[0]) {
+          window.torusSessions.active[0].doctorConnectionState = "disconnected";
+          window.torusSessions.active[0].status = "disconnected";
+        }
+        saveTorusSessions();
+
+        if (appDashboard) appDashboard.style.display = "none";
+        const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+        if (docPortalDashboard) docPortalDashboard.style.display = "flex";
+        renderDoctorDashboard();
+        return;
+      }
+
       if (appDashboard) appDashboard.style.display = "none";
       if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
       // Hide header user badge when returning to role selection
@@ -5296,9 +5778,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!hw.connected) {
           bioRegStepTitle.textContent = "Fingerprint scanner is not ready";
           bioRegStepSubtitle.textContent = "Please check the scanner connection.";
+          if (bioRegStartBtn) bioRegStartBtn.disabled = true;
         } else {
-          bioRegStepTitle.textContent = "Fingerprint scanner ready";
-          bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+          if (!isRegisteringBiometrics) {
+            bioRegStepTitle.textContent = "Scanner ready";
+            bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+            if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+          }
           hideAlertMessage("doctor-bio-reg-alert");
         }
       }
@@ -5338,13 +5824,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function resetBiometricRegisterUI() {
     isRegisteringBiometrics = false;
     hideAlertMessage("doctor-bio-reg-alert");
+    if (bioRegIdentifierInput) {
+      bioRegIdentifierInput.value = "";
+    }
     if (bioRegScannerPod) {
       bioRegScannerPod.classList.remove("scanning", "success");
     }
     if (bioRegStepTitle) bioRegStepTitle.textContent = "Checking scanner...";
     if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Connecting to biometric hardware.";
     if (bioRegStartBtn) {
-      bioRegStartBtn.disabled = false;
+      bioRegStartBtn.disabled = true;
       bioRegStartBtn.innerHTML = "<span>Capture Fingerprint</span>";
     }
     if (bioRegDots) {
@@ -5361,9 +5850,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!hw.connected) {
         if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner is not ready";
         if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Please check the scanner connection.";
+        if (bioRegStartBtn) bioRegStartBtn.disabled = true;
       } else {
-        if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint scanner ready";
+        if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanner ready";
         if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+        if (bioRegStartBtn) bioRegStartBtn.disabled = false;
         hideAlertMessage("doctor-bio-reg-alert");
       }
     });
@@ -5378,11 +5869,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (doctorForgotScreen) doctorForgotScreen.style.display = "none";
       if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
       if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
-
-      const docEmailVal = document.getElementById("doctor-email-input")?.value?.trim();
-      if (docEmailVal && bioRegIdentifierInput) {
-        bioRegIdentifierInput.value = docEmailVal;
-      }
     });
   }
 
@@ -5430,8 +5916,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isVerifyingBiometrics) return;
     isVerifyingBiometrics = true;
     hideAlertMessage("doctor-biometric-alert");
-
-    const targetLoginId = document.getElementById("doctor-email-input")?.value?.trim() || bioRegIdentifierInput?.value?.trim() || "admin@gmail.com";
+    // If email is explicitly provided on an active form, verify against that doctor;
+    // Otherwise send null for 1:N hardware search across all enrolled templates.
+    const emailEl = document.getElementById("doctor-email-input");
+    const isEmailLoginActive = emailEl && emailEl.offsetParent !== null;
+    const targetLoginId = isEmailLoginActive && emailEl.value.trim() ? emailEl.value.trim() : null;
 
     if (bioVerifyScannerPod) {
       bioVerifyScannerPod.classList.remove("success");
@@ -5493,12 +5982,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         dots.forEach(d => d.className = "bio-dot active");
 
-        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint verified • Haptic Pad Unlocked";
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint verified successfully";
         if (bioVerifySubtitle) bioVerifySubtitle.textContent = `Welcome back, ${authUser.name}`;
 
         showAlertMessage(
           "doctor-biometric-alert",
-          `Fingerprint verified successfully (Haptic Pad Unlocked). Welcome back, ${authUser.name}. Launching TORUS workspace...`,
+          `Fingerprint verified successfully. Welcome back, ${authUser.name}. Launching TORUS workspace...`,
           "success"
         );
 
@@ -5512,11 +6001,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Real mismatch or failure
       if (bioVerifyScannerPod) bioVerifyScannerPod.classList.remove("scanning");
-      if (bioVerifyTitle) bioVerifyTitle.textContent = (resData && resData.haptic_status === "LOCKED") ? "Fingerprint does not match • Haptic Pad Locked" : "Fingerprint does not match";
-      if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please try again.";
-
-      const errMsg = resData?.error || "Fingerprint does not match. Please try again.";
-      showAlertMessage("doctor-biometric-alert", errMsg, "error");
+      const errCode = resData?.code || "";
+      if (errCode === "TIMEOUT") {
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Verification timed out";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please place your registered finger on the scanner.";
+        showAlertMessage("doctor-biometric-alert", "Verification timed out. Please place your registered finger on the scanner.", "error");
+      } else {
+        if (bioVerifyTitle) bioVerifyTitle.textContent = "Fingerprint not recognized";
+        if (bioVerifySubtitle) bioVerifySubtitle.textContent = "Please try again.";
+        const errMsg = resData?.error || "Fingerprint not recognized. Please try again.";
+        showAlertMessage("doctor-biometric-alert", errMsg, "error");
+      }
       isVerifyingBiometrics = false;
 
     } catch (err) {
@@ -5572,7 +6067,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         bioRegScannerPod.classList.remove("success");
         bioRegScannerPod.classList.add("scanning");
       }
-      if (bioRegStepTitle) bioRegStepTitle.textContent = "Place finger for Scan 1...";
+      if (bioRegStepTitle) bioRegStepTitle.textContent = "Place finger on scanner";
       if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger firmly on the optical scanner.";
       if (dots[0]) dots[0].className = "bio-dot active";
       if (dots[1]) dots[1].className = "bio-dot";
@@ -5630,30 +6125,30 @@ document.addEventListener("DOMContentLoaded", async () => {
             bioRegScannerPod.classList.add("success");
           }
           dots.forEach(d => d.className = "bio-dot active");
-          if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registered successfully!";
+          if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint registered successfully";
           if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = assignedSlot
-            ? `Assigned fingerprint ID: ${assignedSlot}. Securely stored in hardware.`
+            ? `Assigned fingerprint slot: ${assignedSlot}. Securely stored in hardware.`
             : "Your fingerprint has been securely linked to your account.";
 
           const successMsg = assignedSlot
-            ? `Fingerprint registered successfully. Assigned slot: ${assignedSlot}. Redirecting to Biometric Login...`
-            : "Fingerprint registered successfully. Redirecting to Biometric Login...";
+            ? `Fingerprint registered successfully (${assignedSlot}). Ready for next user.`
+            : "Fingerprint registered successfully. Ready for next user.";
 
           showAlertMessage("doctor-bio-reg-alert", successMsg, "success");
 
+          // Reset quickly to ready state so user can immediately register the next doctor (R1 -> R2 -> R3 -> ... -> R20)
           setTimeout(() => {
-            if (doctorBioRegisterScreen) doctorBioRegisterScreen.style.display = "none";
-            if (doctorBiometricScreen) doctorBiometricScreen.style.display = "flex";
-            resetBiometricVerifyUI();
-            showAlertMessage(
-              "doctor-biometric-alert",
-              assignedSlot
-                ? `Fingerprint ${assignedSlot} registered. Place your registered finger on the scanner to verify.`
-                : "Fingerprint registered. Place your registered finger on the scanner to verify.",
-              "success"
-            );
+            if (bioRegIdentifierInput) bioRegIdentifierInput.value = "";
+            if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning", "success");
+            if (bioRegStepTitle) bioRegStepTitle.textContent = "Scanner ready";
+            if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = "Place your finger on the scanner to register your fingerprint.";
+            if (bioRegStartBtn) bioRegStartBtn.disabled = false;
+            if (bioRegDots) {
+              const d = bioRegDots.querySelectorAll(".bio-dot");
+              d.forEach((dot, idx) => { dot.className = idx === 0 ? "bio-dot active" : "bio-dot"; });
+            }
             isRegisteringBiometrics = false;
-          }, 1800);
+          }, 2000);
 
         // --- Handle already registered ---
         } else if (resData && resData.already_registered) {

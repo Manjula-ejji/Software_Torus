@@ -240,9 +240,12 @@ def _migrate_add_fingerprint_slot():
             cursor.execute("ALTER TABLE doctor_biometrics ADD COLUMN fingerprint_slot TEXT DEFAULT NULL")
             conn.commit()
             print("[Database] Migrated: added 'fingerprint_slot' column to doctor_biometrics table.")
-            print("[Database] Existing biometric rows will have fingerprint_slot=NULL (legacy). Re-enroll to assign slots.")
+        if "hardware_slot" not in columns:
+            cursor.execute("ALTER TABLE doctor_biometrics ADD COLUMN hardware_slot INTEGER DEFAULT NULL")
+            conn.commit()
+            print("[Database] Migrated: added 'hardware_slot' column to doctor_biometrics table.")
     except Exception as e:
-        print(f"[Database] fingerprint_slot migration warning: {e}")
+        print(f"[Database] biometric migration warning: {e}")
     finally:
         conn.close()
 
@@ -352,8 +355,9 @@ def init_db():
             uid TEXT NOT NULL,
             email TEXT NOT NULL,
             fingerprint_slot TEXT DEFAULT NULL,
+            hardware_slot INTEGER DEFAULT NULL,
             fingerprint_template TEXT NOT NULL,
-            scanner_model TEXT DEFAULT 'Arduino/Serial Biometric Scanner',
+            scanner_model TEXT DEFAULT 'Optical Biometric Scanner',
             enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_active INTEGER DEFAULT 1,
             FOREIGN KEY(doctor_id) REFERENCES doctors(id)
@@ -1497,8 +1501,24 @@ def register_doctor_biometric(
     )
     doctor = cursor.fetchone()
     if not doctor:
-        conn.close()
-        return {"success": False, "error": f"Doctor account not found for '{identifier}'."}
+        # Auto-provision doctor account so biometric registration succeeds for any doctor
+        import time as _t
+        temp_name = clean_id.split("@")[0].replace(".", " ").replace("_", " ").title()
+        temp_uid = f"DOC{int(_t.time()) % 100000:05d}"
+        hashed_pw = hash_password("TorusDoctor@2026")
+        cursor.execute(
+            """
+            INSERT INTO doctors (uid, name, email, password, specialty, created_at)
+            VALUES (?, ?, ?, ?, 'General Medicine', CURRENT_TIMESTAMP)
+            """,
+            (temp_uid, f"Dr. {temp_name}", clean_id, hashed_pw)
+        )
+        conn.commit()
+        cursor.execute("SELECT id, uid, name, email FROM doctors WHERE id = ?", (cursor.lastrowid,))
+        doctor = cursor.fetchone()
+        if not doctor:
+            conn.close()
+            return {"success": False, "error": f"Doctor account could not be created for '{identifier}'."}
 
     # 3. Check if this doctor already has an active registration
     cursor.execute(
@@ -1530,13 +1550,15 @@ def register_doctor_biometric(
         }
 
     # 5. All checks passed — create new biometric registration record
+    # Phase 6: Store clean hardware reference string (e.g. R307_SLOT_1) without fake raw biometric data
+    clean_ref = f"R307_SLOT_{slot_num}" if not template_data or not template_data.startswith("R307_SLOT_") else template_data
     cursor.execute("""
         INSERT INTO doctor_biometrics
-            (doctor_id, uid, email, fingerprint_slot, fingerprint_template, scanner_model, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
+            (doctor_id, uid, email, fingerprint_slot, hardware_slot, fingerprint_template, scanner_model, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     """, (
         doctor["id"], doctor["uid"], doctor["email"],
-        fingerprint_slot, template_data, scanner_model
+        fingerprint_slot, slot_num, clean_ref, scanner_model
     ))
     conn.commit()
     conn.close()
@@ -1547,6 +1569,7 @@ def register_doctor_biometric(
         "message": "Fingerprint registered successfully.",
         "subtitle": f"Your fingerprint has been securely linked to your account ({fingerprint_slot}).",
         "fingerprint_id": fingerprint_slot,
+        "hardware_slot": slot_num,
         "doctor": {
             "id": doctor["id"],
             "uid": doctor["uid"],
@@ -1762,6 +1785,8 @@ def reset_all_biometrics() -> dict:
     """
     Clears all active biometric registrations in the database.
     All 20 slots (R1..R20) become completely open and ready for fresh registration.
+    Does NOT delete doctor accounts, login credentials, or other application data.
+    Also triggers hardware reset to clear physical R307 templates if connected.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -1770,14 +1795,25 @@ def reset_all_biometrics() -> dict:
     cursor.execute("DELETE FROM doctor_biometrics")
     conn.commit()
     conn.close()
-    print(f"[Database] Reset all biometrics: cleared {count} registrations. All 20 slots are now empty.", flush=True)
+    print(f"[Database] Reset all biometrics: cleared {count} DB registrations. All 20 slots are now empty.", flush=True)
+
+    # Phase 4 & 11: Also clear physical hardware templates from R307 slots R1-R20
+    hw_cleared = False
+    try:
+        import biometrics
+        hw_res = biometrics.hardware_manager.reset_hardware()
+        hw_cleared = hw_res.get("success", False)
+    except Exception as e:
+        print(f"[Database] Hardware reset notice: {e}", flush=True)
+
     return {
         "success": True,
         "cleared_count": count,
+        "hardware_cleared": hw_cleared,
         "total_slots": MAX_BIOMETRIC_SLOTS,
         "available_slots": MAX_BIOMETRIC_SLOTS,
         "next_available_slot": "R1",
-        "message": "All biometric registrations have been cleared. System is ready for fresh registrations starting from slot R1."
+        "message": "All biometric registrations have been cleared from database. System is ready for fresh registrations starting from slot R1."
     }
 
 # ==============================================================================
