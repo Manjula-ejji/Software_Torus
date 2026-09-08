@@ -5311,7 +5311,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 82px;
+  height: 90px;
   flex-shrink: 0;
   background: rgba(8, 12, 28, 0.95);
   border-bottom: 1px solid rgba(139, 92, 246, 0.2);
@@ -5325,17 +5325,17 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-topbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   z-index: 2;
 }
 
 .ddash-menu-btn {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border-radius: 9px;
   color: #94a3b8;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5354,13 +5354,15 @@ body[data-role="viewer"] #settings-uid-wrapper {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 7px 15px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 9px;
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
+  height: 38px;
+  box-sizing: border-box;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -5381,17 +5383,17 @@ body[data-role="viewer"] #settings-uid-wrapper {
   border: none !important;
   border-radius: 0 !important;
   padding: 0 !important;
-  height: 46px !important;
-  max-height: 46px !important;
+  height: 54px !important;
+  max-height: 54px !important;
   box-shadow: none !important;
   flex-shrink: 0 !important;
 }
 
 .ddash-partner-logo-img {
-  height: 44px !important;
-  max-height: 44px !important;
+  height: 52px !important;
+  max-height: 52px !important;
   width: auto !important;
-  max-width: 185px !important;
+  max-width: 210px !important;
   object-fit: contain !important;
   display: block !important;
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.45)) !important;
@@ -5415,30 +5417,30 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-center-title {
-  font-size: 25px;
+  font-size: 29px;
   font-weight: 900;
-  letter-spacing: 5.5px;
+  letter-spacing: 6.5px;
   color: #ffffff;
-  text-shadow: 0 0 16px rgba(0, 229, 255, 0.65), 0 0 28px rgba(0, 229, 255, 0.35);
+  text-shadow: 0 0 18px rgba(0, 229, 255, 0.7), 0 0 32px rgba(0, 229, 255, 0.35);
   line-height: 1.15;
   margin-bottom: 2px;
 }
 
 .ddash-center-system {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: 2.8px;
+  letter-spacing: 3px;
   color: #00e5ff;
   text-transform: uppercase;
   line-height: 1.2;
-  text-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.45);
   margin-bottom: 2px;
 }
 
 .ddash-center-platform {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.9px;
   color: #94a3b8;
   line-height: 1.2;
 }
@@ -5524,14 +5526,16 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-adhoc-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
   color: #fff;
   border: 1px solid rgba(168, 85, 247, 0.5);
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 12px;
+  padding: 7px 15px;
+  border-radius: 9px;
+  font-size: 12.5px;
   font-weight: 700;
+  height: 38px;
+  box-sizing: border-box;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
   transition: all 0.2s ease;
@@ -5544,8 +5548,8 @@ body[data-role="viewer"] #settings-uid-wrapper {
 
 /* Icon Button (Bell) */
 .ddash-icon-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -5586,14 +5590,14 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-avatar {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50% !important;
   background: linear-gradient(135deg, #1d4ed8, #7c3aed);
   border: 1px solid rgba(255, 255, 255, 0.28);
   color: #fff;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 13.5px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5722,8 +5726,8 @@ body[data-role="viewer"] #settings-uid-wrapper {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
+  gap: 6px;
+  padding-top: 6px;
   position: relative;
   z-index: 1;
   overflow: hidden;
@@ -6259,6 +6263,6 @@ body[data-role="viewer"] #settings-uid-wrapper {
   }
 
   .ddash-partner-logo-card {
-    padding: 3px 8px !important;
+    padding: 0 !important;
   }
 }
