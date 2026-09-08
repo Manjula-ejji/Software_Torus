@@ -4118,6 +4118,10 @@ function loadTorusSessions() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && Array.isArray(parsed.active) && Array.isArray(parsed.upcoming)) {
+        parsed.active.forEach(s => {
+          s.status = "active";
+          if (s.doctorConnectionState === "disconnected") s.doctorConnectionState = "not_joined";
+        });
         window.torusSessions = parsed;
       }
     }
@@ -4176,7 +4180,7 @@ function renderDoctorDashboard() {
   if (statScheduled) statScheduled.textContent = String(upcomingList.length || 3);
   if (statCompleted) statCompleted.textContent = "12";
 
-  // 1. Render Active Sessions (JOIN or REJOIN based on state)
+  // 1. Render Active Sessions (Status: In Progress, Action: Rejoin live session)
   if (activeContainer) {
     if (activeList.length === 0) {
       activeContainer.innerHTML = `<div class="ddash-empty">No active sessions right now.</div>`;
@@ -4185,22 +4189,6 @@ function renderDoctorDashboard() {
         let scanColor = "purple";
         if (session.scanType === "Cardiac") scanColor = "cyan";
         else if (session.scanType === "Pelvic") scanColor = "emerald";
-
-        const isDisconnected = session.status === "disconnected" || session.doctorConnectionState === "disconnected";
-
-        const statusBadgeHtml = isDisconnected
-          ? `<span class="ddash-status-tag disconnected">● Disconnected</span>`
-          : `<span class="ddash-status-tag in-progress">● In Progress</span>`;
-
-        const actionBtnHtml = isDisconnected
-          ? `<button class="ddash-rejoin-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
-               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-               <span>Rejoin</span>
-             </button>`
-          : `<button class="ddash-join-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
-               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
-               <span>Join</span>
-             </button>`;
 
         return `
           <div class="ddash-row-active">
@@ -4223,19 +4211,19 @@ function renderDoctorDashboard() {
                 ${session.duration}
               </span>
             </div>
-            <div>${statusBadgeHtml}</div>
-            <div class="ddash-action-cell">${actionBtnHtml}</div>
+            <div><span class="ddash-status-tag in-progress">● In Progress</span></div>
+            <div class="ddash-action-cell">
+              <button class="ddash-join-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                <span>Rejoin</span>
+              </button>
+            </div>
           </div>
         `;
       }).join("");
 
-      // Bind Join click handlers
-      activeContainer.querySelectorAll(".ddash-join-btn").forEach(btn => {
-        btn.addEventListener("click", () => joinClinicalSession(btn.getAttribute("data-session-id")));
-      });
-
-      // Bind Rejoin click handlers
-      activeContainer.querySelectorAll(".ddash-rejoin-btn").forEach(btn => {
+      // Bind Rejoin click handlers to open Live Consultation
+      activeContainer.querySelectorAll(".ddash-join-btn, .ddash-rejoin-btn").forEach(btn => {
         btn.addEventListener("click", () => rejoinClinicalSession(btn.getAttribute("data-session-id")));
       });
     }
@@ -4785,24 +4773,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Profile Avatar Popover Toggle
+  // Profile Avatar Popover Toggle (Click and Hover)
+  const ddashAvatarWrap = document.getElementById("docDashAvatarWrap");
   const ddashAvatar = document.getElementById("docDashAvatarChip");
   const ddashPopover = document.getElementById("docDashProfilePopover");
   if (ddashAvatar && ddashPopover) {
+    let isPinnedOpen = false;
+
     ddashAvatar.addEventListener("click", (e) => {
       e.stopPropagation();
-      const isOpen = ddashPopover.style.display === "block";
-      ddashPopover.style.display = isOpen ? "none" : "block";
+      isPinnedOpen = !isPinnedOpen;
+      ddashPopover.style.display = isPinnedOpen ? "block" : "none";
     });
+
+    if (ddashAvatarWrap) {
+      ddashAvatarWrap.addEventListener("mouseenter", () => {
+        ddashPopover.style.display = "block";
+      });
+      ddashAvatarWrap.addEventListener("mouseleave", () => {
+        if (!isPinnedOpen) {
+          ddashPopover.style.display = "none";
+        }
+      });
+    }
+
     // Close popover when clicking anywhere outside
     document.addEventListener("click", (e) => {
       if (!ddashAvatar.contains(e.target) && !ddashPopover.contains(e.target)) {
+        isPinnedOpen = false;
         ddashPopover.style.display = "none";
       }
     });
+
     // Close popover on Escape key
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && ddashPopover.style.display === "block") {
+      if (e.key === "Escape") {
+        isPinnedOpen = false;
         ddashPopover.style.display = "none";
       }
     });
@@ -4834,12 +4840,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (window.currentActiveConsultationSessionId) {
           const sess = window.torusSessions?.active?.find(s => s.sessionId === window.currentActiveConsultationSessionId);
           if (sess) {
-            sess.doctorConnectionState = "disconnected";
-            sess.status = "disconnected";
+            sess.doctorConnectionState = "not_joined";
+            sess.status = "active";
           }
         } else if (window.torusSessions?.active?.[0]) {
-          window.torusSessions.active[0].doctorConnectionState = "disconnected";
-          window.torusSessions.active[0].status = "disconnected";
+          window.torusSessions.active[0].doctorConnectionState = "not_joined";
+          window.torusSessions.active[0].status = "active";
         }
         saveTorusSessions();
 

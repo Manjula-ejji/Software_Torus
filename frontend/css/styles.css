@@ -5302,7 +5302,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ddash-menu-btn {
@@ -5352,22 +5352,29 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-left: 4px;
+  gap: 12px;
+  padding-left: 6px;
+  margin-left: 2px;
 }
 
 .ddash-brand-logo {
-  height: 30px;
+  height: 28px;
+  width: auto;
   object-fit: contain;
+  display: block;
   filter: drop-shadow(0 0 6px rgba(0, 200, 255, 0.4));
 }
 
 .ddash-brand-text {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 800;
   letter-spacing: 3.5px;
+  line-height: 1;
   color: #ffffff;
-  text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+  text-shadow: 0 0 12px rgba(0, 229, 255, 0.45);
+  display: flex;
+  align-items: center;
+  user-select: none;
 }
 
 .ddash-topbar-right {
@@ -5467,6 +5474,12 @@ body[data-role="viewer"] #settings-uid-wrapper {
 /* Profile Avatar + Popover */
 .ddash-avatar-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ddash-avatar-wrap:hover .ddash-profile-popover {
+  display: block;
 }
 
 .ddash-avatar {
