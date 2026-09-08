@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=34" />
+  <link rel="stylesheet" href="css/styles.css?v=35" />
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
@@ -1205,8 +1205,9 @@
   <!-- Doctor Portal Dashboard Screen (Image 2 Reference) -->
   <div id="doctor-portal-dashboard" class="doctor-portal-dashboard" style="display: none;">
     <div class="ddash-shell">
-      <!-- TOP BAR -->
+      <!-- TOP BAR (Matching Reference Image 2) -->
       <header class="ddash-topbar">
+        <!-- LEFT: Menu, Back, PlebC Partner Logo Card -->
         <div class="ddash-topbar-left">
           <button class="ddash-menu-btn" id="docDashMenuToggle" type="button" aria-label="Toggle sidebar">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -1215,11 +1216,19 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             <span>Back</span>
           </button>
-          <div class="ddash-brand">
-            <img src="assets/logo.png?v=2" alt="TORUS Logo" class="ddash-brand-logo" />
-            <span class="ddash-brand-text">TORUS</span>
+          <div class="ddash-partner-logo-card" title="PlebC • DRISHTI CPS Foundation • IIT Indore">
+            <img src="assets/logo.png?v=2" alt="PlebC Logo" class="ddash-partner-logo-img" />
           </div>
         </div>
+
+        <!-- CENTER: Perfectly Centered TORUS System Branding -->
+        <div class="ddash-topbar-center">
+          <div class="ddash-center-title">TORUS</div>
+          <div class="ddash-center-system">REMOTE ULTRASOUND SYSTEM</div>
+          <div class="ddash-center-platform">Next-Generation Healthcare Robotics Platform</div>
+        </div>
+
+        <!-- RIGHT: Controls & Profile -->
         <div class="ddash-topbar-right">
           <div class="ddash-haptic-chip haptic-chip--disconnected" id="docDashHapticChip" role="status">
             <span class="ddash-haptic-alert">⚠</span>
@@ -1228,17 +1237,31 @@
             <span id="docDashHapticChipText">Not Connected</span>
             <span class="ddash-haptic-dot"></span>
           </div>
-          <button class="ddash-adhoc-btn" id="docDashAdhocScanBtn" type="button">Adhoc Scan</button>
+          <button class="ddash-adhoc-btn" id="docDashAdhocScanBtn" type="button">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg>
+            <span>Adhoc Scan</span>
+          </button>
           <button class="ddash-icon-btn" id="docDashBellBtn" type="button" aria-label="Notifications">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span class="ddash-bell-dot"></span>
           </button>
           <!-- Profile Avatar with Popover -->
           <div class="ddash-avatar-wrap" id="docDashAvatarWrap">
             <div class="ddash-avatar" id="docDashAvatarChip" tabindex="0" role="button" aria-label="Doctor profile">AD</div>
             <div class="ddash-profile-popover" id="docDashProfilePopover" style="display:none;">
-              <div class="ddash-profile-name" id="popoverDoctorName">Admin Doctor</div>
-              <div class="ddash-profile-id">Doctor ID: <span id="popoverDoctorId">3001</span></div>
-              <div class="ddash-profile-role">Role: Doctor / Admin</div>
+              <div class="ddash-popover-header">
+                <div class="ddash-popover-avatar">AD</div>
+                <div class="ddash-popover-user">
+                  <div class="ddash-profile-name" id="popoverDoctorName">Admin Doctor</div>
+                  <div class="ddash-profile-id">Doctor ID: <span id="popoverDoctorId">3001</span></div>
+                  <div class="ddash-profile-role">Role: Doctor / Admin</div>
+                </div>
+              </div>
+              <div class="ddash-popover-divider"></div>
+              <button class="ddash-popover-logout" id="docDashLogoutBtn" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                <span>Logout</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1246,7 +1269,7 @@
 
       <!-- CONTENT -->
       <main class="ddash-content">
-        <!-- Stats Cards -->
+        <!-- Stats Cards (Matching Reference Image 2 with subtle graphical waves) -->
         <div class="ddash-stats-grid">
           <div class="ddash-stat-card">
             <div class="ddash-stat-icon ddash-icon-purple">
@@ -1256,6 +1279,9 @@
               <span class="ddash-stat-label">TOTAL SESSIONS</span>
               <span class="ddash-stat-value" id="statTotalSessions">16</span>
             </div>
+            <svg class="ddash-stat-wave purple" viewBox="0 0 100 30" preserveAspectRatio="none">
+              <path d="M0 22 Q 25 8, 50 18 T 100 12" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.45"/>
+            </svg>
           </div>
           <div class="ddash-stat-card">
             <div class="ddash-stat-icon ddash-icon-green">
@@ -1265,31 +1291,46 @@
               <span class="ddash-stat-label">LIVE SESSIONS</span>
               <span class="ddash-stat-value" id="statLiveSessions">1</span>
             </div>
+            <svg class="ddash-stat-wave green" viewBox="0 0 100 30" preserveAspectRatio="none">
+              <path d="M0 24 Q 25 10, 50 20 T 100 10" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.45"/>
+            </svg>
           </div>
           <div class="ddash-stat-card">
             <div class="ddash-stat-icon ddash-icon-cyan">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             </div>
             <div class="ddash-stat-info">
-              <span class="ddash-stat-label">SCHEDULED</span>
+              <span class="ddash-stat-label">SCHEDULED SESSIONS</span>
               <span class="ddash-stat-value" id="statScheduledSessions">3</span>
             </div>
+            <svg class="ddash-stat-wave cyan" viewBox="0 0 100 30" preserveAspectRatio="none">
+              <path d="M0 20 Q 30 6, 60 22 T 100 14" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.45"/>
+            </svg>
           </div>
           <div class="ddash-stat-card">
             <div class="ddash-stat-icon ddash-icon-gray">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             </div>
             <div class="ddash-stat-info">
-              <span class="ddash-stat-label">COMPLETED</span>
+              <span class="ddash-stat-label">COMPLETED SESSIONS</span>
               <span class="ddash-stat-value" id="statCompletedSessions">12</span>
             </div>
+            <svg class="ddash-stat-wave gray" viewBox="0 0 100 30" preserveAspectRatio="none">
+              <path d="M0 22 Q 25 14, 50 18 T 100 16" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.45"/>
+            </svg>
           </div>
         </div>
 
-        <!-- Active Sessions Panel -->
+        <!-- Active Sessions Panel (Matching Reference Image 2) -->
         <div class="ddash-panel ddash-panel-active">
           <div class="ddash-panel-header">
-            <h2 class="ddash-panel-title">Active Sessions</h2>
+            <div class="ddash-panel-title-group">
+              <span class="ddash-title-dot purple"></span>
+              <div>
+                <h2 class="ddash-panel-title">Active Sessions</h2>
+                <p class="ddash-panel-subtitle">Currently active ultrasound sessions</p>
+              </div>
+            </div>
             <span class="ddash-live-badge" id="activeLiveBadge">1 Active</span>
           </div>
           <!-- Column definitions: same grid used for both header and rows -->
@@ -1303,10 +1344,18 @@
           <div class="ddash-session-list" id="activeSessionsList"></div>
         </div>
 
-        <!-- Upcoming Sessions Panel -->
+        <!-- Upcoming Sessions Panel (Matching Reference Image 2) -->
         <div class="ddash-panel ddash-panel-upcoming">
           <div class="ddash-panel-header">
-            <h2 class="ddash-panel-title">Upcoming Sessions</h2>
+            <div class="ddash-panel-title-group">
+              <span class="ddash-title-icon-cyan">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              </span>
+              <div>
+                <h2 class="ddash-panel-title">Upcoming Sessions</h2>
+                <p class="ddash-panel-subtitle">Scheduled ultrasound sessions</p>
+              </div>
+            </div>
             <span class="ddash-sched-badge" id="upcomingScheduleBadge">3 Scheduled</span>
           </div>
           <div class="ddash-col-grid-up ddash-table-head">
@@ -1972,7 +2021,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 
 </html>

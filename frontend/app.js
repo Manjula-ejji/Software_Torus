@@ -1862,7 +1862,7 @@ async function syncDoctorControlsFromPatientState() {
           data = await res.json();
           break;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!data) return;
     console.log("[Doctor UI] Synced state from backend:", data);
@@ -4833,7 +4833,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (mainBackBtn) {
     mainBackBtn.addEventListener("click", () => {
       const isDoctorRole = (roleInput && roleInput.value === "doctor") ||
-                           (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor");
+        (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor");
 
       if (isDoctorRole) {
         // Disconnect doctor from active session and return to Doctor Dashboard
@@ -6156,7 +6156,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             isRegisteringBiometrics = false;
           }, 2000);
 
-        // --- Handle already registered ---
+          // --- Handle already registered ---
         } else if (resData && resData.already_registered) {
           if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
           if (bioRegStepTitle) bioRegStepTitle.textContent = "Fingerprint already registered";
@@ -6167,7 +6167,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (bioRegStartBtn) bioRegStartBtn.disabled = false;
           isRegisteringBiometrics = false;
 
-        // --- Handle all slots occupied ---
+          // --- Handle all slots occupied ---
         } else if (resData && resData.code === "ALL_SLOTS_FULL") {
           if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
           if (bioRegStepTitle) bioRegStepTitle.textContent = "All fingerprint slots are occupied";
@@ -6176,7 +6176,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (bioRegStartBtn) bioRegStartBtn.disabled = false;
           isRegisteringBiometrics = false;
 
-        // --- Handle other failures ---
+          // --- Handle other failures ---
         } else {
           if (bioRegScannerPod) bioRegScannerPod.classList.remove("scanning");
           const errMsg = resData?.error || "Fingerprint registration failed. Please try again.";
