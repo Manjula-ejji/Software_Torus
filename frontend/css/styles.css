@@ -3839,118 +3839,6 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 /* ================================================================
-   LIVE CONSULTATION HEADER — User Profile Popover
-   ================================================================ */
-.header-profile-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.header-profile-popover {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 9500;
-  min-width: 200px;
-  background: #0d1321;
-  border: 1px solid rgba(139, 92, 246, 0.45);
-  border-radius: 14px;
-  padding: 14px 16px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(106, 0, 255, 0.15);
-  animation: hppFadeIn 0.18s ease-out;
-}
-
-@keyframes hppFadeIn {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.hpp-name {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: #f3f4f6;
-  white-space: nowrap;
-  margin-bottom: 4px;
-}
-
-.hpp-uid {
-  font-size: 11.5px;
-  color: #94a3b8;
-  font-weight: 500;
-  margin-bottom: 2px;
-}
-
-.hpp-uid span {
-  color: #c084fc;
-  font-weight: 600;
-}
-
-.hpp-role {
-  font-size: 11px;
-  color: #64748b;
-  margin-bottom: 10px;
-}
-
-.hpp-divider {
-  height: 1px;
-  background: rgba(148, 163, 184, 0.12);
-  margin-bottom: 10px;
-}
-
-.hpp-logout-btn {
-  width: 100%;
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  background: rgba(239, 68, 68, 0.08);
-  color: #f87171;
-  font-size: 12.5px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-  text-align: left;
-}
-
-.hpp-logout-btn:hover {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.6);
-  color: #fca5a5;
-}
-
-/* ================================================================
-   LIVE CONSULTATION HEADER — Device Badge (professional white text)
-   ================================================================ */
-.header-device-badge {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 5px 12px;
-  background: rgba(14, 22, 40, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 10px;
-  margin-left: 8px;
-  gap: 1px;
-}
-
-.header-device-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-#header-device-text {
-  font-size: 13px;
-  font-weight: 700;
-  color: #e2e8f0;
-  letter-spacing: 0.2px;
-}
-
-
-/* ================================================================
    Doctor Create Account Full Page Screen
    Reuses exact same background as .doctor-login-screen
    ================================================================ */
@@ -6463,14 +6351,6 @@ body[data-role="viewer"] #settings-uid-wrapper {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-}
-
-.device-modal-filters--single {
-  grid-template-columns: 1fr;
-}
-
-.device-filter-input-wrap--full {
-  width: 100%;
 }
 
 .device-filter-input-wrap {

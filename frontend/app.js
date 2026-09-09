@@ -3960,7 +3960,7 @@ async function setAuthenticatedDoctorSession(doctor) {
     uidInput.value = doctor.uid;
   }
 
-  // Populate User Profile popover in Live Consultation header
+  // Update dynamic Header User Badge
   const nameEl = document.getElementById("user-display-name");
   const uidEl = document.getElementById("user-display-uid");
   const badgeEl = document.getElementById("header-user-badge");
@@ -3969,11 +3969,11 @@ async function setAuthenticatedDoctorSession(doctor) {
     nameEl.textContent = doctor.name.startsWith("Dr.") ? doctor.name : `Dr. ${doctor.name}`;
   }
   if (uidEl) {
+    // Display Professional ID (DOC-XXXXX) or fallback to UID format
     uidEl.textContent = doctor.uid;
   }
-  // header-user-badge stays permanently hidden; info shown via headerProfilePopover
   if (badgeEl) {
-    badgeEl.style.display = "none";
+    badgeEl.style.display = "inline-flex";
   }
 
   // Connect Doctor MQTT
@@ -4572,8 +4572,8 @@ function ensureDeviceModalInDOM() {
           </button>
         </div>
 
-        <div class="device-modal-filters device-modal-filters--single">
-          <label class="device-filter-input-wrap device-filter-input-wrap--full" aria-label="Search devices">
+        <div class="device-modal-filters">
+          <label class="device-filter-input-wrap" aria-label="Search devices">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
@@ -4581,6 +4581,15 @@ function ensureDeviceModalInDOM() {
             </svg>
             <input id="deviceSearchInput" class="device-filter-input" type="text"
               placeholder="Search by ID, hospital, city..." />
+          </label>
+          <label class="device-filter-input-wrap cyan" aria-label="Filter devices by location">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            <input id="deviceLocationInput" class="device-filter-input" type="text"
+              placeholder="Filter by country or city..." />
           </label>
         </div>
 
@@ -4633,13 +4642,16 @@ function bindDeviceModalEvents() {
   }
 
   const devSearchInput = document.getElementById("deviceSearchInput");
+  const devLocationInput = document.getElementById("deviceLocationInput");
   const handleDeviceFilterInput = () => {
     const sVal = devSearchInput ? devSearchInput.value : "";
-    const filtered = getFilteredDevices(sVal, "");
+    const lVal = devLocationInput ? devLocationInput.value : "";
+    const filtered = getFilteredDevices(sVal, lVal);
     renderDeviceResults(filtered);
     updateDeviceActionButtons();
   };
   if (devSearchInput) devSearchInput.oninput = handleDeviceFilterInput;
+  if (devLocationInput) devLocationInput.oninput = handleDeviceFilterInput;
 
   const connectDevBtn = document.getElementById("connectDeviceBtn");
   if (connectDevBtn) {
@@ -4669,7 +4681,7 @@ function openDeviceModal() {
 
   const modalOverlay = document.getElementById("deviceModalOverlay");
   const searchInput = document.getElementById("deviceSearchInput");
-  const locationInput = null; // location filter removed
+  const locationInput = document.getElementById("deviceLocationInput");
   if (!modalOverlay) return;
 
   // Requirement 2 & 8: Dynamic / random order every time modal is opened (randomized once on open)
@@ -4684,6 +4696,7 @@ function openDeviceModal() {
   selectedTorUSDeviceId = null;
 
   if (searchInput) searchInput.value = "";
+  if (locationInput) locationInput.value = "";
 
   renderDeviceResults(currentDeviceList);
   updateDeviceActionButtons();
@@ -4928,7 +4941,7 @@ function updateLiveConsultationDeviceDisplay(deviceId) {
   const headerDevBadge = document.getElementById("header-device-badge");
   const headerDevText = document.getElementById("header-device-text");
   if (headerDevBadge && headerDevText) {
-    headerDevText.textContent = deviceId;
+    headerDevText.textContent = `Device: ${deviceId}`;
     headerDevBadge.style.display = "inline-flex";
   }
 
@@ -5373,13 +5386,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Filter Handlers (Search & Location)
   const devSearchInput = document.getElementById("deviceSearchInput");
+  const devLocationInput = document.getElementById("deviceLocationInput");
   const handleDeviceFilterInput = () => {
     const sVal = devSearchInput ? devSearchInput.value : "";
-    const filtered = getFilteredDevices(sVal, "");
+    const lVal = devLocationInput ? devLocationInput.value : "";
+    const filtered = getFilteredDevices(sVal, lVal);
     renderDeviceResults(filtered);
     updateDeviceActionButtons();
   };
   if (devSearchInput) devSearchInput.addEventListener("input", handleDeviceFilterInput);
+  if (devLocationInput) devLocationInput.addEventListener("input", handleDeviceFilterInput);
 
   // Connect Button Handler
   const connectDevBtn = document.getElementById("connectDeviceBtn");
@@ -5442,54 +5458,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         ddashPopover.style.display = "none";
       }
     });
-  }
-
-  // ============================================================
-  // Live Consultation Header — User Profile Popover (profileBtn)
-  // ============================================================
-  const profileBtn = document.getElementById("profileBtn");
-  const headerProfilePopover = document.getElementById("headerProfilePopover");
-  const headerProfileWrap = document.getElementById("headerProfileWrap");
-  if (profileBtn && headerProfilePopover) {
-    let hppPinned = false;
-
-    profileBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      hppPinned = !hppPinned;
-      headerProfilePopover.style.display = hppPinned ? "block" : "none";
-    });
-
-    if (headerProfileWrap) {
-      headerProfileWrap.addEventListener("mouseenter", () => {
-        headerProfilePopover.style.display = "block";
-      });
-      headerProfileWrap.addEventListener("mouseleave", () => {
-        if (!hppPinned) headerProfilePopover.style.display = "none";
-      });
-    }
-
-    document.addEventListener("click", (e) => {
-      if (!profileBtn.contains(e.target) && !headerProfilePopover.contains(e.target)) {
-        hppPinned = false;
-        headerProfilePopover.style.display = "none";
-      }
-    });
-
-    // Logout button in header popover
-    const hppLogoutBtn = document.getElementById("headerProfileLogoutBtn");
-    if (hppLogoutBtn) {
-      hppLogoutBtn.addEventListener("click", () => {
-        headerProfilePopover.style.display = "none";
-        hppPinned = false;
-        // Return to role selection
-        if (appDashboard) appDashboard.style.display = "none";
-        if (roleSelectionScreen) roleSelectionScreen.style.display = "flex";
-        const hBadge = document.getElementById("header-user-badge");
-        if (hBadge) hBadge.style.display = "none";
-        const hDev = document.getElementById("header-device-badge");
-        if (hDev) hDev.style.display = "none";
-      });
-    }
   }
 
   // Upcoming Session Details Modal Close & Start Handlers

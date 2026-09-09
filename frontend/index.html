@@ -1658,31 +1658,21 @@
             </svg>
             <span>Settings</span>
           </button>
-          <div class="header-profile-wrap" id="headerProfileWrap">
-            <button id="profileBtn" class="header-btn" title="User Profile" type="button">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-              <span>User Profile</span>
-            </button>
-            <div id="headerProfilePopover" class="header-profile-popover" style="display:none;">
-              <div class="hpp-name" id="user-display-name">Dr. Admin Doctor</div>
-              <div class="hpp-uid">Doctor ID: <span id="user-display-uid">3001</span></div>
-              <div class="hpp-role">Role: Doctor / Admin</div>
-              <div class="hpp-divider"></div>
-              <button class="hpp-logout-btn" id="headerProfileLogoutBtn" type="button">Logout</button>
-            </div>
+          <button id="profileBtn" class="header-btn" title="User Profile" type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span>User Profile</span>
+          </button>
+          <div id="header-user-badge" class="header-user-badge" style="display: none;">
+            <span id="user-display-name" class="user-display-name">Dr. Admin Doctor</span>
+            <span id="user-display-uid" class="user-display-uid">UID 3001</span>
           </div>
-          <!-- header-user-badge kept hidden; info now lives in headerProfilePopover -->
-          <div id="header-user-badge" style="display: none;">
-            <span id="user-display-name-legacy"></span>
-            <span id="user-display-uid-legacy"></span>
-          </div>
-          <div id="header-device-badge" class="header-device-badge" style="display: none;">
-            <span class="header-device-label">Device:</span>
-            <span id="header-device-text">--</span>
+          <div id="header-device-badge" class="header-user-badge header-device-badge" style="display: none;">
+            <span class="ddash-device-dot" style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00f0ff; box-shadow: 0 0 6px #00f0ff; margin-right: 6px;"></span>
+            <span id="header-device-text" style="color: #00f0ff; font-weight: 700;">TORUS Device: --</span>
           </div>
         </div>
         <div class="header-row">
