@@ -4107,17 +4107,25 @@ window.torusSessions = {
 function saveTorusSessions() {
   try {
     sessionStorage.setItem("torus_doctor_sessions", JSON.stringify(window.torusSessions));
+    localStorage.setItem("torus_doctor_sessions", JSON.stringify(window.torusSessions));
   } catch (e) {
     console.warn("Could not save session state:", e);
   }
 }
 
 function loadTorusSessions() {
+  // Default upcoming sessions (always authoritative)
+  const defaultUpcoming = [
+    { sessionId: "S-002", patientId: "P-8821", patientName: "John Doe", deviceId: "TORUS-A12", scanType: "Abdominal", diagnosticCenter: "NYC Medical", scheduledTime: "10:30 AM", status: "scheduled", doctorConnectionState: "not_joined" },
+    { sessionId: "S-003", patientId: "P-9104", patientName: "Jane Smith", deviceId: "TORUS-B08", scanType: "Cardiac", diagnosticCenter: "Boston General", scheduledTime: "12:00 PM", status: "scheduled", doctorConnectionState: "not_joined" },
+    { sessionId: "S-004", patientId: "P-7543", patientName: "Robert Brown", deviceId: "TORUS-C15", scanType: "Pelvic", diagnosticCenter: "Apollo Hyderabad", scheduledTime: "02:15 PM", status: "scheduled", doctorConnectionState: "not_joined" }
+  ];
+
   try {
-    const saved = sessionStorage.getItem("torus_doctor_sessions");
+    const saved = sessionStorage.getItem("torus_doctor_sessions") || localStorage.getItem("torus_doctor_sessions");
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && Array.isArray(parsed.active) && Array.isArray(parsed.upcoming)) {
+      if (parsed && Array.isArray(parsed.active)) {
         parsed.active.forEach(s => {
           s.status = "active";
           if (s.doctorConnectionState === "disconnected") s.doctorConnectionState = "not_joined";
@@ -4128,7 +4136,18 @@ function loadTorusSessions() {
   } catch (e) {
     console.warn("Could not load session state:", e);
   }
+
+  // Always override upcoming with default data (upcoming sessions are static display data)
+  if (!window.torusSessions) window.torusSessions = { active: [], upcoming: [] };
+  window.torusSessions.upcoming = defaultUpcoming;
+
+  // Patch active session deviceId with last connected device
+  const connectedDevId = sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId");
+  if (connectedDevId && window.torusSessions?.active?.[0]) {
+    window.torusSessions.active[0].deviceId = connectedDevId;
+  }
 }
+
 
 // Update Topbar in Doctor Dashboard
 function updateDoctorPortalHeader(doctor) {
@@ -4157,6 +4176,9 @@ function updateDoctorPortalHeader(doctor) {
 
 // Render Doctor Dashboard (Active & Upcoming Sessions)
 function renderDoctorDashboard() {
+  if (typeof ensureDeviceModalInDOM === "function") {
+    ensureDeviceModalInDOM();
+  }
   loadTorusSessions();
 
   const activeContainer = document.getElementById("activeSessionsList");
@@ -4179,6 +4201,10 @@ function renderDoctorDashboard() {
   if (statLive) statLive.textContent = String(activeList.length || 1);
   if (statScheduled) statScheduled.textContent = String(upcomingList.length || 3);
   if (statCompleted) statCompleted.textContent = "12";
+
+  // Device chip is hidden from header per design (device context shown on Live Consultation page only)
+  const deviceChip = document.getElementById("docDashDeviceChip");
+  if (deviceChip) deviceChip.style.display = "none";
 
   // 1. Render Active Sessions (Status: In Progress, Action: Rejoin live session)
   if (activeContainer) {
@@ -4297,6 +4323,10 @@ function joinClinicalSession(sessionId) {
   if (docPortalDashboard) docPortalDashboard.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
 
+  if (typeof updateLiveConsultationDeviceDisplay === "function" && session && session.deviceId) {
+    updateLiveConsultationDeviceDisplay(session.deviceId);
+  }
+
   // Trigger boot sequence animation
   if (typeof triggerHeaderBootSequence === "function") {
     triggerHeaderBootSequence();
@@ -4325,6 +4355,10 @@ function rejoinClinicalSession(sessionId) {
   const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
   if (docPortalDashboard) docPortalDashboard.style.display = "none";
   if (appDashboard) appDashboard.style.display = "flex";
+
+  if (typeof updateLiveConsultationDeviceDisplay === "function" && session && session.deviceId) {
+    updateLiveConsultationDeviceDisplay(session.deviceId);
+  }
 
   if (typeof triggerHeaderBootSequence === "function") {
     triggerHeaderBootSequence();
@@ -4402,6 +4436,573 @@ function startUpcomingSessionConsultation(sessionId) {
   saveTorusSessions();
   joinClinicalSession(session.sessionId);
 }
+
+
+// ============================================================
+// ADHOC SCAN - TORUS DEVICE SELECTION & CONNECTION ENGINE
+// ============================================================
+
+const TORUS_AVAILABLE_DEVICES = [
+  {
+    id: "TORUS-C15",
+    hospital: "Apollo Hospital",
+    location: "Hyderabad, India",
+    city: "Hyderabad",
+    country: "India",
+    status: "online",
+    latency: "38ms",
+    signal: "97%"
+  },
+  {
+    id: "TORUS-D22",
+    hospital: "Fortis Healthcare",
+    location: "Bangalore, India",
+    city: "Bangalore",
+    country: "India",
+    status: "standby",
+    latency: "55ms",
+    signal: "89%"
+  },
+  {
+    id: "TORUS-E18",
+    hospital: "CMC Hospital",
+    location: "Chennai, India",
+    city: "Chennai",
+    country: "India",
+    status: "online",
+    latency: "45ms",
+    signal: "92%"
+  },
+  {
+    id: "TORUS-F09",
+    hospital: "LA Medical Plaza",
+    location: "Los Angeles, USA",
+    city: "Los Angeles",
+    country: "USA",
+    status: "online",
+    latency: "48ms",
+    signal: "94%"
+  },
+  {
+    id: "TORUS-A12",
+    hospital: "NYC Medical Center",
+    location: "New York, USA",
+    city: "New York",
+    country: "USA",
+    status: "online",
+    latency: "35ms",
+    signal: "98%"
+  },
+  {
+    id: "TORUS-B08",
+    hospital: "Boston General Hospital",
+    location: "Boston, USA",
+    city: "Boston",
+    country: "USA",
+    status: "standby",
+    latency: "42ms",
+    signal: "95%"
+  },
+  {
+    id: "TORUS-G04",
+    hospital: "Manipal Hospital",
+    location: "Delhi, India",
+    city: "Delhi",
+    country: "India",
+    status: "online",
+    latency: "40ms",
+    signal: "96%"
+  },
+  {
+    id: "TORUS-H17",
+    hospital: "Mount Sinai Hospital",
+    location: "Chicago, USA",
+    city: "Chicago",
+    country: "USA",
+    status: "standby",
+    latency: "52ms",
+    signal: "90%"
+  },
+  {
+    id: "TORUS-K03",
+    hospital: "King Edward Memorial",
+    location: "Mumbai, India",
+    city: "Mumbai",
+    country: "India",
+    status: "online",
+    latency: "36ms",
+    signal: "98%"
+  },
+  {
+    id: "TORUS-Z99",
+    hospital: "St. Jude Research Center",
+    location: "San Francisco, USA",
+    city: "San Francisco",
+    country: "USA",
+    status: "offline",
+    latency: "--",
+    signal: "0%"
+  }
+];
+
+// Single state variable for the selected TORUS device ID (Requirement 3 & 9)
+let selectedTorUSDeviceId = null;
+// Active list of devices displayed during the current modal opening
+let currentDeviceList = [];
+
+// Ensure all DOM elements exist regardless of editor state
+function ensureDeviceModalInDOM() {
+  // 1. Modal overlay
+  let modalOverlay = document.getElementById("deviceModalOverlay");
+  if (!modalOverlay) {
+    modalOverlay = document.createElement("div");
+    modalOverlay.className = "device-modal-overlay";
+    modalOverlay.id = "deviceModalOverlay";
+    modalOverlay.style.display = "none";
+    modalOverlay.innerHTML = `
+      <div class="device-modal" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle">
+        <div class="device-modal-header">
+          <h2 class="device-modal-title" id="deviceModalTitle">Search TORUS Device</h2>
+          <button class="device-modal-close" id="deviceModalClose" type="button" aria-label="Close device search">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="device-modal-filters">
+          <label class="device-filter-input-wrap" aria-label="Search devices">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input id="deviceSearchInput" class="device-filter-input" type="text"
+              placeholder="Search by ID, hospital, city..." />
+          </label>
+          <label class="device-filter-input-wrap cyan" aria-label="Filter devices by location">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            <input id="deviceLocationInput" class="device-filter-input" type="text"
+              placeholder="Filter by country or city..." />
+          </label>
+        </div>
+
+        <div class="device-results-scroll" id="deviceResultsScroll">
+          <div class="device-results-grid" id="deviceResultsGrid"></div>
+        </div>
+
+        <div class="device-modal-footer">
+          <button class="device-primary-btn" id="connectDeviceBtn" type="button" disabled>Select a TORUS Device</button>
+          <button class="device-secondary-btn" id="deviceInfoBtn" type="button" disabled>Device Info</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modalOverlay);
+    bindDeviceModalEvents();
+  }
+
+
+  // docDashDeviceChip is intentionally not shown in Doctor Dashboard header (removed per design)
+
+  // 3. Live Consultation header device badge
+  let headerBadge = document.getElementById("header-device-badge");
+  if (!headerBadge) {
+    const userBadge = document.getElementById("header-user-badge");
+    if (userBadge && userBadge.parentNode) {
+      headerBadge = document.createElement("div");
+      headerBadge.id = "header-device-badge";
+      headerBadge.className = "header-user-badge header-device-badge";
+      headerBadge.style.display = "none";
+      headerBadge.innerHTML = `
+        <span class="ddash-device-dot" style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00f0ff; box-shadow: 0 0 6px #00f0ff; margin-right: 6px;"></span>
+        <span id="header-device-text" style="color: #00f0ff; font-weight: 700;">TORUS Device: --</span>
+      `;
+      userBadge.parentNode.insertBefore(headerBadge, userBadge.nextSibling);
+    }
+  }
+}
+
+// Bind modal listeners
+function bindDeviceModalEvents() {
+  const devModalClose = document.getElementById("deviceModalClose");
+  const devModalOverlay = document.getElementById("deviceModalOverlay");
+  if (devModalClose) {
+    devModalClose.onclick = closeDeviceModal;
+  }
+  if (devModalOverlay) {
+    devModalOverlay.onclick = (e) => {
+      if (e.target === devModalOverlay) closeDeviceModal();
+    };
+  }
+
+  const devSearchInput = document.getElementById("deviceSearchInput");
+  const devLocationInput = document.getElementById("deviceLocationInput");
+  const handleDeviceFilterInput = () => {
+    const sVal = devSearchInput ? devSearchInput.value : "";
+    const lVal = devLocationInput ? devLocationInput.value : "";
+    const filtered = getFilteredDevices(sVal, lVal);
+    renderDeviceResults(filtered);
+    updateDeviceActionButtons();
+  };
+  if (devSearchInput) devSearchInput.oninput = handleDeviceFilterInput;
+  if (devLocationInput) devLocationInput.oninput = handleDeviceFilterInput;
+
+  const connectDevBtn = document.getElementById("connectDeviceBtn");
+  if (connectDevBtn) {
+    connectDevBtn.onclick = handleConnectSelectedDevice;
+  }
+
+  const devInfoBtn = document.getElementById("deviceInfoBtn");
+  if (devInfoBtn) {
+    devInfoBtn.onclick = handleDeviceInfoClick;
+  }
+}
+
+// Fisher-Yates array shuffle helper
+function shuffleDeviceList(arr) {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Open Device Search Modal
+function openDeviceModal() {
+  ensureDeviceModalInDOM();
+  bindDeviceModalEvents();
+
+  const modalOverlay = document.getElementById("deviceModalOverlay");
+  const searchInput = document.getElementById("deviceSearchInput");
+  const locationInput = document.getElementById("deviceLocationInput");
+  if (!modalOverlay) return;
+
+  // Requirement 2 & 8: Dynamic / random order every time modal is opened (randomized once on open)
+  let shuffled = shuffleDeviceList(TORUS_AVAILABLE_DEVICES);
+  if (currentDeviceList.length > 1 && shuffled[0].id === currentDeviceList[0]?.id) {
+    const swapIdx = 1 + Math.floor(Math.random() * (shuffled.length - 1));
+    [shuffled[0], shuffled[swapIdx]] = [shuffled[swapIdx], shuffled[0]];
+  }
+  currentDeviceList = shuffled;
+
+  // Requirement 4: Reset selection on open -> disabled "Select a TORUS Device"
+  selectedTorUSDeviceId = null;
+
+  if (searchInput) searchInput.value = "";
+  if (locationInput) locationInput.value = "";
+
+  renderDeviceResults(currentDeviceList);
+  updateDeviceActionButtons();
+
+  modalOverlay.style.display = "flex";
+  document.body.classList.add("no-scroll");
+
+  if (searchInput) {
+    setTimeout(() => searchInput.focus(), 80);
+  }
+}
+
+// Close Device Search Modal
+function closeDeviceModal() {
+  const modalOverlay = document.getElementById("deviceModalOverlay");
+  if (modalOverlay) {
+    modalOverlay.style.display = "none";
+  }
+  document.body.classList.remove("no-scroll");
+}
+
+// Update Action Buttons (Connect & Info)
+function updateDeviceActionButtons() {
+  const connectBtn = document.getElementById("connectDeviceBtn");
+  const infoBtn = document.getElementById("deviceInfoBtn");
+
+  if (!connectBtn) return;
+
+  if (selectedTorUSDeviceId) {
+    connectBtn.disabled = false;
+    connectBtn.textContent = `Connect ${selectedTorUSDeviceId}`;
+    if (infoBtn) infoBtn.disabled = false;
+  } else {
+    connectBtn.disabled = true;
+    connectBtn.textContent = "Select a TORUS Device";
+    if (infoBtn) infoBtn.disabled = true;
+  }
+}
+
+// Select a single device (Requirement 3: Only ONE device selected, clear highlight)
+function selectDevice(deviceId) {
+  const device = TORUS_AVAILABLE_DEVICES.find(d => d.id === deviceId);
+  if (!device) return;
+
+  // Requirement 6: Offline devices cannot be connected
+  if (device.status === "offline") {
+    showToastNotification(`${device.id} is currently offline and cannot be connected.`);
+    return;
+  }
+
+  // Update single state variable
+  selectedTorUSDeviceId = deviceId;
+
+  // Requirement 3: Only ONE device can ever be highlighted at a time
+  // Update DOM classes directly so scroll position in .device-results-scroll is not lost
+  const container = document.getElementById("deviceResultsGrid");
+  if (container) {
+    container.querySelectorAll(".device-card").forEach(card => {
+      if (card.dataset.deviceId === deviceId) {
+        card.classList.add("selected");
+        card.setAttribute("aria-selected", "true");
+      } else {
+        card.classList.remove("selected");
+        card.setAttribute("aria-selected", "false");
+      }
+    });
+  }
+
+  updateDeviceActionButtons();
+}
+
+// Filter devices by text and location
+function getFilteredDevices(searchText, locationText) {
+  const search = (searchText || "").trim().toLowerCase();
+  const loc = (locationText || "").trim().toLowerCase();
+
+  return currentDeviceList.filter(device => {
+    const idMatch = device.id.toLowerCase().includes(search);
+    const hospitalMatch = device.hospital.toLowerCase().includes(search);
+    const cityMatch = device.city.toLowerCase().includes(search);
+    const countryMatch = device.country.toLowerCase().includes(search);
+    const locationMatch = device.location.toLowerCase().includes(search);
+
+    const matchesSearch = !search || idMatch || hospitalMatch || cityMatch || countryMatch || locationMatch;
+    const matchesLocation = !loc || locationMatch.includes(loc) || cityMatch.includes(loc) || countryMatch.includes(loc);
+
+    return matchesSearch && matchesLocation;
+  });
+}
+
+// Render device cards into the grid
+function renderDeviceResults(list) {
+  const container = document.getElementById("deviceResultsGrid");
+  if (!container) return;
+
+  if (!list || list.length === 0) {
+    container.innerHTML = `<div class="device-empty-state">No TORUS devices match your search criteria.</div>`;
+    return;
+  }
+
+  // Requirement 3: DO NOT display any "Select", "Selected", or similar text inside card
+  container.innerHTML = list.map(device => {
+    const isSelected = selectedTorUSDeviceId === device.id;
+    const isOffline = device.status === "offline";
+
+    return `
+      <div class="device-card ${isSelected ? "selected" : ""} ${isOffline ? "device-card-offline" : ""}"
+           role="button"
+           tabindex="0"
+           data-device-id="${device.id}"
+           aria-selected="${isSelected}">
+        <div class="device-card-top">
+          <h3 class="device-id">${device.id}</h3>
+          <span class="device-status ${device.status}">${device.status}</span>
+        </div>
+        <p class="device-hospital">${device.hospital}</p>
+        <p class="device-location">${device.location}</p>
+        <div class="device-metrics">
+          <div class="device-metric">
+            <p class="device-metric-label">Latency</p>
+            <p class="device-metric-value cyan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+              </svg>
+              <span>${device.latency}</span>
+            </p>
+          </div>
+          <div class="device-metric">
+            <p class="device-metric-label">Signal</p>
+            <p class="device-metric-value signal-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="2" y1="20" x2="2" y2="20"></line>
+                <line x1="7" y1="20" x2="7" y2="16"></line>
+                <line x1="12" y1="20" x2="12" y2="12"></line>
+                <line x1="17" y1="20" x2="17" y2="8"></line>
+                <line x1="22" y1="20" x2="22" y2="4"></line>
+              </svg>
+              <span>${device.signal}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Attach card click handlers
+  container.querySelectorAll(".device-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const devId = card.getAttribute("data-device-id");
+      if (devId) selectDevice(devId);
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const devId = card.getAttribute("data-device-id");
+        if (devId) selectDevice(devId);
+      }
+    });
+  });
+}
+
+// Connect the selected device + Navigate to existing Live Consultation page (Requirement 5 & 10)
+function handleConnectSelectedDevice() {
+  if (!selectedTorUSDeviceId) return;
+
+  const connectedId = selectedTorUSDeviceId;
+  const targetDevice = TORUS_AVAILABLE_DEVICES.find(d => d.id === connectedId);
+
+  // Update Doctor Dashboard Active Session
+  let activeSession = window.torusSessions && window.torusSessions.active && window.torusSessions.active[0];
+  if (activeSession) {
+    activeSession.deviceId = connectedId;
+    activeSession.status = "active";
+    activeSession.doctorConnectionState = "connected";
+    if (targetDevice) {
+      activeSession.diagnosticCenter = targetDevice.hospital;
+    }
+  } else {
+    activeSession = {
+      sessionId: "S-001",
+      patientId: "P-12345",
+      patientName: "Patient A",
+      deviceId: connectedId,
+      scanType: "Abdominal",
+      duration: "00:00",
+      diagnosticCenter: targetDevice ? targetDevice.hospital : "Diagnostic Center",
+      scheduledTime: "10:30 AM",
+      status: "active",
+      doctorConnectionState: "connected",
+      clinicalSessionCode: window.activeClinicalSessionCode || "TORUS-CLI-P12345"
+    };
+    if (!window.torusSessions) window.torusSessions = { active: [], upcoming: [] };
+    if (!window.torusSessions.active) window.torusSessions.active = [];
+    window.torusSessions.active[0] = activeSession;
+  }
+
+  // Update Doctor Dashboard Topbar Device Chip
+  const deviceChip = document.getElementById("docDashDeviceChip");
+  const deviceChipText = document.getElementById("docDashDeviceChipText");
+  if (deviceChip && deviceChipText) {
+    deviceChipText.textContent = `${connectedId} (Connected)`;
+    deviceChip.style.display = "inline-flex";
+  }
+
+  // Persist state across session and local storage
+  try {
+    localStorage.setItem("connectedDeviceId", connectedId);
+    sessionStorage.setItem("connectedDeviceId", connectedId);
+    window.activeTorusDeviceId = connectedId;
+    if (targetDevice) {
+      localStorage.setItem("connectedDevice", JSON.stringify(targetDevice));
+      sessionStorage.setItem("connectedDevice", JSON.stringify(targetDevice));
+    }
+  } catch (e) {
+    console.warn("Storage write error:", e);
+  }
+
+  saveTorusSessions();
+  renderDoctorDashboard();
+
+  // Close modal
+  closeDeviceModal();
+
+  // Show Toast notification
+  showToastNotification(`Connected to ${connectedId} successfully`);
+
+  // Requirement 5: Navigate to EXISTING Live Consultation page used for the TORUS live session
+  // Live Consultation page receives and uses selectedTorUSDeviceId as the connected device
+  updateLiveConsultationDeviceDisplay(connectedId);
+  joinClinicalSession(activeSession.sessionId);
+}
+
+// Update device display on the Live Consultation page (#app-dashboard)
+function updateLiveConsultationDeviceDisplay(deviceId) {
+  if (!deviceId) return;
+  ensureDeviceModalInDOM();
+
+  // Header badge on Live Consultation page
+  const headerDevBadge = document.getElementById("header-device-badge");
+  const headerDevText = document.getElementById("header-device-text");
+  if (headerDevBadge && headerDevText) {
+    headerDevText.textContent = `Device: ${deviceId}`;
+    headerDevBadge.style.display = "inline-flex";
+  }
+
+  // Local Feed card tag
+  const localFeedTitle = document.querySelector("#local-card .video-header h2");
+  if (localFeedTitle) {
+    localFeedTitle.innerHTML = `📹 Local Feed <span class="live-feed-device-tag" style="font-size: 11px; margin-left: 8px; padding: 2px 8px; border-radius: 6px; background: rgba(139, 92, 246, 0.2); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.4); font-weight: 600;">${deviceId}</span>`;
+  }
+}
+
+// Show Device Info in Secondary Button
+function handleDeviceInfoClick() {
+  if (!selectedTorUSDeviceId) return;
+  const dev = TORUS_AVAILABLE_DEVICES.find(d => d.id === selectedTorUSDeviceId);
+  if (!dev) return;
+
+  const infoBtn = document.getElementById("deviceInfoBtn");
+  if (!infoBtn) return;
+
+  const originalText = infoBtn.textContent;
+  infoBtn.textContent = `${dev.latency} | ${dev.signal}`;
+  setTimeout(() => {
+    infoBtn.textContent = originalText;
+  }, 2500);
+}
+
+// Toast notification helper
+function showToastNotification(message) {
+  const existing = document.getElementById("docDashToast");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.id = "docDashToast";
+  toast.className = "ddash-toast";
+  toast.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    <span>${message}</span>
+  `;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-8px)";
+      setTimeout(() => toast.remove(), 320);
+    }
+  }, 3200);
+}
+
+// Global click delegation for Adhoc Scan button to ensure it always responds
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("#docDashAdhocScanBtn");
+  if (btn) {
+    e.preventDefault();
+    openDeviceModal();
+  }
+});
+
 
 // ============================================================
 // PATIENT AUTHENTICATION & API HELPERS
@@ -4765,13 +5366,58 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Doctor Dashboard Adhoc Scan Button
+  // Doctor Dashboard Adhoc Scan Button -> Opens Search TORUS Device Modal
   const docDashAdhocBtn = document.getElementById("docDashAdhocScanBtn");
   if (docDashAdhocBtn) {
     docDashAdhocBtn.addEventListener("click", () => {
-      joinClinicalSession("S-001");
+      openDeviceModal();
     });
   }
+
+  // Device Modal Close Handlers
+  const devModalClose = document.getElementById("deviceModalClose");
+  const devModalOverlay = document.getElementById("deviceModalOverlay");
+  if (devModalClose) devModalClose.addEventListener("click", closeDeviceModal);
+  if (devModalOverlay) {
+    devModalOverlay.addEventListener("click", (e) => {
+      if (e.target === devModalOverlay) closeDeviceModal();
+    });
+  }
+
+  // Filter Handlers (Search & Location)
+  const devSearchInput = document.getElementById("deviceSearchInput");
+  const devLocationInput = document.getElementById("deviceLocationInput");
+  const handleDeviceFilterInput = () => {
+    const sVal = devSearchInput ? devSearchInput.value : "";
+    const lVal = devLocationInput ? devLocationInput.value : "";
+    const filtered = getFilteredDevices(sVal, lVal);
+    renderDeviceResults(filtered);
+    updateDeviceActionButtons();
+  };
+  if (devSearchInput) devSearchInput.addEventListener("input", handleDeviceFilterInput);
+  if (devLocationInput) devLocationInput.addEventListener("input", handleDeviceFilterInput);
+
+  // Connect Button Handler
+  const connectDevBtn = document.getElementById("connectDeviceBtn");
+  if (connectDevBtn) {
+    connectDevBtn.addEventListener("click", handleConnectSelectedDevice);
+  }
+
+  // Info Button Handler
+  const devInfoBtn = document.getElementById("deviceInfoBtn");
+  if (devInfoBtn) {
+    devInfoBtn.addEventListener("click", handleDeviceInfoClick);
+  }
+
+  // Close Device Modal on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const devModal = document.getElementById("deviceModalOverlay");
+      if (devModal && devModal.style.display !== "none") {
+        closeDeviceModal();
+      }
+    }
+  });
 
   // Profile Avatar Popover Toggle (Click and Hover)
   const ddashAvatarWrap = document.getElementById("docDashAvatarWrap");

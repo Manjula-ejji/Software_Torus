@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=55" />
+  <link rel="stylesheet" href="css/styles.css?v=101" />
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
@@ -1432,7 +1432,51 @@
     </div>
   </div>
 
+  <!-- Search TORUS Device Modal (Adhoc Scan) -->
+  <div class="device-modal-overlay" id="deviceModalOverlay" style="display: none;">
+    <div class="device-modal" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle">
+      <div class="device-modal-header">
+        <h2 class="device-modal-title" id="deviceModalTitle">Search TORUS Device</h2>
+        <button class="device-modal-close" id="deviceModalClose" type="button" aria-label="Close device search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
 
+      <div class="device-modal-filters">
+        <label class="device-filter-input-wrap" aria-label="Search devices">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input id="deviceSearchInput" class="device-filter-input" type="text"
+            placeholder="Search by ID, hospital, city..." />
+        </label>
+        <label class="device-filter-input-wrap cyan" aria-label="Filter devices by location">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <input id="deviceLocationInput" class="device-filter-input" type="text"
+            placeholder="Filter by country or city..." />
+        </label>
+      </div>
+
+      <div class="device-results-scroll" id="deviceResultsScroll">
+        <div class="device-results-grid" id="deviceResultsGrid"></div>
+      </div>
+
+      <div class="device-modal-footer">
+        <button class="device-primary-btn" id="connectDeviceBtn" type="button" disabled>Select a TORUS Device</button>
+        <button class="device-secondary-btn" id="deviceInfoBtn" type="button" disabled>Device Info</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Upcoming Session Details Modal -->
   <div class="session-modal-overlay" id="sessionDetailsModalOverlay" style="display: none;">
@@ -1625,6 +1669,10 @@
           <div id="header-user-badge" class="header-user-badge" style="display: none;">
             <span id="user-display-name" class="user-display-name">Dr. Admin Doctor</span>
             <span id="user-display-uid" class="user-display-uid">UID 3001</span>
+          </div>
+          <div id="header-device-badge" class="header-user-badge header-device-badge" style="display: none;">
+            <span class="ddash-device-dot" style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00f0ff; box-shadow: 0 0 6px #00f0ff; margin-right: 6px;"></span>
+            <span id="header-device-text" style="color: #00f0ff; font-weight: 700;">TORUS Device: --</span>
           </div>
         </div>
         <div class="header-row">
@@ -2082,7 +2130,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=101"></script>
 </body>
 
 </html>
