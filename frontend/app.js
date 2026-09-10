@@ -4564,7 +4564,7 @@ function ensureDeviceModalInDOM() {
         <div class="device-modal-header">
           <h2 class="device-modal-title" id="deviceModalTitle">Search TORUS Device</h2>
           <button class="device-modal-close" id="deviceModalClose" type="button" aria-label="Close device search">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -4572,15 +4572,24 @@ function ensureDeviceModalInDOM() {
           </button>
         </div>
 
-        <div class="device-modal-filters device-modal-filters--single">
-          <label class="device-filter-input-wrap device-filter-input-wrap--full" aria-label="Search devices">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        <div class="device-modal-filters">
+          <label class="device-filter-input-wrap" aria-label="Search devices">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
             <input id="deviceSearchInput" class="device-filter-input" type="text"
               placeholder="Search by ID, hospital, city..." />
+          </label>
+          <label class="device-filter-input-wrap cyan" aria-label="Filter devices by location">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            <input id="deviceLocationInput" class="device-filter-input" type="text"
+              placeholder="Filter by country or city..." />
           </label>
         </div>
 
@@ -4633,13 +4642,16 @@ function bindDeviceModalEvents() {
   }
 
   const devSearchInput = document.getElementById("deviceSearchInput");
+  const devLocationInput = document.getElementById("deviceLocationInput");
   const handleDeviceFilterInput = () => {
     const sVal = devSearchInput ? devSearchInput.value : "";
-    const filtered = getFilteredDevices(sVal, "");
+    const lVal = devLocationInput ? devLocationInput.value : "";
+    const filtered = getFilteredDevices(sVal, lVal);
     renderDeviceResults(filtered);
     updateDeviceActionButtons();
   };
   if (devSearchInput) devSearchInput.oninput = handleDeviceFilterInput;
+  if (devLocationInput) devLocationInput.oninput = handleDeviceFilterInput;
 
   const connectDevBtn = document.getElementById("connectDeviceBtn");
   if (connectDevBtn) {
@@ -4669,7 +4681,7 @@ function openDeviceModal() {
 
   const modalOverlay = document.getElementById("deviceModalOverlay");
   const searchInput = document.getElementById("deviceSearchInput");
-  const locationInput = null; // location filter removed
+  const locationInput = document.getElementById("deviceLocationInput");
   if (!modalOverlay) return;
 
   // Requirement 2 & 8: Dynamic / random order every time modal is opened (randomized once on open)
@@ -4684,6 +4696,7 @@ function openDeviceModal() {
   selectedTorUSDeviceId = null;
 
   if (searchInput) searchInput.value = "";
+  if (locationInput) locationInput.value = "";
 
   renderDeviceResults(currentDeviceList);
   updateDeviceActionButtons();
@@ -4804,7 +4817,7 @@ function renderDeviceResults(list) {
         <div class="device-metrics">
           <div class="device-metric">
             <p class="device-metric-label">Latency</p>
-            <p class="device-metric-value cyan-icon">
+            <p class="device-metric-value">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
                 <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
@@ -4816,7 +4829,7 @@ function renderDeviceResults(list) {
           </div>
           <div class="device-metric">
             <p class="device-metric-label">Signal</p>
-            <p class="device-metric-value signal-icon">
+            <p class="device-metric-value">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="2" y1="20" x2="2" y2="20"></line>
                 <line x1="7" y1="20" x2="7" y2="16"></line>
@@ -5373,13 +5386,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Filter Handlers (Search & Location)
   const devSearchInput = document.getElementById("deviceSearchInput");
+  const devLocationInput = document.getElementById("deviceLocationInput");
   const handleDeviceFilterInput = () => {
     const sVal = devSearchInput ? devSearchInput.value : "";
-    const filtered = getFilteredDevices(sVal, "");
+    const lVal = devLocationInput ? devLocationInput.value : "";
+    const filtered = getFilteredDevices(sVal, lVal);
     renderDeviceResults(filtered);
     updateDeviceActionButtons();
   };
   if (devSearchInput) devSearchInput.addEventListener("input", handleDeviceFilterInput);
+  if (devLocationInput) devLocationInput.addEventListener("input", handleDeviceFilterInput);
 
   // Connect Button Handler
   const connectDevBtn = document.getElementById("connectDeviceBtn");
