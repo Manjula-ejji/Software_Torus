@@ -3862,8 +3862,15 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes hppFadeIn {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .hpp-name {
@@ -5662,7 +5669,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   z-index: 2;
 }
 
-/* Haptic Chip */
+/* Haptic Chip — Dynamic Matching Status Colors */
 .ddash-haptic-chip {
   display: inline-flex;
   align-items: center;
@@ -5671,69 +5678,105 @@ body[data-role="viewer"] #settings-uid-wrapper {
   border-radius: 20px;
   font-size: 11.5px;
   font-weight: 600;
-  border: 1px solid rgba(255, 92, 122, 0.35);
-  background: rgba(255, 92, 122, 0.08);
-  color: #64748b;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
   white-space: nowrap;
+  transition: all 0.25s ease;
 }
 
-.ddash-haptic-alert {
+.ddash-haptic-chip .ddash-haptic-alert {
   opacity: 0.95;
-  color: #fb7185;
+  color: inherit;
 }
 
-.ddash-haptic-label {
-  color: #5eead4;
+.ddash-haptic-chip .ddash-haptic-label {
+  color: inherit;
+  font-weight: 600;
 }
 
-#docDashHapticChipText {
-  color: #fb7185;
+.ddash-haptic-chip #docDashHapticChipText {
+  color: inherit;
+  font-weight: 600;
 }
 
-.ddash-haptic-dot {
+.ddash-haptic-chip .ddash-haptic-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #ff5c7a;
-  box-shadow: 0 0 5px #ff5c7a;
+  background: #ef4444;
+  box-shadow: 0 0 6px #ef4444;
   animation: ddash-pulse-red 1.8s ease-in-out infinite;
 }
 
 @keyframes ddash-pulse-red {
-
   0%,
   100% {
     opacity: 1;
   }
-
   50% {
     opacity: 0.4;
   }
 }
 
-.ddash-haptic-chip.haptic-chip--connected {
-  border-color: rgba(0, 208, 132, 0.35);
-  background: rgba(0, 208, 132, 0.08);
-  color: #4ade80;
+/* Disconnected State (Red) */
+.ddash-haptic-chip.haptic-chip--disconnected {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
 }
 
-.ddash-haptic-chip.haptic-chip--connected #docDashHapticChipText {
-  color: #4ade80;
+.ddash-haptic-chip.haptic-chip--disconnected .ddash-haptic-dot {
+  background: #ef4444;
+  box-shadow: 0 0 6px #ef4444;
+  animation-name: ddash-pulse-red;
 }
 
-.ddash-haptic-chip.haptic-chip--connected .ddash-haptic-dot {
-  background: #00d084;
-  box-shadow: 0 0 5px #00d084;
-  animation-name: ddash-pulse-green;
+/* Connecting State (Yellow / Amber) */
+.ddash-haptic-chip.haptic-chip--connecting {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
 }
 
-@keyframes ddash-pulse-green {
+.ddash-haptic-chip.haptic-chip--connecting .ddash-haptic-dot {
+  background: #fbbf24;
+  box-shadow: 0 0 6px #fbbf24;
+  animation-name: ddash-pulse-amber;
+}
 
+@keyframes ddash-pulse-amber {
   0%,
   100% {
     opacity: 1;
   }
+  50% {
+    opacity: 0.4;
+  }
+}
 
+/* Connected State (Green) */
+.ddash-haptic-chip.haptic-chip--connected {
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(74, 222, 128, 0.08);
+  color: #4ade80;
+}
+
+.ddash-haptic-chip.haptic-chip--connected .ddash-haptic-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+  animation-name: ddash-pulse-green;
+}
+
+.ddash-haptic-chip.haptic-chip--connected .ddash-haptic-alert {
+  display: none;
+}
+
+@keyframes ddash-pulse-green {
+  0%,
+  100% {
+    opacity: 1;
+  }
   50% {
     opacity: 0.5;
   }
@@ -6019,10 +6062,10 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-stat-label {
-  font-size: 9px;
+  font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.85px;
-  color: #a78bfa;
+  color: #c4b5fd;
   text-transform: uppercase;
   margin-bottom: 2px;
 }
@@ -6148,14 +6191,6 @@ body[data-role="viewer"] #settings-uid-wrapper {
   color: #8fa2bf;
   margin: 2px 0 0;
   line-height: 1.2;
-}
-
-.ddash-panel-active .ddash-panel-subtitle {
-  color: #7dd3fc;
-}
-
-.ddash-panel-upcoming .ddash-panel-subtitle {
-  color: #5eead4;
 }
 
 .ddash-live-badge {
@@ -6540,6 +6575,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
     transform: scale(0.96);
     opacity: 0;
   }
+
   to {
     transform: scale(1);
     opacity: 1;
@@ -6949,6 +6985,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

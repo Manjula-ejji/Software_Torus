@@ -4367,6 +4367,29 @@ function rejoinClinicalSession(sessionId) {
   }
 }
 
+// Dynamic Haptic Pad status controller (disconnected: red, connecting: yellow/amber, connected: green)
+function setHapticPadStatus(status) {
+  const chip = document.getElementById("docDashHapticChip");
+  const text = document.getElementById("docDashHapticChipText");
+  const alertIcon = chip ? chip.querySelector(".ddash-haptic-alert") : null;
+  if (!chip) return;
+  chip.classList.remove("haptic-chip--connected", "haptic-chip--connecting", "haptic-chip--disconnected");
+  if (status === "connected") {
+    chip.classList.add("haptic-chip--connected");
+    if (text) text.textContent = "Connected";
+    if (alertIcon) alertIcon.style.display = "none";
+  } else if (status === "connecting") {
+    chip.classList.add("haptic-chip--connecting");
+    if (text) text.textContent = "Connecting";
+    if (alertIcon) alertIcon.style.display = "inline";
+  } else {
+    chip.classList.add("haptic-chip--disconnected");
+    if (text) text.textContent = "Not Connected";
+    if (alertIcon) alertIcon.style.display = "inline";
+  }
+}
+window.setHapticPadStatus = setHapticPadStatus;
+
 // Upcoming Session Modal Logic
 let currentModalSessionId = null;
 
