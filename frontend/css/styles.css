@@ -5710,10 +5710,12 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes ddash-pulse-red {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.4;
   }
@@ -5746,10 +5748,12 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes ddash-pulse-amber {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.4;
   }
@@ -5773,10 +5777,12 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 @keyframes ddash-pulse-green {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }
@@ -6005,11 +6011,10 @@ body[data-role="viewer"] #settings-uid-wrapper {
   background: rgba(10, 16, 34, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
-  padding: 8px 14px;
+  padding: 8px 16px;
   height: 54px;
   display: flex;
   align-items: center;
-  gap: 12px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: all 0.22s ease;
@@ -6062,10 +6067,10 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-stat-label {
-  font-size: 9px;
+  font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.85px;
-  color: #a78bfa;
+  color: #c4b5fd;
   text-transform: uppercase;
   margin-bottom: 2px;
 }
@@ -6075,6 +6080,29 @@ body[data-role="viewer"] #settings-uid-wrapper {
   font-weight: 800;
   color: #ffffff;
   line-height: 1;
+}
+
+.ddash-stat-wave {
+  width: 65px;
+  height: 24px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ddash-stat-wave.purple {
+  color: #a855f7;
+}
+
+.ddash-stat-wave.green {
+  color: #22c55e;
+}
+
+.ddash-stat-wave.cyan {
+  color: #06b6d4;
+}
+
+.ddash-stat-wave.gray {
+  color: #64748b;
 }
 
 /* ── PANELS ── */
