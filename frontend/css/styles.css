@@ -3922,31 +3922,127 @@ body[data-role="viewer"] #settings-uid-wrapper {
 /* ================================================================
    LIVE CONSULTATION HEADER — Device Badge (professional white text)
    ================================================================ */
-.header-device-badge {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 5px 12px;
-  background: rgba(14, 22, 40, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 10px;
-  margin-left: 8px;
-  gap: 1px;
+/* ================================================================
+   LIVE CONSULTATION HEADER — Connected Device Button
+   Visually matches Settings and User Profile buttons exactly
+   ================================================================ */
+.header-device-btn {
+  cursor: default;
 }
 
-.header-device-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+.header-device-btn svg {
+  color: #a78bfa;
+}
+
+.header-device-btn:hover svg {
+  color: #ffffff;
 }
 
 #header-device-text {
-  font-size: 13px;
-  font-weight: 700;
-  color: #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f3f4f6;
   letter-spacing: 0.2px;
+}
+
+/* Session Details Modal — Device Availability & Conflict Notice */
+.sd-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sd-status-pill.available {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.sd-status-pill.in-use {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.session-device-notice {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.sd-notice-text-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fbbf24;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.sd-notice-text-wrap svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+.sd-switch-device-btn {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  color: #c084fc;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.sd-switch-device-btn:hover {
+  background: rgba(139, 92, 246, 0.3);
+  border-color: #8b5cf6;
+  color: #ffffff;
+}
+
+#sessionDetailsStartBtn:disabled {
+  background: #1c1833 !important;
+  color: #64748b !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.5 !important;
+  transform: none !important;
+}
+
+/* Device Modal — In Use Status Pill and Card */
+.device-status.in-use {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.device-card.device-card-inuse {
+  opacity: 0.55;
+  border-color: rgba(245, 158, 11, 0.25);
+  cursor: not-allowed;
+}
+
+.device-card.device-card-inuse:hover {
+  border-color: rgba(245, 158, 11, 0.45);
 }
 
 

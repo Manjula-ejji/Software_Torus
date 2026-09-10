@@ -4137,9 +4137,11 @@ function loadTorusSessions() {
     console.warn("Could not load session state:", e);
   }
 
-  // Always override upcoming with default data (upcoming sessions are static display data)
+  // Preserve upcoming sessions if already loaded or saved
   if (!window.torusSessions) window.torusSessions = { active: [], upcoming: [] };
-  window.torusSessions.upcoming = defaultUpcoming;
+  if (!window.torusSessions.upcoming || window.torusSessions.upcoming.length === 0) {
+    window.torusSessions.upcoming = defaultUpcoming;
+  }
 
   // Patch active session deviceId with last connected device
   const connectedDevId = sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId");
@@ -4368,6 +4370,22 @@ function rejoinClinicalSession(sessionId) {
 // Upcoming Session Modal Logic
 let currentModalSessionId = null;
 
+// Device Availability Engine: Checks if a device is currently active in another session
+function isDeviceInUse(deviceId, excludeSessionId = null) {
+  if (!deviceId) return false;
+  const activeList = window.torusSessions?.active || [];
+  return activeList.some(s => s.deviceId === deviceId && s.sessionId !== excludeSessionId && s.status === "active");
+}
+
+function getActiveSessionForDevice(deviceId, excludeSessionId = null) {
+  if (!deviceId) return null;
+  const activeList = window.torusSessions?.active || [];
+  return activeList.find(s => s.deviceId === deviceId && s.sessionId !== excludeSessionId && s.status === "active") || null;
+}
+
+// Tracks if device search modal was opened to switch device for a specific upcoming session
+let deviceSwitchingSessionId = null;
+
 function openUpcomingSessionModal(sessionId) {
   const session = window.torusSessions?.upcoming?.find(s => s.sessionId === sessionId);
   if (!session) return;
@@ -4397,6 +4415,39 @@ function openUpcomingSessionModal(sessionId) {
   if (notes) notes.textContent = session.clinicalNotes || "--";
   if (prevReports) prevReports.textContent = session.previousReports || "--";
 
+  // Dynamic Device Availability Evaluation
+  const inUse = isDeviceInUse(session.deviceId, session.sessionId);
+  const conflictSession = getActiveSessionForDevice(session.deviceId, session.sessionId);
+
+  const statusEl = document.getElementById("sdDeviceStatus");
+  const noticeEl = document.getElementById("sdDeviceConflictNotice");
+  const msgEl = document.getElementById("sdDeviceConflictMsg");
+  const startBtn = document.getElementById("sessionDetailsStartBtn");
+
+  if (inUse) {
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="sd-status-pill in-use">● In Use</span>`;
+    }
+    if (noticeEl) noticeEl.style.display = "flex";
+    if (msgEl) {
+      const occupantName = conflictSession?.patientName ? ` (${conflictSession.patientName})` : "";
+      msgEl.textContent = `${session.deviceId} is currently in use by another patient${occupantName}.`;
+    }
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.title = `${session.deviceId} is currently in use by another patient.`;
+    }
+  } else {
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="sd-status-pill available">● Available</span>`;
+    }
+    if (noticeEl) noticeEl.style.display = "none";
+    if (startBtn) {
+      startBtn.disabled = false;
+      startBtn.title = "";
+    }
+  }
+
   if (modal) modal.style.display = "flex";
 }
 
@@ -4407,9 +4458,18 @@ function closeUpcomingSessionModal() {
 }
 
 function startUpcomingSessionConsultation(sessionId) {
-  closeUpcomingSessionModal();
   const session = window.torusSessions?.upcoming?.find(s => s.sessionId === sessionId);
   if (!session) return;
+
+  // Prevent starting consultation if device is currently in use by another session
+  if (isDeviceInUse(session.deviceId, session.sessionId)) {
+    const conflict = getActiveSessionForDevice(session.deviceId, session.sessionId);
+    const occupant = conflict ? ` by ${conflict.patientName}` : "";
+    showToastNotification(`${session.deviceId} is currently in use${occupant}. Please switch to an available device.`);
+    return;
+  }
+
+  closeUpcomingSessionModal();
 
   // Promote to active session list if not already present
   let activeEntry = window.torusSessions.active.find(s => s.sessionId === session.sessionId);
@@ -4610,18 +4670,24 @@ function ensureDeviceModalInDOM() {
 
   // docDashDeviceChip is intentionally not shown in Doctor Dashboard header (removed per design)
 
-  // 3. Live Consultation header device badge
+  // 3. Live Consultation header device badge (Matches Settings & User Profile buttons)
   let headerBadge = document.getElementById("header-device-badge");
   if (!headerBadge) {
     const userBadge = document.getElementById("header-user-badge");
     if (userBadge && userBadge.parentNode) {
-      headerBadge = document.createElement("div");
+      headerBadge = document.createElement("button");
       headerBadge.id = "header-device-badge";
-      headerBadge.className = "header-user-badge header-device-badge";
+      headerBadge.className = "header-btn header-device-btn";
+      headerBadge.title = "Connected TORUS Device";
+      headerBadge.type = "button";
       headerBadge.style.display = "none";
       headerBadge.innerHTML = `
-        <span class="ddash-device-dot" style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00f0ff; box-shadow: 0 0 6px #00f0ff; margin-right: 6px;"></span>
-        <span id="header-device-text" style="color: #00f0ff; font-weight: 700;">TORUS Device: --</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+        <span id="header-device-text">TORUS-A12</span>
       `;
       userBadge.parentNode.insertBefore(headerBadge, userBadge.nextSibling);
     }
@@ -4682,7 +4748,12 @@ function openDeviceModal() {
   const modalOverlay = document.getElementById("deviceModalOverlay");
   const searchInput = document.getElementById("deviceSearchInput");
   const locationInput = document.getElementById("deviceLocationInput");
+  const modalTitle = document.getElementById("deviceModalTitle");
   if (!modalOverlay) return;
+
+  if (modalTitle) {
+    modalTitle.textContent = deviceSwitchingSessionId ? "Switch TORUS Device" : "Search TORUS Device";
+  }
 
   // Requirement 2 & 8: Dynamic / random order every time modal is opened (randomized once on open)
   let shuffled = shuffleDeviceList(TORUS_AVAILABLE_DEVICES);
@@ -4692,7 +4763,7 @@ function openDeviceModal() {
   }
   currentDeviceList = shuffled;
 
-  // Requirement 4: Reset selection on open -> disabled "Select a TORUS Device"
+  // Reset selection on open
   selectedTorUSDeviceId = null;
 
   if (searchInput) searchInput.value = "";
@@ -4716,6 +4787,13 @@ function closeDeviceModal() {
     modalOverlay.style.display = "none";
   }
   document.body.classList.remove("no-scroll");
+
+  const returningSessionId = deviceSwitchingSessionId;
+  deviceSwitchingSessionId = null;
+  // If doctor closed device search while in device switching flow, return to Session Details
+  if (returningSessionId) {
+    openUpcomingSessionModal(returningSessionId);
+  }
 }
 
 // Update Action Buttons (Connect & Info)
@@ -4727,7 +4805,11 @@ function updateDeviceActionButtons() {
 
   if (selectedTorUSDeviceId) {
     connectBtn.disabled = false;
-    connectBtn.textContent = `Connect ${selectedTorUSDeviceId}`;
+    if (deviceSwitchingSessionId) {
+      connectBtn.textContent = `Assign ${selectedTorUSDeviceId}`;
+    } else {
+      connectBtn.textContent = `Connect ${selectedTorUSDeviceId}`;
+    }
     if (infoBtn) infoBtn.disabled = false;
   } else {
     connectBtn.disabled = true;
@@ -4744,6 +4826,14 @@ function selectDevice(deviceId) {
   // Requirement 6: Offline devices cannot be connected
   if (device.status === "offline") {
     showToastNotification(`${device.id} is currently offline and cannot be connected.`);
+    return;
+  }
+
+  // Active / In Use devices cannot be connected or assigned
+  if (isDeviceInUse(device.id, deviceSwitchingSessionId)) {
+    const conflictSession = getActiveSessionForDevice(device.id, deviceSwitchingSessionId);
+    const occupant = conflictSession ? ` by ${conflictSession.patientName}` : "";
+    showToastNotification(`${device.id} is currently in use${occupant} and cannot be selected.`);
     return;
   }
 
@@ -4801,16 +4891,24 @@ function renderDeviceResults(list) {
   container.innerHTML = list.map(device => {
     const isSelected = selectedTorUSDeviceId === device.id;
     const isOffline = device.status === "offline";
+    const isInUse = isDeviceInUse(device.id, deviceSwitchingSessionId);
+
+    let statusText = device.status;
+    let statusClass = device.status;
+    if (isInUse) {
+      statusText = "in use";
+      statusClass = "in-use";
+    }
 
     return `
-      <div class="device-card ${isSelected ? "selected" : ""} ${isOffline ? "device-card-offline" : ""}"
+      <div class="device-card ${isSelected ? "selected" : ""} ${isOffline ? "device-card-offline" : ""} ${isInUse ? "device-card-inuse" : ""}"
            role="button"
            tabindex="0"
            data-device-id="${device.id}"
            aria-selected="${isSelected}">
         <div class="device-card-top">
           <h3 class="device-id">${device.id}</h3>
-          <span class="device-status ${device.status}">${device.status}</span>
+          <span class="device-status ${statusClass}">${statusText}</span>
         </div>
         <p class="device-hospital">${device.hospital}</p>
         <p class="device-location">${device.location}</p>
@@ -4867,6 +4965,28 @@ function handleConnectSelectedDevice() {
 
   const connectedId = selectedTorUSDeviceId;
   const targetDevice = TORUS_AVAILABLE_DEVICES.find(d => d.id === connectedId);
+
+  // If switching device for an upcoming scheduled session
+  if (deviceSwitchingSessionId) {
+    const upcomingSess = window.torusSessions?.upcoming?.find(s => s.sessionId === deviceSwitchingSessionId);
+    if (upcomingSess) {
+      upcomingSess.deviceId = connectedId;
+      if (targetDevice) {
+        upcomingSess.diagnosticCenter = targetDevice.hospital;
+      }
+      saveTorusSessions();
+      renderDoctorDashboard();
+
+      const switchingId = deviceSwitchingSessionId;
+      deviceSwitchingSessionId = null;
+      closeDeviceModal();
+
+      showToastNotification(`Assigned ${connectedId} to ${upcomingSess.patientName}. Device is available!`);
+      openUpcomingSessionModal(switchingId);
+      return;
+    }
+    deviceSwitchingSessionId = null;
+  }
 
   // Update Doctor Dashboard Active Session
   let activeSession = window.torusSessions && window.torusSessions.active && window.torusSessions.active[0];
@@ -4934,7 +5054,7 @@ function handleConnectSelectedDevice() {
 
 // Update device display on the Live Consultation page (#app-dashboard)
 function updateLiveConsultationDeviceDisplay(deviceId) {
-  if (!deviceId) return;
+  if (!deviceId) deviceId = selectedTorUSDeviceId || "TORUS-A12";
   ensureDeviceModalInDOM();
 
   // Header badge on Live Consultation page
@@ -5512,15 +5632,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   const sCloseBtn = document.getElementById("sessionDetailsCloseBtn");
   const sCancelBtn = document.getElementById("sessionDetailsCancelBtn");
   const sStartBtn = document.getElementById("sessionDetailsStartBtn");
+  const sSwitchBtn = document.getElementById("sdSwitchDeviceBtn");
   if (sCloseBtn) sCloseBtn.addEventListener("click", closeUpcomingSessionModal);
   if (sCancelBtn) sCancelBtn.addEventListener("click", closeUpcomingSessionModal);
+  if (sSwitchBtn) {
+    sSwitchBtn.addEventListener("click", () => {
+      if (!currentModalSessionId) return;
+      deviceSwitchingSessionId = currentModalSessionId;
+      closeUpcomingSessionModal();
+      openDeviceModal();
+    });
+  }
   if (sStartBtn) {
     sStartBtn.addEventListener("click", () => {
+      if (sStartBtn.disabled) return;
       if (currentModalSessionId) {
         startUpcomingSessionConsultation(currentModalSessionId);
       }
     });
   }
+
+  // Initialize Live Consultation header device indicator with current active device
+  const initDevId = (window.torusSessions?.active?.[0]?.deviceId) || sessionStorage.getItem("connectedDeviceId") || "TORUS-A12";
+  updateLiveConsultationDeviceDisplay(initDevId);
 
   // Main Dashboard Back Button -> Return to Doctor Dashboard (if Doctor) or Role Selection
   const mainBackBtn = document.getElementById("backBtn");
