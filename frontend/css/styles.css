@@ -6010,10 +6010,10 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-stat-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.9px;
-  color: #64748b;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.85px;
+  color: #94a3b8;
   text-transform: uppercase;
   margin-bottom: 2px;
 }
@@ -6134,8 +6134,9 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-panel-subtitle {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: #8fa2bf;
   margin: 2px 0 0;
   line-height: 1.2;
 }
@@ -6180,9 +6181,9 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-table-head {
   padding: 4px 12px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.9px;
-  color: #475569;
+  color: #8ea3bc;
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -6265,16 +6266,18 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-patient-name {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #ffffff;
   margin: 0 0 1px;
   line-height: 1.2;
+  letter-spacing: 0.2px;
 }
 
 .ddash-patient-meta {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #cbd5e1;
   margin: 0;
   line-height: 1.2;
 }
@@ -6282,13 +6285,14 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-id-badge {
   display: inline-block;
   font-size: 9.5px;
-  font-weight: 600;
-  color: #475569;
+  font-weight: 500;
+  color: #7c91ab;
   background: rgba(255, 255, 255, 0.04);
   padding: 1px 5px;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 1px;
+  letter-spacing: 0.2px;
 }
 
 /* Scan tags */
@@ -6326,8 +6330,12 @@ body[data-role="viewer"] #settings-uid-wrapper {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: #cbd5e1;
+}
+
+.ddash-clock svg {
+  color: #8ea3bc;
 }
 
 .ddash-time-hl {
@@ -6354,7 +6362,11 @@ body[data-role="viewer"] #settings-uid-wrapper {
   gap: 5px;
   font-size: 11.5px;
   font-weight: 500;
-  color: #e2e8f0;
+  color: #cbd5e1;
+}
+
+.ddash-center-row svg {
+  color: #8ea3bc;
 }
 
 /* Status tags */
@@ -6436,7 +6448,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .ddash-empty {
   text-align: center;
   padding: 14px;
-  color: #475569;
+  color: #8fa2bf;
   font-size: 12px;
 }
 
