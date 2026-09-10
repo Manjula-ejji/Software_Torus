@@ -6062,10 +6062,10 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .ddash-stat-label {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.85px;
-  color: #c4b5fd;
+  color: #a78bfa;
   text-transform: uppercase;
   margin-bottom: 2px;
 }
@@ -6075,29 +6075,6 @@ body[data-role="viewer"] #settings-uid-wrapper {
   font-weight: 800;
   color: #ffffff;
   line-height: 1;
-}
-
-.ddash-stat-wave {
-  width: 65px;
-  height: 24px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.ddash-stat-wave.purple {
-  color: #a855f7;
-}
-
-.ddash-stat-wave.green {
-  color: #22c55e;
-}
-
-.ddash-stat-wave.cyan {
-  color: #06b6d4;
-}
-
-.ddash-stat-wave.gray {
-  color: #64748b;
 }
 
 /* ── PANELS ── */
