@@ -4389,7 +4389,7 @@ let currentHapticState = null;
 let isHapticConnectionInProgress = false;
 let hapticModalDismissed = false;
 
-// Development-only override hook for automated verification and test flows
+// Development-only override hook for testing
 let devHapticMockResult = null; // true = force success (TEST 1), false = force fail (TEST 2), null = real flow
 
 window.setHapticPadDevMockResult = function(val) {
@@ -4410,26 +4410,25 @@ try {
 
 /**
  * Haptic Pad Connection Service
- * Clean abstraction layer designed for pluggable real backend / driver integration.
+ * Clean abstraction layer designed for real backend / driver integration.
  */
 const HapticPadService = {
   /**
-   * Attempt to establish connection with the Haptic Pad device
-   * @param {Object} options - Optional configuration (e.g. timeout)
-   * @returns {Promise<{success: boolean, device?: string, error?: string}>}
+   * Check live status of the physical Haptic Pad device from backend
+   * @param {Object} options
+   * @returns {Promise<{success: boolean, connected: boolean, device?: string, port?: string, message?: string}>}
    */
-  async connectHapticPad(options = {}) {
-    // 1. Check if an isolated development mock is explicitly active
+  async getStatus(options = {}) {
     if (devHapticMockResult !== null) {
-      console.log(`[HapticPadService] Dev-only mock active: success = ${devHapticMockResult}`);
       return {
-        success: Boolean(devHapticMockResult),
-        device: devHapticMockResult ? "TORUS-HAPTIC-V1" : null,
-        message: devHapticMockResult ? "Haptic Pad connected successfully (Mock)" : "Haptic Pad device not detected."
+        success: true,
+        connected: Boolean(devHapticMockResult),
+        device: devHapticMockResult ? "STM32 Haptic Pad (Mock)" : null,
+        port: devHapticMockResult ? "COM3" : null,
+        message: devHapticMockResult ? "Haptic Pad connected (Mock)" : "Device not detected."
       };
     }
 
-    // 2. Production Flow: Query real backend API endpoint
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 2500);
@@ -4445,20 +4444,30 @@ const HapticPadService = {
       if (response && response.ok) {
         const data = await response.json();
         return {
-          success: Boolean(data.connected),
+          success: true,
+          connected: Boolean(data.connected),
           device: data.device || null,
+          port: data.port || null,
+          packets_rx: data.packets_rx || 0,
           message: data.message || ""
         };
       }
     } catch (err) {
-      console.warn("[HapticPadService] Backend check error:", err);
+      console.warn("[HapticPadService] Backend status check error:", err);
     }
 
-    // Default safe fallback if hardware is absent
     return {
       success: false,
-      error: "Haptic Pad device not detected or driver offline."
+      connected: false,
+      error: "Haptic Pad device not detected or backend offline."
     };
+  },
+
+  /**
+   * Attempt connection handshake
+   */
+  async connectHapticPad(options = {}) {
+    return this.getStatus(options);
   }
 };
 window.HapticPadService = HapticPadService;
@@ -4467,7 +4476,7 @@ window.HapticPadService = HapticPadService;
  * Updates the existing Haptic Pad status indicator in the top-right header
  * based on current HAPTIC_STATE.
  */
-function setHapticPadStatus(state) {
+function setHapticPadStatus(state, details = {}) {
   const chip = document.getElementById("docDashHapticChip");
   const text = document.getElementById("docDashHapticChipText");
   const alertIcon = chip ? chip.querySelector(".ddash-haptic-alert") : null;
@@ -4480,7 +4489,7 @@ function setHapticPadStatus(state) {
     chip.classList.add("haptic-chip--connected");
     if (text) text.textContent = "Connected";
     if (alertIcon) alertIcon.style.display = "none";
-    chip.title = "Haptic Pad • Connected (Click to reconnect)";
+    chip.title = `Haptic Pad • Connected (${details.port || "USB"}) (Click to test/reconnect)`;
   } else if (state === HAPTIC_STATE.CONNECTING || state === "connecting") {
     currentHapticState = HAPTIC_STATE.CONNECTING;
     chip.classList.add("haptic-chip--connecting");
@@ -4533,6 +4542,44 @@ function closeHapticModals() {
 }
 window.closeHapticModals = closeHapticModals;
 
+let hapticLiveMonitorInterval = null;
+
+/**
+ * Continuous background monitor for live disconnect/reconnect detection.
+ */
+function startHapticLiveMonitoring() {
+  if (hapticLiveMonitorInterval) clearInterval(hapticLiveMonitorInterval);
+
+  hapticLiveMonitorInterval = setInterval(async () => {
+    // Only monitor if dashboard is currently visible and not during active manual modal connection
+    const docPortalDash = document.getElementById("doctor-portal-dashboard");
+    if (!docPortalDash || docPortalDash.style.display === "none") return;
+    if (isHapticConnectionInProgress) return;
+
+    const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
+    
+    if (res.connected) {
+      if (currentHapticState !== HAPTIC_STATE.CONNECTED) {
+        console.log(`[HAPTIC] Device detected & verified on ${res.port}. Setting CONNECTED.`);
+        setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: res.port });
+        closeHapticModals();
+      }
+    } else {
+      if (currentHapticState === HAPTIC_STATE.CONNECTED) {
+        console.warn("[HAPTIC] Device disconnected or heartbeat lost. Setting NOT_CONNECTED.");
+        setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
+      }
+    }
+  }, 1000);
+}
+
+function stopHapticLiveMonitoring() {
+  if (hapticLiveMonitorInterval) {
+    clearInterval(hapticLiveMonitorInterval);
+    hapticLiveMonitorInterval = null;
+  }
+}
+
 /**
  * Initiates the complete Haptic Pad connection flow:
  * 1. Shows Connecting modal overlay & sets header to connecting.
@@ -4558,17 +4605,20 @@ async function initiateHapticPadConnection(options = {}) {
 
   isHapticConnectionInProgress = false;
 
-  if (result && result.success) {
+  if (result && result.connected) {
     // 2. SUCCESS FLOW: Close connecting modal, update header to green connected
     closeHapticModals();
-    setHapticPadStatus(HAPTIC_STATE.CONNECTED);
-    console.log("[HapticPad] Successfully connected:", result.device || "TORUS-HAPTIC-V1");
+    setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: result.port });
+    console.log("[HAPTIC] Device status: CONNECTED (Port: " + (result.port || "USB") + ")");
   } else {
     // 3. FAILURE FLOW: Show Error modal, update header to red not connected
     setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
     showHapticErrorModal();
-    console.warn("[HapticPad] Connection failed:", result?.error || "Device not detected.");
+    console.warn("[HAPTIC] Device status: NOT_CONNECTED");
   }
+
+  // Start continuous background monitoring for live disconnect/reconnect detection
+  startHapticLiveMonitoring();
 }
 window.initiateHapticPadConnection = initiateHapticPadConnection;
 
@@ -4593,12 +4643,13 @@ function setupHapticPadListeners() {
 
   if (chip) {
     chip.addEventListener("click", () => {
-      console.log("[HapticPad] Header status clicked, retrying connection...");
+      console.log("[HAPTIC] Header status clicked, retrying connection...");
       initiateHapticPadConnection({ userTriggered: true });
     });
   }
 }
 window.setupHapticPadListeners = setupHapticPadListeners;
+
 
 
 // Upcoming Session Modal Logic

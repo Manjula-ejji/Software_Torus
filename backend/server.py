@@ -74,33 +74,93 @@ def api_remote_input():
     return jsonify({"status": "success", "executed": True})
 
 # -------------------- HAPTIC PAD HARDWARE LINK API --------------------
+import time
+
+HAPTIC_AGENT_SECRET = os.environ.get("HAPTIC_AGENT_SECRET", "torus_haptic_sec_2026")
+HAPTIC_HEARTBEAT_TIMEOUT = 3.0  # seconds
+
+haptic_device_state = {
+    "connected": False,
+    "status": "NOT_CONNECTED",
+    "port": None,
+    "device": None,
+    "packets_rx": 0,
+    "last_packet_time": 0.0,
+    "last_heartbeat": 0.0,
+    "telemetry": {}
+}
+
+def verify_agent_auth():
+    secret_header = request.headers.get("X-Haptic-Agent-Secret", "")
+    auth_header = request.headers.get("Authorization", "")
+    bearer_token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+    return (secret_header == HAPTIC_AGENT_SECRET) or (bearer_token == HAPTIC_AGENT_SECRET)
+
+def get_verified_haptic_status():
+    now = time.time()
+    # Watchdog: if agent stops sending heartbeats, mark disconnected
+    if haptic_device_state["connected"]:
+        if (now - haptic_device_state["last_heartbeat"]) > HAPTIC_HEARTBEAT_TIMEOUT:
+            haptic_device_state["connected"] = False
+            haptic_device_state["status"] = "NOT_CONNECTED"
+            haptic_device_state["device"] = None
+    return haptic_device_state
+
+@app.route("/api/haptic-pad/report", methods=["POST", "OPTIONS"])
+def api_haptic_pad_report():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    if not verify_agent_auth():
+        return jsonify({"success": False, "error": "Unauthorized agent link"}), 401
+    
+    data = request.get_json(silent=True) or {}
+    is_connected = bool(data.get("connected", False))
+    now = time.time()
+
+    haptic_device_state["connected"] = is_connected
+    haptic_device_state["status"] = "CONNECTED" if is_connected else "NOT_CONNECTED"
+    haptic_device_state["port"] = data.get("port")
+    haptic_device_state["device"] = data.get("device", "STM32 Haptic Pad") if is_connected else None
+    haptic_device_state["packets_rx"] = int(data.get("packets_rx", 0))
+    haptic_device_state["last_heartbeat"] = now
+    if is_connected:
+        haptic_device_state["last_packet_time"] = now
+    if "telemetry" in data and isinstance(data["telemetry"], dict):
+        haptic_device_state["telemetry"] = data["telemetry"]
+
+    return jsonify({"success": True, "status": haptic_device_state["status"]})
+
+@app.route("/api/haptic-pad/disconnect", methods=["POST", "OPTIONS"])
+def api_haptic_pad_disconnect():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    if not verify_agent_auth():
+        return jsonify({"success": False, "error": "Unauthorized agent link"}), 401
+
+    haptic_device_state["connected"] = False
+    haptic_device_state["status"] = "NOT_CONNECTED"
+    haptic_device_state["device"] = None
+    return jsonify({"success": True, "status": "NOT_CONNECTED"})
+
 @app.route("/api/haptic-pad/status", methods=["GET", "OPTIONS"])
 def api_haptic_pad_status():
     if request.method == "OPTIONS":
         return Response(status=204)
-    # Checks hardware driver / environment configuration
-    is_connected = os.environ.get("HAPTIC_PAD_CONNECTED", "false").lower() in ("true", "1", "yes")
-    return jsonify({
-        "success": True,
-        "connected": is_connected,
-        "device": "TORUS-HAPTIC-V1" if is_connected else None,
-        "status": "connected" if is_connected else "disconnected",
-        "message": "Haptic Pad connected" if is_connected else "Haptic Pad device not detected. Please verify hardware link."
-    })
+    
+    state = get_verified_haptic_status()
+    now = time.time()
+    last_seen = round(now - state["last_heartbeat"], 2) if state["last_heartbeat"] > 0 else None
 
-@app.route("/api/haptic-pad/connect", methods=["POST", "OPTIONS"])
-def api_haptic_pad_connect():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    simulate_success = data.get("simulate_success")
-    is_connected = bool(simulate_success) if simulate_success is not None else (os.environ.get("HAPTIC_PAD_CONNECTED", "false").lower() in ("true", "1", "yes"))
     return jsonify({
         "success": True,
-        "connected": is_connected,
-        "status": "connected" if is_connected else "disconnected",
-        "device": "TORUS-HAPTIC-V1" if is_connected else None,
-        "message": "Haptic Pad connection established." if is_connected else "Haptic Pad device connection failed."
+        "connected": state["connected"],
+        "status": state["status"],
+        "port": state["port"],
+        "device": state["device"],
+        "packets_rx": state["packets_rx"],
+        "last_seen_seconds_ago": last_seen,
+        "message": f"Real STM32 Haptic Pad online on {state['port']}" if state["connected"] else "Haptic Pad device not detected. Please verify hardware link.",
+        "telemetry": state["telemetry"]
     })
 
 # -------------------- DOCTOR AUTHENTICATION API --------------------
