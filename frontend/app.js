@@ -4513,10 +4513,17 @@ function setHapticPadStatus(state, details = {}) {
 }
 window.setHapticPadStatus = setHapticPadStatus;
 
+let previousHapticState = null;
+let hapticLiveDisconnectTimer = null;
+
 /**
  * Manages modal visibility for Connecting and Not Connected states.
  */
 function showHapticConnectingModal() {
+  if (hapticLiveDisconnectTimer) {
+    clearTimeout(hapticLiveDisconnectTimer);
+    hapticLiveDisconnectTimer = null;
+  }
   const overlay = document.getElementById("hapticModalOverlay");
   const connModal = document.getElementById("hapticConnectingModal");
   const errModal = document.getElementById("hapticErrorModal");
@@ -4528,24 +4535,71 @@ function showHapticConnectingModal() {
 }
 
 function showHapticErrorModal() {
+  if (hapticLiveDisconnectTimer) {
+    clearTimeout(hapticLiveDisconnectTimer);
+    hapticLiveDisconnectTimer = null;
+  }
   const overlay = document.getElementById("hapticModalOverlay");
   const connModal = document.getElementById("hapticConnectingModal");
   const errModal = document.getElementById("hapticErrorModal");
   if (!overlay || !errModal) return;
 
   if (connModal) connModal.style.display = "none";
+  
+  // Ensure OK button is visible for manual / initial connection modal
+  const errFooter = errModal.querySelector(".haptic-modal-footer");
+  if (errFooter) errFooter.style.display = "flex";
+
   errModal.style.display = "flex";
   overlay.style.display = "flex";
 }
 
+/**
+ * Shows the centered live disconnect alert modal when device drops from CONNECTED -> NOT_CONNECTED.
+ * Automatically closes after approximately 3 seconds without requiring user click.
+ */
+function showHapticLiveDisconnectAlert() {
+  if (hapticLiveDisconnectTimer) {
+    clearTimeout(hapticLiveDisconnectTimer);
+    hapticLiveDisconnectTimer = null;
+  }
+  const overlay = document.getElementById("hapticModalOverlay");
+  const connModal = document.getElementById("hapticConnectingModal");
+  const errModal = document.getElementById("hapticErrorModal");
+  if (!overlay || !errModal) return;
+
+  if (connModal) connModal.style.display = "none";
+
+  // Hide OK button for auto-dismissing live disconnect alert
+  const errFooter = errModal.querySelector(".haptic-modal-footer");
+  if (errFooter) errFooter.style.display = "none";
+
+  errModal.style.display = "flex";
+  overlay.style.display = "flex";
+
+  // Auto-close after ~3 seconds
+  hapticLiveDisconnectTimer = setTimeout(() => {
+    closeHapticModals();
+  }, 3000);
+}
+window.showHapticLiveDisconnectAlert = showHapticLiveDisconnectAlert;
+
 function closeHapticModals() {
+  if (hapticLiveDisconnectTimer) {
+    clearTimeout(hapticLiveDisconnectTimer);
+    hapticLiveDisconnectTimer = null;
+  }
   const overlay = document.getElementById("hapticModalOverlay");
   const connModal = document.getElementById("hapticConnectingModal");
   const errModal = document.getElementById("hapticErrorModal");
 
   if (overlay) overlay.style.display = "none";
   if (connModal) connModal.style.display = "none";
-  if (errModal) errModal.style.display = "none";
+  if (errModal) {
+    errModal.style.display = "none";
+    const errFooter = errModal.querySelector(".haptic-modal-footer");
+    if (errFooter) errFooter.style.display = "flex";
+  }
 }
 window.closeHapticModals = closeHapticModals;
 
@@ -4564,23 +4618,40 @@ function startHapticLiveMonitoring() {
     if (isHapticConnectionInProgress) return;
 
     const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
-    
+    const wasConnected = currentHapticState === HAPTIC_STATE.CONNECTED;
+
     if (res.connected) {
       if (currentHapticState !== HAPTIC_STATE.CONNECTED) {
         console.log(`[HAPTIC] Device detected & verified on ${res.port}. Setting CONNECTED.`);
+        previousHapticState = currentHapticState;
+        currentHapticState = HAPTIC_STATE.CONNECTED;
         setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: res.port });
         closeHapticModals();
       }
     } else {
-      if (currentHapticState === HAPTIC_STATE.CONNECTED) {
-        console.warn("[HAPTIC] Device disconnected or heartbeat lost. Setting NOT_CONNECTED.");
+      if (wasConnected) {
+        console.warn("[HAPTIC] Live disconnect detected! Transition: CONNECTED -> NOT_CONNECTED");
+        previousHapticState = HAPTIC_STATE.CONNECTED;
+        currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
         setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
+        showHapticLiveDisconnectAlert();
+      } else {
+        // Device remains disconnected; maintain state without showing duplicate popups
+        if (currentHapticState !== HAPTIC_STATE.NOT_CONNECTED) {
+          previousHapticState = currentHapticState;
+          currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
+          setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
+        }
       }
     }
   }, 1000);
 }
 
 function stopHapticLiveMonitoring() {
+  if (hapticLiveDisconnectTimer) {
+    clearTimeout(hapticLiveDisconnectTimer);
+    hapticLiveDisconnectTimer = null;
+  }
   if (hapticLiveMonitorInterval) {
     clearInterval(hapticLiveMonitorInterval);
     hapticLiveMonitorInterval = null;
