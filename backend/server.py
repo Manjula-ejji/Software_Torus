@@ -73,6 +73,36 @@ def api_remote_input():
         return Response(status=204)
     return jsonify({"status": "success", "executed": True})
 
+# -------------------- HAPTIC PAD HARDWARE LINK API --------------------
+@app.route("/api/haptic-pad/status", methods=["GET", "OPTIONS"])
+def api_haptic_pad_status():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    # Checks hardware driver / environment configuration
+    is_connected = os.environ.get("HAPTIC_PAD_CONNECTED", "false").lower() in ("true", "1", "yes")
+    return jsonify({
+        "success": True,
+        "connected": is_connected,
+        "device": "TORUS-HAPTIC-V1" if is_connected else None,
+        "status": "connected" if is_connected else "disconnected",
+        "message": "Haptic Pad connected" if is_connected else "Haptic Pad device not detected. Please verify hardware link."
+    })
+
+@app.route("/api/haptic-pad/connect", methods=["POST", "OPTIONS"])
+def api_haptic_pad_connect():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    simulate_success = data.get("simulate_success")
+    is_connected = bool(simulate_success) if simulate_success is not None else (os.environ.get("HAPTIC_PAD_CONNECTED", "false").lower() in ("true", "1", "yes"))
+    return jsonify({
+        "success": True,
+        "connected": is_connected,
+        "status": "connected" if is_connected else "disconnected",
+        "device": "TORUS-HAPTIC-V1" if is_connected else None,
+        "message": "Haptic Pad connection established." if is_connected else "Haptic Pad device connection failed."
+    })
+
 # -------------------- DOCTOR AUTHENTICATION API --------------------
 @app.route("/api/doctors/register", methods=["POST", "OPTIONS"])
 def api_register_doctor():

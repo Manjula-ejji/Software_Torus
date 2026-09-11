@@ -1204,187 +1204,343 @@
 
   <!-- Doctor Portal Dashboard Screen (Image 2 Reference) -->
   <div id="doctor-portal-dashboard" class="doctor-portal-dashboard" style="display: none;">
-    <div class="ddash-shell">
-      <!-- TOP BAR (Matching Reference Image 2) -->
-      <header class="ddash-topbar">
-        <!-- LEFT: Menu, Back, PlebC Partner Logo Card -->
-        <div class="ddash-topbar-left">
-          <button class="ddash-menu-btn" id="docDashMenuToggle" type="button" aria-label="Toggle sidebar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <line x1="3" y1="12" x2="21" y2="12"></line>
-              <line x1="3" y1="6" x2="21" y2="6"></line>
-              <line x1="3" y1="18" x2="21" y2="18"></line>
-            </svg>
-          </button>
-          <button class="ddash-back-btn" id="docDashBackBtn" type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-            <span>Back</span>
-          </button>
-          <div class="ddash-partner-logo-card"
-            style="display: inline-flex !important; align-items: center !important; justify-content: center !important; background: transparent !important; border: none !important; padding: 0 !important; height: 54px !important; max-height: 54px !important; box-shadow: none !important; flex-shrink: 0 !important;"
-            title="PlebC • DRISHTI CPS Foundation • IIT Indore">
-            <img src="assets/logo.png?v=8" alt="PlebC • DRISHTI CPS Foundation • IIT Indore"
-              class="ddash-partner-logo-img"
-              style="height: 52px !important; max-height: 52px !important; width: auto !important; max-width: 210px !important; object-fit: contain !important; display: block !important; filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.45)) !important;"
-              height="52" />
-          </div>
-        </div>
-
-        <!-- CENTER: Perfectly Centered TORUS System Branding -->
-        <div class="ddash-topbar-center">
-          <div class="ddash-center-title">TORUS</div>
-          <div class="ddash-center-system">REMOTE ULTRASOUND SYSTEM</div>
-          <div class="ddash-center-platform">Next-Generation Healthcare Robotics Platform</div>
-        </div>
-
-        <!-- RIGHT: Controls & Profile -->
-        <div class="ddash-topbar-right">
-          <div class="ddash-haptic-chip haptic-chip--disconnected" id="docDashHapticChip" role="status">
-            <span class="ddash-haptic-alert">⚠</span>
-            <span class="ddash-haptic-label">Haptic Pad</span>
-            <span>•</span>
-            <span id="docDashHapticChipText">Not Connected</span>
-            <span class="ddash-haptic-dot"></span>
-          </div>
-          <button class="ddash-adhoc-btn" id="docDashAdhocScanBtn" type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
-              <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
-              <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
-              <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-              <line x1="12" y1="7" x2="12" y2="9"></line>
-              <line x1="12" y1="15" x2="12" y2="17"></line>
-              <line x1="7" y1="12" x2="9" y2="12"></line>
-              <line x1="15" y1="12" x2="17" y2="12"></line>
-            </svg>
-            <span>Adhoc Scan</span>
-          </button>
-          <button class="ddash-icon-btn" id="docDashBellBtn" type="button" aria-label="Notifications">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </svg>
-            <span class="ddash-bell-dot"></span>
-          </button>
-          <!-- Profile Avatar with Popover -->
-          <div class="ddash-avatar-wrap" id="docDashAvatarWrap">
-            <div class="ddash-avatar" id="docDashAvatarChip" tabindex="0" role="button" aria-label="Doctor profile">AD
+    <!-- Collapsible Left Navigation Sidebar (Image 1 Reference) -->
+    <aside id="docDashSidebar" class="ddash-sidebar">
+      <div class="ddash-sidebar-inner">
+        <!-- Sidebar Brand Header -->
+        <div class="ddash-sidebar-header">
+          <div class="ddash-sidebar-brand">
+            <div class="ddash-sidebar-logo-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+              </svg>
             </div>
-            <div class="ddash-profile-popover" id="docDashProfilePopover" style="display:none;">
-              <div class="ddash-popover-header">
-                <div class="ddash-popover-avatar">AD</div>
-                <div class="ddash-popover-user">
-                  <div class="ddash-profile-name" id="popoverDoctorName">Admin Doctor</div>
-                  <div class="ddash-profile-id">Doctor ID: <span id="popoverDoctorId">3001</span></div>
-                  <div class="ddash-profile-role">Role: Doctor / Admin</div>
+            <div class="ddash-sidebar-brand-text">
+              <div class="ddash-sidebar-title">TORUS</div>
+              <div class="ddash-sidebar-subtitle">Doctor Portal</div>
+            </div>
+          </div>
+          <button type="button" id="docDashSidebarCloseBtn" class="ddash-sidebar-close" aria-label="Close navigation sidebar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Navigation Menu Items -->
+        <nav class="ddash-sidebar-nav">
+          <a href="#dashboard" class="ddash-nav-item active" data-view="dashboard">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Dashboard</span>
+          </a>
+
+          <a href="#profile" class="ddash-nav-item" data-view="doctor-profile">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Doctor Profile</span>
+          </a>
+
+          <a href="#activity-log" class="ddash-nav-item" data-view="activity-log">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Activity Log</span>
+          </a>
+
+          <a href="#insights" class="ddash-nav-item" data-view="insights">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Insights</span>
+          </a>
+
+          <a href="#patient-reports" class="ddash-nav-item" data-view="patient-reports">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Patient Reports</span>
+          </a>
+
+          <a href="#history" class="ddash-nav-item" data-view="history">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <polyline points="3 3 3 8 8 8"></polyline>
+                <polyline points="12 7 12 12 15 15"></polyline>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">History</span>
+          </a>
+
+          <a href="#logout" id="docDashSidebarLogoutBtn" class="ddash-nav-item ddash-nav-logout" data-view="logout">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Logout</span>
+          </a>
+        </nav>
+
+        <!-- Bottom Doctor Profile Card -->
+        <div class="ddash-sidebar-footer">
+          <div class="ddash-sidebar-user-card">
+            <div class="ddash-sidebar-user-name" id="sidebarDocName">Dr. User</div>
+            <div class="ddash-sidebar-user-email" id="sidebarDocEmail">doctor@hospital.com</div>
+            <div class="ddash-sidebar-user-role" id="sidebarDocRole">Role: doctor</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Overlay backdrop for small screens -->
+    <div id="docDashSidebarOverlay" class="ddash-sidebar-overlay"></div>
+
+    <!-- Main Wrapper for Dashboard Shell -->
+    <div class="ddash-main-wrapper">
+      <div class="ddash-shell">
+        <!-- TOP BAR (Matching Reference Image 2) -->
+        <header class="ddash-topbar">
+          <!-- LEFT: Menu, Back, PlebC Partner Logo Card -->
+          <div class="ddash-topbar-left">
+            <button class="ddash-menu-btn" id="docDashMenuToggle" type="button" aria-label="Toggle sidebar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
+            <button class="ddash-back-btn" id="docDashBackBtn" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>Back</span>
+            </button>
+            <div class="ddash-partner-logo-card"
+              style="display: inline-flex !important; align-items: center !important; justify-content: center !important; background: transparent !important; border: none !important; padding: 0 !important; height: 54px !important; max-height: 54px !important; box-shadow: none !important; flex-shrink: 0 !important;"
+              title="PlebC • DRISHTI CPS Foundation • IIT Indore">
+              <img src="assets/logo.png?v=8" alt="PlebC • DRISHTI CPS Foundation • IIT Indore"
+                class="ddash-partner-logo-img"
+                style="height: 52px !important; max-height: 52px !important; width: auto !important; max-width: 210px !important; object-fit: contain !important; display: block !important; filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.45)) !important;"
+                height="52" />
+            </div>
+          </div>
+
+          <!-- CENTER: Perfectly Centered TORUS System Branding -->
+          <div class="ddash-topbar-center">
+            <div class="ddash-center-title">TORUS</div>
+            <div class="ddash-center-system">REMOTE ULTRASOUND SYSTEM</div>
+            <div class="ddash-center-platform">Next-Generation Healthcare Robotics Platform</div>
+          </div>
+
+          <!-- RIGHT: Controls & Profile -->
+          <div class="ddash-topbar-right">
+            <div class="ddash-haptic-chip haptic-chip--disconnected" id="docDashHapticChip" role="status">
+              <span class="ddash-haptic-alert">⚠</span>
+              <span class="ddash-haptic-label">Haptic Pad</span>
+              <span>•</span>
+              <span id="docDashHapticChipText">Not Connected</span>
+              <span class="ddash-haptic-dot"></span>
+            </div>
+            <button class="ddash-adhoc-btn" id="docDashAdhocScanBtn" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+                <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+                <line x1="12" y1="7" x2="12" y2="9"></line>
+                <line x1="12" y1="15" x2="12" y2="17"></line>
+                <line x1="7" y1="12" x2="9" y2="12"></line>
+                <line x1="15" y1="12" x2="17" y2="12"></line>
+              </svg>
+              <span>Adhoc Scan</span>
+            </button>
+            <button class="ddash-icon-btn" id="docDashBellBtn" type="button" aria-label="Notifications">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span class="ddash-bell-dot"></span>
+            </button>
+            <!-- Profile Avatar with Popover -->
+            <div class="ddash-avatar-wrap" id="docDashAvatarWrap">
+              <div class="ddash-avatar" id="docDashAvatarChip" tabindex="0" role="button" aria-label="Doctor profile">AD
+              </div>
+              <div class="ddash-profile-popover" id="docDashProfilePopover" style="display:none;">
+                <div class="ddash-popover-header">
+                  <div class="ddash-popover-avatar">AD</div>
+                  <div class="ddash-popover-user">
+                    <div class="ddash-profile-name" id="popoverDoctorName">Admin Doctor</div>
+                    <div class="ddash-profile-id">Doctor ID: <span id="popoverDoctorId">3001</span></div>
+                    <div class="ddash-profile-role">Role: Doctor / Admin</div>
+                  </div>
+                </div>
+                <div class="ddash-popover-divider"></div>
+                <button class="ddash-popover-logout" id="docDashLogoutBtn" type="button">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  <span>Logout</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <!-- CONTENT -->
+        <main class="ddash-content">
+          <!-- Stats Cards -->
+          <div class="ddash-stats-grid">
+            <div class="ddash-stat-card">
+              <div class="ddash-stat-info">
+                <span class="ddash-stat-label">TOTAL SESSIONS</span>
+                <span class="ddash-stat-value" id="statTotalSessions">16</span>
+              </div>
+            </div>
+            <div class="ddash-stat-card">
+              <div class="ddash-stat-info">
+                <span class="ddash-stat-label">LIVE SESSIONS</span>
+                <span class="ddash-stat-value" id="statLiveSessions">1</span>
+              </div>
+            </div>
+            <div class="ddash-stat-card">
+              <div class="ddash-stat-info">
+                <span class="ddash-stat-label">SCHEDULED SESSIONS</span>
+                <span class="ddash-stat-value" id="statScheduledSessions">3</span>
+              </div>
+            </div>
+            <div class="ddash-stat-card">
+              <div class="ddash-stat-info">
+                <span class="ddash-stat-label">COMPLETED SESSIONS</span>
+                <span class="ddash-stat-value" id="statCompletedSessions">12</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Sessions Panel (Matching Reference Image 2) -->
+          <div class="ddash-panel ddash-panel-active">
+            <div class="ddash-panel-header">
+              <div class="ddash-panel-title-group">
+                <span class="ddash-title-dot purple"></span>
+                <div>
+                  <h2 class="ddash-panel-title">Active Sessions</h2>
+                  <p class="ddash-panel-subtitle">Currently active ultrasound sessions</p>
                 </div>
               </div>
-              <div class="ddash-popover-divider"></div>
-              <button class="ddash-popover-logout" id="docDashLogoutBtn" type="button">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                  <polyline points="16 17 21 12 16 7"></polyline>
-                  <line x1="21" y1="12" x2="9" y2="12"></line>
-                </svg>
-                <span>Logout</span>
-              </button>
+              <span class="ddash-live-badge" id="activeLiveBadge">1 Active</span>
             </div>
+            <!-- Column definitions: same grid used for both header and rows -->
+            <div class="ddash-col-grid ddash-table-head">
+              <span class="ddash-col-patient">PATIENT / DEVICE</span>
+              <span class="ddash-col-scan">SCAN TYPE</span>
+              <span class="ddash-col-duration">DURATION</span>
+              <span class="ddash-col-status">STATUS</span>
+              <span class="ddash-col-action">ACTION</span>
+            </div>
+            <div class="ddash-session-list" id="activeSessionsList"></div>
           </div>
-        </div>
-      </header>
 
-      <!-- CONTENT -->
-      <main class="ddash-content">
-        <!-- Stats Cards -->
-        <div class="ddash-stats-grid">
-          <div class="ddash-stat-card">
-            <div class="ddash-stat-info">
-              <span class="ddash-stat-label">TOTAL SESSIONS</span>
-              <span class="ddash-stat-value" id="statTotalSessions">16</span>
-            </div>
-          </div>
-          <div class="ddash-stat-card">
-            <div class="ddash-stat-info">
-              <span class="ddash-stat-label">LIVE SESSIONS</span>
-              <span class="ddash-stat-value" id="statLiveSessions">1</span>
-            </div>
-          </div>
-          <div class="ddash-stat-card">
-            <div class="ddash-stat-info">
-              <span class="ddash-stat-label">SCHEDULED SESSIONS</span>
-              <span class="ddash-stat-value" id="statScheduledSessions">3</span>
-            </div>
-          </div>
-          <div class="ddash-stat-card">
-            <div class="ddash-stat-info">
-              <span class="ddash-stat-label">COMPLETED SESSIONS</span>
-              <span class="ddash-stat-value" id="statCompletedSessions">12</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Active Sessions Panel (Matching Reference Image 2) -->
-        <div class="ddash-panel ddash-panel-active">
-          <div class="ddash-panel-header">
-            <div class="ddash-panel-title-group">
-              <span class="ddash-title-dot purple"></span>
-              <div>
-                <h2 class="ddash-panel-title">Active Sessions</h2>
-                <p class="ddash-panel-subtitle">Currently active ultrasound sessions</p>
+          <!-- Upcoming Sessions Panel (Matching Reference Image 2) -->
+          <div class="ddash-panel ddash-panel-upcoming">
+            <div class="ddash-panel-header">
+              <div class="ddash-panel-title-group">
+                <span class="ddash-title-icon-cyan">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                </span>
+                <div>
+                  <h2 class="ddash-panel-title">Upcoming Sessions</h2>
+                  <p class="ddash-panel-subtitle">Scheduled ultrasound sessions</p>
+                </div>
               </div>
+              <span class="ddash-sched-badge" id="upcomingSchedBadge">3 Scheduled</span>
             </div>
-            <span class="ddash-live-badge" id="activeLiveBadge">1 Active</span>
+            <!-- Column definitions: same grid used for both header and rows -->
+            <div class="ddash-col-grid-up ddash-table-head">
+              <span class="ddash-col-patient">PATIENT / DEVICE</span>
+              <span class="ddash-col-scan">SCAN TYPE</span>
+              <span class="ddash-col-center">CENTER</span>
+              <span class="ddash-col-time">TIME</span>
+              <span class="ddash-col-action">ACTION</span>
+            </div>
+            <div class="ddash-session-list" id="upcomingSessionsList"></div>
           </div>
-          <!-- Column definitions: same grid used for both header and rows -->
-          <div class="ddash-col-grid ddash-table-head">
-            <span class="ddash-col-patient">PATIENT / DEVICE</span>
-            <span class="ddash-col-scan">SCAN TYPE</span>
-            <span class="ddash-col-dur">DURATION</span>
-            <span class="ddash-col-status">STATUS</span>
-            <span class="ddash-col-action">ACTION</span>
-          </div>
-          <div class="ddash-session-list" id="activeSessionsList"></div>
-        </div>
+        </main>
+      </div>
+    </div>
+  </div>
 
-        <!-- Upcoming Sessions Panel (Matching Reference Image 2) -->
-        <div class="ddash-panel ddash-panel-upcoming">
-          <div class="ddash-panel-header">
-            <div class="ddash-panel-title-group">
-              <span class="ddash-title-icon-cyan">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-              </span>
-              <div>
-                <h2 class="ddash-panel-title">Upcoming Sessions</h2>
-                <p class="ddash-panel-subtitle">Scheduled ultrasound sessions</p>
-              </div>
-            </div>
-            <span class="ddash-sched-badge" id="upcomingScheduleBadge">3 Scheduled</span>
-          </div>
-          <div class="ddash-col-grid-up ddash-table-head">
-            <span class="ddash-col-patient">PATIENT / DEVICE</span>
-            <span class="ddash-col-scan">SCAN TYPE</span>
-            <span class="ddash-col-center">CENTER</span>
-            <span class="ddash-col-time">TIME</span>
-            <span class="ddash-col-action">ACTION</span>
-          </div>
-          <div class="ddash-session-list" id="upcomingSessionsList"></div>
-        </div>
-      </main>
+  <!-- Haptic Pad Connection State Modals (Image 1 & Image 2 Reference) -->
+  <div class="haptic-modal-overlay" id="hapticModalOverlay" style="display: none;">
+    <!-- State 1: Connecting Modal (Image 1) -->
+    <div class="haptic-modal-card haptic-modal--connecting" id="hapticConnectingModal" style="display: none;">
+      <div class="haptic-modal-spinner-wrap">
+        <div class="haptic-spinner"></div>
+      </div>
+      <h2 class="haptic-modal-title">Connecting...</h2>
+      <p class="haptic-modal-msg">Attempting to connect the haptic pad device.</p>
+      <div class="haptic-modal-footer">
+        <button type="button" class="haptic-modal-btn haptic-modal-btn--amber" id="hapticConnectingOkBtn">OK</button>
+      </div>
+    </div>
+
+    <!-- State 2: Not Connected Modal (Image 2) -->
+    <div class="haptic-modal-card haptic-modal--error" id="hapticErrorModal" style="display: none;">
+      <div class="haptic-modal-icon-wrap">
+        <svg class="haptic-warning-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+      </div>
+      <h2 class="haptic-modal-title">Haptic Pad Not Connected</h2>
+      <p class="haptic-modal-msg">Please try again later.</p>
+      <div class="haptic-modal-footer">
+        <button type="button" class="haptic-modal-btn haptic-modal-btn--red" id="hapticErrorOkBtn">OK</button>
+      </div>
     </div>
   </div>
 

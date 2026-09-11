@@ -4029,6 +4029,14 @@ async function setAuthenticatedDoctorSession(doctor) {
   // Populate Dashboard Header & Render Sessions
   updateDoctorPortalHeader(doctor);
   renderDoctorDashboard();
+
+  // Setup Haptic Pad event listeners & trigger initial connection attempt (Requirement 1)
+  if (typeof setupHapticPadListeners === "function") {
+    setupHapticPadListeners();
+  }
+  if (typeof initiateHapticPadConnection === "function") {
+    initiateHapticPadConnection();
+  }
 }
 
 // ============================================================
@@ -4367,28 +4375,231 @@ function rejoinClinicalSession(sessionId) {
   }
 }
 
-// Dynamic Haptic Pad status controller (disconnected: red, connecting: yellow/amber, connected: green)
-function setHapticPadStatus(status) {
+// ============================================================
+// HAPTIC PAD CONNECTION STATE ENGINE & SERVICE ABSTRACTION
+// ============================================================
+
+const HAPTIC_STATE = {
+  CONNECTING: "CONNECTING",
+  CONNECTED: "CONNECTED",
+  NOT_CONNECTED: "NOT_CONNECTED"
+};
+
+let currentHapticState = null;
+let isHapticConnectionInProgress = false;
+let hapticModalDismissed = false;
+
+// Development-only override hook for automated verification and test flows
+let devHapticMockResult = null; // true = force success (TEST 1), false = force fail (TEST 2), null = real flow
+
+window.setHapticPadDevMockResult = function(val) {
+  devHapticMockResult = val;
+  console.log("[HapticPad Dev] Mock result override set to:", val);
+};
+
+// Check for URL query parameter override for testing (e.g. ?haptic=success or ?haptic=fail)
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  const hapticParam = urlParams.get("haptic");
+  if (hapticParam === "success" || hapticParam === "connected") {
+    devHapticMockResult = true;
+  } else if (hapticParam === "fail" || hapticParam === "disconnected") {
+    devHapticMockResult = false;
+  }
+} catch (e) {}
+
+/**
+ * Haptic Pad Connection Service
+ * Clean abstraction layer designed for pluggable real backend / driver integration.
+ */
+const HapticPadService = {
+  /**
+   * Attempt to establish connection with the Haptic Pad device
+   * @param {Object} options - Optional configuration (e.g. timeout)
+   * @returns {Promise<{success: boolean, device?: string, error?: string}>}
+   */
+  async connectHapticPad(options = {}) {
+    // 1. Check if an isolated development mock is explicitly active
+    if (devHapticMockResult !== null) {
+      console.log(`[HapticPadService] Dev-only mock active: success = ${devHapticMockResult}`);
+      return {
+        success: Boolean(devHapticMockResult),
+        device: devHapticMockResult ? "TORUS-HAPTIC-V1" : null,
+        message: devHapticMockResult ? "Haptic Pad connected successfully (Mock)" : "Haptic Pad device not detected."
+      };
+    }
+
+    // 2. Production Flow: Query real backend API endpoint
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 2500);
+
+      const response = await fetch("/api/haptic-pad/status", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal
+      }).catch(() => null);
+
+      clearTimeout(timeoutId);
+
+      if (response && response.ok) {
+        const data = await response.json();
+        return {
+          success: Boolean(data.connected),
+          device: data.device || null,
+          message: data.message || ""
+        };
+      }
+    } catch (err) {
+      console.warn("[HapticPadService] Backend check error:", err);
+    }
+
+    // Default safe fallback if hardware is absent
+    return {
+      success: false,
+      error: "Haptic Pad device not detected or driver offline."
+    };
+  }
+};
+window.HapticPadService = HapticPadService;
+
+/**
+ * Updates the existing Haptic Pad status indicator in the top-right header
+ * based on current HAPTIC_STATE.
+ */
+function setHapticPadStatus(state) {
   const chip = document.getElementById("docDashHapticChip");
   const text = document.getElementById("docDashHapticChipText");
   const alertIcon = chip ? chip.querySelector(".ddash-haptic-alert") : null;
   if (!chip) return;
+
   chip.classList.remove("haptic-chip--connected", "haptic-chip--connecting", "haptic-chip--disconnected");
-  if (status === "connected") {
+
+  if (state === HAPTIC_STATE.CONNECTED || state === "connected") {
+    currentHapticState = HAPTIC_STATE.CONNECTED;
     chip.classList.add("haptic-chip--connected");
     if (text) text.textContent = "Connected";
     if (alertIcon) alertIcon.style.display = "none";
-  } else if (status === "connecting") {
+    chip.title = "Haptic Pad • Connected (Click to reconnect)";
+  } else if (state === HAPTIC_STATE.CONNECTING || state === "connecting") {
+    currentHapticState = HAPTIC_STATE.CONNECTING;
     chip.classList.add("haptic-chip--connecting");
-    if (text) text.textContent = "Connecting";
-    if (alertIcon) alertIcon.style.display = "inline";
+    if (text) text.textContent = "Connecting...";
+    if (alertIcon) alertIcon.style.display = "none";
+    chip.title = "Attempting to connect the haptic pad device...";
   } else {
+    currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
     chip.classList.add("haptic-chip--disconnected");
     if (text) text.textContent = "Not Connected";
     if (alertIcon) alertIcon.style.display = "inline";
+    chip.title = "Haptic Pad • Not Connected (Click to retry connection)";
   }
 }
 window.setHapticPadStatus = setHapticPadStatus;
+
+/**
+ * Manages modal visibility for Connecting and Not Connected states.
+ */
+function showHapticConnectingModal() {
+  const overlay = document.getElementById("hapticModalOverlay");
+  const connModal = document.getElementById("hapticConnectingModal");
+  const errModal = document.getElementById("hapticErrorModal");
+  if (!overlay || !connModal) return;
+
+  if (errModal) errModal.style.display = "none";
+  connModal.style.display = "flex";
+  overlay.style.display = "flex";
+}
+
+function showHapticErrorModal() {
+  const overlay = document.getElementById("hapticModalOverlay");
+  const connModal = document.getElementById("hapticConnectingModal");
+  const errModal = document.getElementById("hapticErrorModal");
+  if (!overlay || !errModal) return;
+
+  if (connModal) connModal.style.display = "none";
+  errModal.style.display = "flex";
+  overlay.style.display = "flex";
+}
+
+function closeHapticModals() {
+  const overlay = document.getElementById("hapticModalOverlay");
+  const connModal = document.getElementById("hapticConnectingModal");
+  const errModal = document.getElementById("hapticErrorModal");
+
+  if (overlay) overlay.style.display = "none";
+  if (connModal) connModal.style.display = "none";
+  if (errModal) errModal.style.display = "none";
+}
+window.closeHapticModals = closeHapticModals;
+
+/**
+ * Initiates the complete Haptic Pad connection flow:
+ * 1. Shows Connecting modal overlay & sets header to connecting.
+ * 2. Invokes HapticPadService.connectHapticPad().
+ * 3. On success: closes modal, sets header to connected green.
+ * 4. On failure: transitions to error modal, sets header to disconnected red.
+ * 5. On dismiss: leaves dashboard accessible without repeated popups.
+ */
+async function initiateHapticPadConnection(options = {}) {
+  if (isHapticConnectionInProgress) return;
+  isHapticConnectionInProgress = true;
+
+  // Set CONNECTING state & show modal
+  setHapticPadStatus(HAPTIC_STATE.CONNECTING);
+  showHapticConnectingModal();
+
+  // Artificial realistic handshake delay (1200ms - 1500ms) for smooth UX
+  const minDelay = new Promise(r => setTimeout(r, options.minDelayMs || 1500));
+  const [result] = await Promise.all([
+    HapticPadService.connectHapticPad(options),
+    minDelay
+  ]);
+
+  isHapticConnectionInProgress = false;
+
+  if (result && result.success) {
+    // 2. SUCCESS FLOW: Close connecting modal, update header to green connected
+    closeHapticModals();
+    setHapticPadStatus(HAPTIC_STATE.CONNECTED);
+    console.log("[HapticPad] Successfully connected:", result.device || "TORUS-HAPTIC-V1");
+  } else {
+    // 3. FAILURE FLOW: Show Error modal, update header to red not connected
+    setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
+    showHapticErrorModal();
+    console.warn("[HapticPad] Connection failed:", result?.error || "Device not detected.");
+  }
+}
+window.initiateHapticPadConnection = initiateHapticPadConnection;
+
+// Bind Haptic Pad Modal and Retry Click Handlers
+function setupHapticPadListeners() {
+  const errOkBtn = document.getElementById("hapticErrorOkBtn");
+  const connOkBtn = document.getElementById("hapticConnectingOkBtn");
+  const chip = document.getElementById("docDashHapticChip");
+
+  if (errOkBtn) {
+    errOkBtn.addEventListener("click", () => {
+      closeHapticModals();
+      hapticModalDismissed = true;
+    });
+  }
+
+  if (connOkBtn) {
+    connOkBtn.addEventListener("click", () => {
+      closeHapticModals();
+    });
+  }
+
+  if (chip) {
+    chip.addEventListener("click", () => {
+      console.log("[HapticPad] Header status clicked, retrying connection...");
+      initiateHapticPadConnection({ userTriggered: true });
+    });
+  }
+}
+window.setupHapticPadListeners = setupHapticPadListeners;
+
 
 // Upcoming Session Modal Logic
 let currentModalSessionId = null;
@@ -7658,6 +7869,113 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initial role-based settings visibility synchronization
   updateSettingsSessionCodeVisibility();
+
+  // ── TORUS Doctor Dashboard Collapsible Sidebar Logic ──
+  function initDocDashSidebar() {
+    const docPortalDash = document.getElementById("doctor-portal-dashboard");
+    const menuToggleBtn = document.getElementById("docDashMenuToggle");
+    const closeBtn = document.getElementById("docDashSidebarCloseBtn");
+    const overlay = document.getElementById("docDashSidebarOverlay");
+    const navItems = document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item");
+
+    if (!docPortalDash) return;
+
+    // Toggle Sidebar Function
+    function toggleSidebar(forceState) {
+      if (typeof forceState === "boolean") {
+        if (forceState) {
+          docPortalDash.classList.add("sidebar-open");
+        } else {
+          docPortalDash.classList.remove("sidebar-open");
+        }
+      } else {
+        docPortalDash.classList.toggle("sidebar-open");
+      }
+    }
+
+    if (menuToggleBtn) {
+      menuToggleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleSidebar();
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleSidebar(false);
+      });
+    }
+
+    if (overlay) {
+      overlay.addEventListener("click", () => {
+        toggleSidebar(false);
+      });
+    }
+
+    // Nav Items Active State & Routing Handlers
+    navItems.forEach((item) => {
+      item.addEventListener("click", (e) => {
+        const view = item.getAttribute("data-view");
+
+        if (view === "logout") {
+          e.preventDefault();
+          toggleSidebar(false);
+          // Trigger existing doctor logout button if available
+          const logoutBtn = document.getElementById("docDashLogoutBtn");
+          if (logoutBtn) {
+            logoutBtn.click();
+          } else {
+            location.reload();
+          }
+          return;
+        }
+
+        e.preventDefault();
+
+        // Update active class
+        navItems.forEach((el) => el.classList.remove("active"));
+        item.classList.add("active");
+
+        // Close sidebar on mobile / small screens after click
+        if (window.innerWidth < 992) {
+          toggleSidebar(false);
+        }
+
+        // Display feedback notification for non-dashboard views if toast system is present
+        if (view !== "dashboard") {
+          const viewTitle = item.querySelector(".ddash-nav-label")?.textContent || view;
+          console.log(`[Doctor Navigation] Switched to view: ${viewTitle}`);
+        }
+      });
+    });
+
+    // Synchronize logged in doctor profile information
+    function syncSidebarDoctorProfile() {
+      const popoverName = document.getElementById("popoverDoctorName")?.textContent;
+      const sidebarName = document.getElementById("sidebarDocName");
+      const sidebarEmail = document.getElementById("sidebarDocEmail");
+      const sidebarRole = document.getElementById("sidebarDocRole");
+
+      if (sidebarName) {
+        sidebarName.textContent = popoverName || "Dr. User";
+      }
+      if (sidebarEmail) {
+        sidebarEmail.textContent = "doctor@hospital.com";
+      }
+      if (sidebarRole) {
+        sidebarRole.textContent = "Role: doctor";
+      }
+    }
+
+    syncSidebarDoctorProfile();
+  }
+
+  initDocDashSidebar();
+
+  if (typeof setupHapticPadListeners === "function") {
+    setupHapticPadListeners();
+  }
 });
 
 
