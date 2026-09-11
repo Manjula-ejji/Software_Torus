@@ -7448,3 +7448,340 @@ body[data-role="viewer"] #settings-uid-wrapper {
     transform: translateY(0);
   }
 }
+
+/* ============================================================
+   PATIENT DASHBOARD SPECIFIC STYLES (MATCHING DOCTOR SHELL)
+   ============================================================ */
+
+.pdash-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: ddashFadeIn 0.3s ease-out;
+}
+
+/* 1. Top Action Cards Grid (Image 3) */
+.pdash-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.pdash-action-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(10, 15, 29, 0.9) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  user-select: none;
+}
+
+.pdash-action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.pdash-action-card--purple {
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.pdash-action-card--purple:hover {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 8px 25px rgba(139, 92, 246, 0.2);
+}
+
+.pdash-action-card--cyan.active-glow {
+  border-color: rgba(6, 182, 212, 0.7);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.2), inset 0 0 15px rgba(6, 182, 212, 0.05);
+  background: linear-gradient(135deg, rgba(8, 28, 48, 0.85) 0%, rgba(10, 20, 36, 0.9) 100%);
+}
+
+.pdash-action-card--cyan.active-glow:hover {
+  border-color: rgba(6, 182, 212, 0.9);
+  box-shadow: 0 0 28px rgba(6, 182, 212, 0.35), inset 0 0 20px rgba(6, 182, 212, 0.1);
+}
+
+.pdash-action-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.25s ease;
+}
+
+.pdash-action-card:hover .pdash-action-icon-wrap {
+  transform: scale(1.06);
+}
+
+.pdash-action-icon--purple {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: #c084fc;
+}
+
+.pdash-action-icon--cyan {
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  color: #22d3ee;
+}
+
+.pdash-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pdash-action-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.pdash-action-subtitle {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+/* 2. Patient Summary / Statistics (4 Cards) */
+.pdash-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.pdash-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(13, 20, 38, 0.7);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.pdash-stat-card:hover {
+  border-color: rgba(139, 92, 246, 0.38);
+  transform: translateY(-1px);
+}
+
+.pdash-stat-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pdash-stat-icon--cyan {
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  color: #22d3ee;
+}
+
+.pdash-stat-icon--amber {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
+.pdash-stat-icon--purple {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #c084fc;
+}
+
+.pdash-stat-icon--green {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.pdash-stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pdash-stat-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pdash-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 3. Patient Main Panels Grid (2 Columns: Active & Upcoming) */
+.pdash-panels-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.pdash-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(11, 17, 34, 0.75);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+.pdash-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+}
+
+.pdash-panel-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pdash-title-icon-cyan {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #22d3ee;
+}
+
+.pdash-title-icon-purple {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c084fc;
+}
+
+.pdash-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* 4. Session Cards inside Panels */
+.pdash-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pdash-session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.pdash-session-card:hover {
+  background: rgba(20, 30, 55, 0.7);
+  border-color: rgba(139, 92, 246, 0.25);
+  transform: translateX(2px);
+}
+
+.pdash-session-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pdash-session-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.pdash-session-device {
+  font-size: 12px;
+  color: #64748b;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.pdash-session-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pdash-status-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.pdash-status-pill--progress {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.pdash-status-pill--waiting {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.pdash-session-duration {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #22d3ee;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.pdash-session-duration.dim {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.pdash-session-time {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #c084fc;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Responsive queries */
+@media (max-width: 1024px) {
+  .pdash-action-grid {
+    grid-template-columns: 1fr;
+  }
+  .pdash-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .pdash-panels-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -4020,11 +4020,20 @@ async function setAuthenticatedDoctorSession(doctor) {
   // The Live Consultation page must NOT open directly before the Doctor Dashboard.
   if (appDashboard) appDashboard.style.display = "none";
 
+  currentAuthenticatedUser = { ...doctor, role: "doctor" };
+  currentAuthenticatedRole = "doctor";
+
   // The Doctor Dashboard MUST be the default landing page after successful Doctor authentication.
   const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
   if (docPortalDashboard) {
     docPortalDashboard.style.display = "flex";
   }
+
+  // Switch role content: Show Doctor Content, Hide Patient Content
+  const docContent = document.getElementById("doctorDashboardContent");
+  const patContent = document.getElementById("patientDashboardContent");
+  if (docContent) docContent.style.display = "block";
+  if (patContent) patContent.style.display = "none";
 
   // Populate Dashboard Header & Render Sessions
   updateDoctorPortalHeader(doctor);
@@ -4159,30 +4168,105 @@ function loadTorusSessions() {
 }
 
 
-// Update Topbar in Doctor Dashboard
-function updateDoctorPortalHeader(doctor) {
+// Update Shared Topbar Header and Sidebar Profile (for Doctor and Patient)
+function updateSharedPortalHeader(user, role = "doctor") {
   const avatarEl = document.getElementById("docDashAvatarChip");
   const popoverName = document.getElementById("popoverDoctorName");
   const popoverUid = document.getElementById("popoverDoctorId");
+  const popoverRole = document.querySelector(".ddash-profile-role");
+  const popoverIdLabel = document.querySelector(".ddash-profile-id");
 
-  const docName = doctor?.name || (currentAuthenticatedUser?.name) || "Admin Doctor";
-  const docUid = doctor?.uid || (currentAuthenticatedUser?.uid) || "3001";
+  const sidebarTitle = document.querySelector(".ddash-sidebar-subtitle");
+  const sidebarDocName = document.getElementById("sidebarDocName");
+  const sidebarDocEmail = document.getElementById("sidebarDocEmail");
+  const sidebarDocRole = document.getElementById("sidebarDocRole");
 
-  // Update popover fields
-  if (popoverName) popoverName.textContent = docName.replace(/^Dr\.\s*/i, "").trim();
-  if (popoverUid) popoverUid.textContent = docUid;
+  const isPatient = (role === "patient" || user?.role === "patient");
+  const displayName = user?.name || (isPatient ? "Patient User" : "Admin Doctor");
+  const displayUid = user?.uid || (isPatient ? "4001" : "3001");
+  const displayEmail = user?.email || (isPatient ? "patient@gmail.com" : "doctor@hospital.com");
+
+  if (popoverName) popoverName.textContent = displayName.replace(/^Dr\.\s*/i, "").trim();
+  if (popoverUid) popoverUid.textContent = displayUid;
+  if (popoverRole) popoverRole.textContent = isPatient ? "Role: Patient" : "Role: Doctor / Admin";
+  if (popoverIdLabel) popoverIdLabel.innerHTML = `${isPatient ? "Patient" : "Doctor"} ID: <span id="popoverDoctorId">${displayUid}</span>`;
 
   if (avatarEl) {
-    const cleanName = docName.replace(/^Dr\.\s*/i, "").trim();
-    const initials = cleanName
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(part => part[0].toUpperCase())
-      .slice(0, 2)
-      .join("") || "AD";
-    avatarEl.textContent = initials;
+    if (isPatient) {
+      avatarEl.textContent = "PT";
+    } else {
+      const cleanName = displayName.replace(/^Dr\.\s*/i, "").trim();
+      const initials = cleanName
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part[0].toUpperCase())
+        .slice(0, 2)
+        .join("") || "AD";
+      avatarEl.textContent = initials;
+    }
   }
+
+  const popoverAvatar = document.querySelector(".ddash-popover-avatar");
+  if (popoverAvatar && avatarEl) {
+    popoverAvatar.textContent = avatarEl.textContent;
+  }
+
+  // Update sidebar branding and footer
+  if (sidebarTitle) sidebarTitle.textContent = isPatient ? "Patient Portal" : "Doctor Portal";
+  if (sidebarDocName) sidebarDocName.textContent = displayName;
+  if (sidebarDocEmail) sidebarDocEmail.textContent = displayEmail;
+  if (sidebarDocRole) sidebarDocRole.textContent = `Role: ${isPatient ? "patient" : "doctor"}`;
 }
+window.updateSharedPortalHeader = updateSharedPortalHeader;
+
+function updateDoctorPortalHeader(doctor) {
+  updateSharedPortalHeader(doctor, "doctor");
+}
+window.updateDoctorPortalHeader = updateDoctorPortalHeader;
+
+// Render Patient Dashboard Interactive Handlers (Image 3)
+function renderPatientDashboard(patient) {
+  const adhocCard = document.getElementById("patAdhocScanCard");
+  const schedCard = document.getElementById("patScheduleScanCard");
+  const regCard = document.getElementById("patRegisterCard");
+
+  if (adhocCard) {
+    adhocCard.onclick = () => {
+      openDeviceModal();
+    };
+  }
+
+  if (schedCard) {
+    schedCard.onclick = () => {
+      document.querySelectorAll(".pdash-action-card").forEach(c => c.classList.remove("active-glow"));
+      schedCard.classList.add("active-glow");
+      if (typeof showToastAlert === "function") {
+        showToastAlert("Schedule Scan: Plan future ultrasound examinations.", "info");
+      }
+    };
+  }
+
+  if (regCard) {
+    regCard.onclick = () => {
+      const patRegScreen = document.getElementById("patient-register-screen");
+      const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+      if (docPortalDashboard) docPortalDashboard.style.display = "none";
+      if (patRegScreen) patRegScreen.style.display = "flex";
+    };
+  }
+
+  // Ensure default metric numbers match Image 3
+  const statActive = document.getElementById("patStatActiveSessions");
+  const statWaiting = document.getElementById("patStatWaiting");
+  const statUpcoming = document.getElementById("patStatUpcomingSessions");
+  const statCompleted = document.getElementById("patStatCompletedSessions");
+
+  if (statActive) statActive.textContent = "3";
+  if (statWaiting) statWaiting.textContent = "2";
+  if (statUpcoming) statUpcoming.textContent = "3";
+  if (statCompleted) statCompleted.textContent = "12";
+}
+window.renderPatientDashboard = renderPatientDashboard;
 
 // Render Doctor Dashboard (Active & Upcoming Sessions)
 function renderDoctorDashboard() {
@@ -5584,7 +5668,8 @@ async function resetPatientPasswordWithToken(identifier, resetToken, newPassword
 
 // Set Active Authenticated Patient Session & Launch Dashboard
 function setAuthenticatedPatientSession(patient) {
-  currentAuthenticatedUser = patient;
+  currentAuthenticatedUser = { ...patient, role: "patient" };
+  currentAuthenticatedRole = "patient";
 
   // Bind values to settings inputs
   if (roleInput) {
@@ -5592,7 +5677,7 @@ function setAuthenticatedPatientSession(patient) {
     roleInput.dispatchEvent(new Event("change"));
   }
   if (uidInput) {
-    uidInput.value = patient.uid;
+    uidInput.value = patient.uid || "4001";
   }
 
   // Update dynamic Header User Badge
@@ -5601,10 +5686,10 @@ function setAuthenticatedPatientSession(patient) {
   const badgeEl = document.getElementById("header-user-badge");
 
   if (nameEl) {
-    nameEl.textContent = patient.name;
+    nameEl.textContent = patient.name || "Patient";
   }
   if (uidEl) {
-    uidEl.textContent = patient.uid;
+    uidEl.textContent = patient.uid || "4001";
   }
   if (badgeEl) {
     badgeEl.style.display = "inline-flex";
@@ -5614,18 +5699,51 @@ function setAuthenticatedPatientSession(patient) {
   const patLoginScreen = document.getElementById("patient-login-screen");
   const patRegScreen = document.getElementById("patient-register-screen");
   const patForgotScreen = document.getElementById("patient-forgot-screen");
+  const docLoginScreen = document.getElementById("doctor-login-screen");
+  const docRegScreen = document.getElementById("doctor-register-screen");
+  const docForgotScreen = document.getElementById("doctor-forgot-screen");
+  const docBioScreen = document.getElementById("doctor-biometric-screen");
+  const docBioRegScreen = document.getElementById("doctor-bio-register-screen");
   const joinScreen = document.getElementById("join-session-screen");
   const docBanner = document.getElementById("doctor-session-banner");
+
   if (docBanner) docBanner.style.display = "none";
   if (patLoginScreen) patLoginScreen.style.display = "none";
   if (patRegScreen) patRegScreen.style.display = "none";
   if (patForgotScreen) patForgotScreen.style.display = "none";
+  if (docLoginScreen) docLoginScreen.style.display = "none";
+  if (docRegScreen) docRegScreen.style.display = "none";
+  if (docForgotScreen) docForgotScreen.style.display = "none";
+  if (docBioScreen) docBioScreen.style.display = "none";
+  if (docBioRegScreen) docBioRegScreen.style.display = "none";
   if (joinScreen) joinScreen.style.display = "none";
   if (roleSelectionScreen) roleSelectionScreen.style.display = "none";
-  if (appDashboard) appDashboard.style.display = "flex";
+  if (appDashboard) appDashboard.style.display = "none";
 
-  if (typeof triggerHeaderBootSequence === "function") {
-    triggerHeaderBootSequence();
+  // Show the shared TORUS Dashboard Shell
+  const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+  if (docPortalDashboard) {
+    docPortalDashboard.style.display = "flex";
+  }
+
+  // Switch role content: Show Patient Content, Hide Doctor Content
+  const docContent = document.getElementById("doctorDashboardContent");
+  const patContent = document.getElementById("patientDashboardContent");
+  if (docContent) docContent.style.display = "none";
+  if (patContent) patContent.style.display = "flex";
+
+  // Update shell header & sidebar for Patient
+  updateSharedPortalHeader(patient, "patient");
+
+  // Render Patient Dashboard interactive handlers
+  renderPatientDashboard(patient);
+
+  // Setup Haptic Pad event listeners & trigger initial connection attempt
+  if (typeof setupHapticPadListeners === "function") {
+    setupHapticPadListeners();
+  }
+  if (typeof initiateHapticPadConnection === "function") {
+    initiateHapticPadConnection();
   }
 }
 
