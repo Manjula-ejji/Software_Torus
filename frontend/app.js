@@ -4429,31 +4429,38 @@ const HapticPadService = {
       };
     }
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 2500);
+    const isDirectBackend = window.location.port === "3000";
+    const endpoints = isDirectBackend
+      ? ["/api/haptic-pad/status", "http://127.0.0.1:3000/api/haptic-pad/status", "http://localhost:3000/api/haptic-pad/status"]
+      : ["http://127.0.0.1:3000/api/haptic-pad/status", "http://localhost:3000/api/haptic-pad/status", "/api/haptic-pad/status"];
 
-      const response = await fetch("/api/haptic-pad/status", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal
-      }).catch(() => null);
+    for (const url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 2500);
 
-      clearTimeout(timeoutId);
+        const response = await fetch(url, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal
+        }).catch(() => null);
 
-      if (response && response.ok) {
-        const data = await response.json();
-        return {
-          success: true,
-          connected: Boolean(data.connected),
-          device: data.device || null,
-          port: data.port || null,
-          packets_rx: data.packets_rx || 0,
-          message: data.message || ""
-        };
+        clearTimeout(timeoutId);
+
+        if (response && response.ok) {
+          const data = await response.json();
+          return {
+            success: true,
+            connected: Boolean(data.connected),
+            device: data.device || null,
+            port: data.port || null,
+            packets_rx: data.packets_rx || 0,
+            message: data.message || ""
+          };
+        }
+      } catch (err) {
+        // Continue to next endpoint fallback
       }
-    } catch (err) {
-      console.warn("[HapticPadService] Backend status check error:", err);
     }
 
     return {
