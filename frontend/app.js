@@ -3495,11 +3495,17 @@ async function initSQLiteDatabase() {
         dbInstance = new SQL.Database(byteArray);
       } catch (dbErr) {
         console.warn("[SQLite] Storage database parse error, clearing invalid storage:", dbErr);
-        localStorage.removeItem("torus_sqlite_db");
-        dbInstance = new SQL.Database();
+        try {
+          localStorage.removeItem("torus_sqlite_db");
+        } catch (_) { }
+        try {
+          dbInstance = new SQL.Database();
+        } catch (_) { }
       }
     } else if (SQL) {
-      dbInstance = new SQL.Database();
+      try {
+        dbInstance = new SQL.Database();
+      } catch (_) { }
     }
 
     if (dbInstance) {
@@ -4248,10 +4254,7 @@ function renderPatientDashboard(patient) {
 
   if (regCard) {
     regCard.onclick = () => {
-      const patRegScreen = document.getElementById("patient-register-screen");
-      const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
-      if (docPortalDashboard) docPortalDashboard.style.display = "none";
-      if (patRegScreen) patRegScreen.style.display = "flex";
+      openPatientIntakeScreen();
     };
   }
 
@@ -4265,8 +4268,139 @@ function renderPatientDashboard(patient) {
   if (statWaiting) statWaiting.textContent = "2";
   if (statUpcoming) statUpcoming.textContent = "3";
   if (statCompleted) statCompleted.textContent = "12";
+  // Ensure Patient Intake handlers are bound
+  if (typeof setupPatientIntakeHandlers === "function") {
+    setupPatientIntakeHandlers();
+  }
 }
 window.renderPatientDashboard = renderPatientDashboard;
+
+// Open & Close Handlers for Dedicated Patient Registration Intake Screen (Image 1)
+function openPatientIntakeScreen() {
+  const intakeScreen = document.getElementById("patient-registration-screen");
+  const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+  if (docPortalDashboard) docPortalDashboard.style.display = "none";
+  if (intakeScreen) {
+    intakeScreen.style.display = "flex";
+    hideAlertMessage("patientIntakeAlert");
+    // Default appointment date to today if empty
+    const dateInput = document.getElementById("intakeApptDate");
+    if (dateInput && !dateInput.value) {
+      dateInput.value = new Date().toISOString().split("T")[0];
+    }
+  }
+}
+window.openPatientIntakeScreen = openPatientIntakeScreen;
+
+function closePatientIntakeScreen() {
+  const intakeScreen = document.getElementById("patient-registration-screen");
+  const docPortalDashboard = document.getElementById("doctor-portal-dashboard");
+  if (intakeScreen) intakeScreen.style.display = "none";
+  if (docPortalDashboard) docPortalDashboard.style.display = "flex";
+}
+window.closePatientIntakeScreen = closePatientIntakeScreen;
+
+function setupPatientIntakeHandlers() {
+  const backBtn = document.getElementById("patientIntakeBackBtn");
+  const clearBtn = document.getElementById("intakeClearBtn");
+  const form = document.getElementById("patientIntakeForm");
+  const genderGroup = document.getElementById("intakeGenderGroup");
+  const genderInput = document.getElementById("intakeGender");
+
+  if (backBtn) {
+    backBtn.onclick = () => {
+      closePatientIntakeScreen();
+    };
+  }
+
+  if (genderGroup && genderInput) {
+    const pills = genderGroup.querySelectorAll(".intake-gender-pill");
+    pills.forEach((pill) => {
+      pill.onclick = () => {
+        pills.forEach((p) => p.classList.remove("active"));
+        pill.classList.add("active");
+        genderInput.value = pill.getAttribute("data-gender") || "Male";
+      };
+    });
+  }
+
+  if (clearBtn && form) {
+    clearBtn.onclick = () => {
+      form.reset();
+      hideAlertMessage("patientIntakeAlert");
+      if (genderGroup && genderInput) {
+        const pills = genderGroup.querySelectorAll(".intake-gender-pill");
+        pills.forEach((p, idx) => {
+          if (idx === 0) p.classList.add("active");
+          else p.classList.remove("active");
+        });
+        genderInput.value = "Male";
+      }
+      const dateInput = document.getElementById("intakeApptDate");
+      if (dateInput) {
+        dateInput.value = new Date().toISOString().split("T")[0];
+      }
+    };
+  }
+
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      hideAlertMessage("patientIntakeAlert");
+
+      const fullName = document.getElementById("intakeFullName")?.value.trim() || "";
+      const age = document.getElementById("intakeAge")?.value.trim() || "";
+      const gender = genderInput?.value || "Male";
+      const mobile = document.getElementById("intakeMobile")?.value.trim() || "";
+      const email = document.getElementById("intakeEmail")?.value.trim() || "";
+      const scanType = document.getElementById("intakeScanType")?.value || "";
+      const apptDate = document.getElementById("intakeApptDate")?.value || "";
+      const bloodGroup = document.getElementById("intakeBloodGroup")?.value || "";
+
+      if (!fullName || !age || !mobile || !scanType || !apptDate) {
+        showAlertMessage("patientIntakeAlert", "Please fill in all required fields marked with *");
+        return;
+      }
+
+      if (!/^\d{10}$/.test(mobile.replace(/\D/g, ""))) {
+        showAlertMessage("patientIntakeAlert", "Please enter a valid 10-digit mobile number.");
+        return;
+      }
+
+      // Add newly registered patient session to upcoming list
+      const newSessionId = `S-${String(Math.floor(100 + Math.random() * 900))}`;
+      const newPatientId = `P-${String(Math.floor(1000 + Math.random() * 9000))}`;
+      const newSession = {
+        sessionId: newSessionId,
+        patientId: newPatientId,
+        patientName: fullName,
+        deviceId: "TORUS-A12",
+        scanType: scanType,
+        diagnosticCenter: "Main Hospital",
+        scheduledTime: "11:00 AM",
+        timeLabel: "11:00 AM",
+        ageGender: `${age} | ${gender}`,
+        contact: mobile,
+        clinicalNotes: `Scan type: ${scanType}. Blood Group: ${bloodGroup || "N/A"}`,
+        status: "scheduled",
+        doctorConnectionState: "not_joined"
+      };
+
+      if (!window.torusSessions) window.torusSessions = { active: [], upcoming: [] };
+      if (!Array.isArray(window.torusSessions.upcoming)) window.torusSessions.upcoming = [];
+      window.torusSessions.upcoming.unshift(newSession);
+      saveTorusSessions();
+
+      if (typeof showToastAlert === "function") {
+        showToastAlert(`Patient ${fullName} registered successfully!`, "success");
+      }
+
+      form.reset();
+      closePatientIntakeScreen();
+    };
+  }
+}
+window.setupPatientIntakeHandlers = setupPatientIntakeHandlers;
 
 // Render Doctor Dashboard (Active & Upcoming Sessions)
 function renderDoctorDashboard() {
@@ -5928,7 +6062,11 @@ function hideAlertMessage(elementId) {
 
 // Bind DOM Event Listeners for Doctor Authentication
 document.addEventListener("DOMContentLoaded", async () => {
-  await initSQLiteDatabase();
+  try {
+    await initSQLiteDatabase();
+  } catch (dbErr) {
+    console.warn("[SQLite] Database initialization error (using REST API fallback):", dbErr);
+  }
 
   // Password Visibility Toggle
   const togglePassBtn = document.getElementById("toggle-password-btn");
@@ -8219,6 +8357,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   initDocDashSidebar();
+  if (typeof setupPatientIntakeHandlers === "function") {
+    setupPatientIntakeHandlers();
+  }
 
   if (typeof setupHapticPadListeners === "function") {
     setupHapticPadListeners();

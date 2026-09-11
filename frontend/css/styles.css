@@ -7785,3 +7785,287 @@ body[data-role="viewer"] #settings-uid-wrapper {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   PATIENT REGISTRATION INTAKE FORM (IMAGE 1 REFERENCE)
+   ============================================================ */
+
+.patient-intake-screen {
+  min-height: 100vh;
+  width: 100%;
+  background: radial-gradient(circle at 10% 20%, rgba(6, 182, 212, 0.04) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.04) 0%, transparent 40%),
+              #070c18;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  box-sizing: border-box;
+  animation: ddashFadeIn 0.3s ease-out;
+}
+
+.patient-intake-card {
+  width: 100%;
+  max-width: 920px;
+  background: rgba(11, 17, 34, 0.85);
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 16px;
+  padding: 32px 40px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45), 0 0 30px rgba(139, 92, 246, 0.06);
+  box-sizing: border-box;
+  backdrop-filter: blur(12px);
+}
+
+.patient-intake-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 24px;
+}
+
+.patient-intake-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.patient-intake-icon {
+  color: #22d3ee;
+  filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.4));
+}
+
+.patient-intake-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: #22d3ee;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.patient-intake-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.patient-intake-back-btn:hover {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #fff;
+  transform: translateX(-2px);
+}
+
+.patient-intake-form {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.intake-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intake-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+.intake-title--purple {
+  color: #c084fc;
+  filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.3));
+}
+
+.intake-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intake-form-group.full-width {
+  width: 100%;
+}
+
+.intake-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.intake-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.intake-label .req-star {
+  color: #ef4444;
+  margin-left: 2px;
+}
+
+.intake-input,
+.intake-select {
+  width: 100%;
+  height: 44px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f8fafc;
+  font-size: 13.5px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.intake-input:focus,
+.intake-select:focus {
+  outline: none;
+  border-color: #22d3ee;
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.25);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.intake-input::placeholder {
+  color: #475569;
+}
+
+.intake-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2322d3ee' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px;
+  cursor: pointer;
+}
+
+.intake-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.intake-date-input {
+  color-scheme: dark;
+}
+
+/* Gender Pill Button Group */
+.intake-gender-group {
+  display: flex;
+  gap: 10px;
+  height: 44px;
+}
+
+.intake-gender-pill {
+  flex: 1;
+  height: 44px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.intake-gender-pill:hover {
+  background: rgba(20, 30, 55, 0.8);
+  color: #f8fafc;
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+.intake-gender-pill.active {
+  background: rgba(6, 182, 212, 0.12);
+  border-color: #06b6d4;
+  color: #38bdf8;
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.25);
+}
+
+/* Footer Action Buttons */
+.intake-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.intake-clear-btn {
+  height: 42px;
+  padding: 0 24px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.intake-clear-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+.intake-submit-btn {
+  height: 42px;
+  padding: 0 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(20, 30, 55, 0.9) 0%, rgba(13, 20, 38, 0.95) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #94a3b8;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+}
+
+.intake-submit-btn:hover {
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.6) 0%, rgba(30, 27, 75, 0.9) 100%);
+  border-color: #c084fc;
+  color: #fff;
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.35);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .patient-intake-card {
+    padding: 24px 20px;
+  }
+  .intake-row-2col {
+    grid-template-columns: 1fr;
+  }
+  .intake-footer-actions {
+    flex-direction: column-reverse;
+  }
+  .intake-clear-btn,
+  .intake-submit-btn {
+    width: 100%;
+  }
+}
