@@ -82,13 +82,20 @@ def parse_packet(line: str) -> dict | None:
 
             if key in ("JX", "JY", "JZ"):
                 data[key] = int(value)
+            elif key == "SW":
+                try:
+                    sw_val = int(value)
+                    data["SW_M"] = "ON" if (sw_val & 1) else "OFF"
+                    data["SW_L"] = "ON" if (sw_val & 2) else "OFF"
+                except ValueError:
+                    data["SW"] = value
             elif key == "SWM":
                 data["SW_M"] = value
             elif key == "SWL":
                 data["SW_L"] = value
-            elif key == "I1":
+            elif key in ("IMU1", "I1"):
                 data["I1"] = "1.0,0.0,0.0,0.0" if value == "ERR" else value
-            elif key == "I2":
+            elif key in ("IMU2", "I2"):
                 data["I2"] = "1.0,0.0,0.0,0.0" if value == "ERR" else value
             elif key == "HX":
                 data["HX"] = "NOT READY" if value == "NOT_READY" else value
@@ -180,15 +187,19 @@ class HapticPadAgent:
                 time.sleep(1.5)
                 continue
 
-            first_valid = False
-            last_packet_time = time.time()
+            with self.lock:
+                self.is_connected = True
+
+            if self.send_backend_report(True):
+                log("[HAPTIC] Backend connection established")
+            log("[HAPTIC] Device status: CONNECTED")
+
+            valid_logged = False
 
             while self.running:
                 try:
                     raw = self.ser.readline().decode("utf-8", errors="ignore").strip()
                     if not raw:
-                        if time.time() - last_packet_time > 2.5:
-                            pass
                         continue
 
                     if "PROBE AT HOME POSITION" in raw:
@@ -197,21 +208,13 @@ class HapticPadAgent:
 
                     parsed = parse_packet(raw)
                     if parsed:
-                        last_packet_time = time.time()
                         with self.lock:
                             self.packets_rx += 1
                             self.latest_telemetry = parsed
 
-                        if not first_valid:
-                            first_valid = True
-                            with self.lock:
-                                self.is_connected = True
+                        if not valid_logged:
+                            valid_logged = True
                             log("[HAPTIC] Valid packet received")
-                            
-                            # Report immediately to backend
-                            if self.send_backend_report(True, parsed):
-                                log("[HAPTIC] Backend connection established")
-                            log("[HAPTIC] Device status: CONNECTED")
 
                 except (serial.SerialException, OSError) as err:
                     log(f"[HAPTIC] Serial read error / device unplugged: {err}")
