@@ -6,11 +6,13 @@
   "scripts": {
     "start": "python backend/server.py",
     "dev": "python backend/server.py",
-    "frontend": "python backend/server.py",
+    "frontend": "http-server frontend -p 8080 -c-1",
+    "serve": "http-server frontend -p 8080 -c-1",
     "server": "python backend/server.py",
     "backend": "python backend/server.py",
     "test": "python backend/test_biometric_strict_verification.py",
-    "test:biometrics": "python backend/test_biometric_strict_verification.py"
+    "test:biometrics": "python backend/test_biometric_strict_verification.py",
+    "test:auth": "python backend/test_auth_full_suite.py"
   },
   "keywords": [],
   "author": "",

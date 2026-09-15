@@ -842,6 +842,168 @@
   </div>
 
   <!-- ============================================================ -->
+  <!-- PATIENT CLINICAL REGISTRATION SCREEN (Reference Image 1)     -->
+  <!-- ============================================================ -->
+  <div id="patient-clinical-registration-screen" class="patient-clinical-reg-screen" style="display: none;">
+    <div class="pcr-container">
+      <div class="pcr-card">
+        <!-- Top Header: Title & Back Button -->
+        <div class="pcr-header">
+          <div class="pcr-header-left">
+            <div class="pcr-header-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+              </svg>
+            </div>
+            <h1 class="pcr-header-title">Patient Registration</h1>
+          </div>
+
+          <button type="button" id="patClinicalRegBackBtn" class="pcr-back-btn" title="Back to Patient Dashboard">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back</span>
+          </button>
+        </div>
+
+        <div id="patClinicalRegAlert" class="login-alert pcr-alert" style="display: none;"></div>
+
+        <!-- Form Body -->
+        <form id="patient-clinical-reg-form" class="pcr-form" onsubmit="return false;">
+          <!-- Section 1: Patient Information -->
+          <div class="pcr-section">
+            <div class="pcr-section-header">
+              <div class="pcr-section-icon pcr-section-icon--purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <h2 class="pcr-section-title">Patient Information</h2>
+            </div>
+
+            <!-- Full Name (Full Width) -->
+            <div class="pcr-form-group">
+              <label for="pcrFullName" class="pcr-label">FULL NAME <span class="pcr-req">*</span></label>
+              <input type="text" id="pcrFullName" class="pcr-input" placeholder="Enter patient name" required />
+            </div>
+
+            <!-- Age & Gender (2-Column) -->
+            <div class="pcr-form-row">
+              <div class="pcr-form-group pcr-col">
+                <label for="pcrAge" class="pcr-label">AGE <span class="pcr-req">*</span></label>
+                <input type="number" id="pcrAge" class="pcr-input" placeholder="Enter age" min="1" max="130" required />
+              </div>
+
+              <div class="pcr-form-group pcr-col">
+                <label class="pcr-label">GENDER <span class="pcr-req">*</span></label>
+                <div class="pcr-gender-group" id="pcrGenderGroup">
+                  <button type="button" class="pcr-gender-btn active" data-gender="Male">Male</button>
+                  <button type="button" class="pcr-gender-btn" data-gender="Female">Female</button>
+                  <button type="button" class="pcr-gender-btn" data-gender="Other">Other</button>
+                </div>
+                <input type="hidden" id="pcrGenderVal" value="Male" />
+              </div>
+            </div>
+
+            <!-- Mobile & Email (2-Column) -->
+            <div class="pcr-form-row">
+              <div class="pcr-form-group pcr-col">
+                <label for="pcrMobile" class="pcr-label">MOBILE NUMBER <span class="pcr-req">*</span></label>
+                <input type="tel" id="pcrMobile" class="pcr-input" placeholder="10-digit mobile number" maxlength="10"
+                  required />
+              </div>
+
+              <div class="pcr-form-group pcr-col">
+                <label for="pcrEmail" class="pcr-label">EMAIL ADDRESS (OPTIONAL)</label>
+                <input type="email" id="pcrEmail" class="pcr-input" placeholder="patient@example.com" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Scan Information -->
+          <div class="pcr-section">
+            <div class="pcr-section-header">
+              <div class="pcr-section-icon pcr-section-icon--purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+              </div>
+              <h2 class="pcr-section-title">Scan Information</h2>
+            </div>
+
+            <!-- Scan Type (Full Width) -->
+            <div class="pcr-form-group">
+              <label for="pcrScanType" class="pcr-label">SCAN TYPE <span class="pcr-req">*</span></label>
+              <div class="pcr-select-wrapper">
+                <select id="pcrScanType" class="pcr-select" required>
+                  <option value="" disabled selected>Select Scan Type</option>
+                  <option value="Abdominal">Abdominal Scan</option>
+                  <option value="Cardiac">Cardiac Scan</option>
+                  <option value="Pelvic">Pelvic Scan</option>
+                  <option value="Vascular">Vascular Scan</option>
+                  <option value="Musculoskeletal">Musculoskeletal Scan</option>
+                  <option value="Obstetric">Obstetric Scan</option>
+                  <option value="Thyroid">Thyroid Scan</option>
+                </select>
+                <svg class="pcr-select-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Appointment Date & Blood Group (2-Column) -->
+            <div class="pcr-form-row">
+              <div class="pcr-form-group pcr-col">
+                <label for="pcrApptDate" class="pcr-label">APPOINTMENT DATE <span class="pcr-req">*</span></label>
+                <div class="pcr-date-wrapper">
+                  <input type="date" id="pcrApptDate" class="pcr-input pcr-date-input" required />
+                </div>
+              </div>
+
+              <div class="pcr-form-group pcr-col">
+                <label for="pcrBloodGroup" class="pcr-label">BLOOD GROUP (OPTIONAL)</label>
+                <div class="pcr-select-wrapper">
+                  <select id="pcrBloodGroup" class="pcr-select">
+                    <option value="" selected>Select Blood Group</option>
+                    <option value="A+">A+</option>
+                    <option value="A-">A-</option>
+                    <option value="B+">B+</option>
+                    <option value="B-">B-</option>
+                    <option value="AB+">AB+</option>
+                    <option value="AB-">AB-</option>
+                    <option value="O+">O+</option>
+                    <option value="O-">O-</option>
+                  </select>
+                  <svg class="pcr-select-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Actions (Right-aligned) -->
+          <div class="pcr-actions">
+            <button type="button" id="pcrClearBtn" class="pcr-btn pcr-btn--clear">Clear Form</button>
+            <button type="submit" id="pcrSubmitBtn" class="pcr-btn pcr-btn--submit">Register Patient</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- VIEWER AUTHENTICATION SCREENS                                -->
   <!-- ============================================================ -->
 
@@ -1742,7 +1904,941 @@
               </div>
             </div>
           </div>
+
+          <!-- DOCTOR PROFILE CONTENT VIEW -->
+          <div id="doctorProfileContent" class="ddash-role-content dprof-content" style="display: none;">
+            <!-- Profile Hero Banner Card -->
+            <div class="dprof-hero-card">
+              <div class="dprof-hero-left">
+                <div class="dprof-avatar" id="dprofAvatarInitials">AD</div>
+                <div class="dprof-hero-details">
+                  <div class="dprof-name-row">
+                    <h1 class="dprof-name" id="dprofDoctorName">Dr. Admin Doctor</h1>
+                  </div>
+                  <p class="dprof-role" id="dprofDoctorRole">Doctor Account • TORUS Healthcare Platform</p>
+                  <div class="dprof-hero-meta">
+                    <span class="dprof-meta-item">
+                      <span class="dprof-meta-icon cyan">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                          <path d="M7 15h0M2 9.5h20"></path>
+                        </svg>
+                      </span>
+                      Doctor ID: <strong id="dprofMetaUid">3001</strong>
+                    </span>
+                    <span class="dprof-meta-divider">•</span>
+                    <span class="dprof-meta-item">
+                      <span class="dprof-meta-icon purple">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                          <polyline points="22,6 12,13 2,6"></polyline>
+                        </svg>
+                      </span>
+                      <span id="dprofMetaEmail">admin@gmail.com</span>
+                    </span>
+                    <span class="dprof-meta-divider">•</span>
+                    <span class="dprof-meta-item">
+                      <span class="dprof-meta-icon green">
+                        <span class="dprof-pulse-dot"></span>
+                      </span>
+                      Status: <strong class="dprof-status-active" id="dprofMetaStatus">Active</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="dprof-hero-actions">
+                <button type="button" class="btn-dprof-edit" id="dprofEditBtn" onclick="openDoctorProfileEditModal()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  <span>Edit Profile</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Profile Info Sections Grid: 2 clean cards containing only genuine registration data -->
+            <div class="dprof-sections-grid">
+              <!-- Primary Doctor Identity & Contact Card -->
+              <div class="dprof-card">
+                <div class="dprof-card-header">
+                  <div class="dprof-card-title-group">
+                    <div class="dprof-icon-box purple">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 class="dprof-card-title">Doctor Identity & Contact</h2>
+                      <p class="dprof-card-subtitle">Registered identity and verified contact details</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="dprof-card-body">
+                  <div class="dprof-field-row">
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Doctor Full Name</label>
+                      <div class="dprof-field-value" id="dprofCardName">Admin Doctor</div>
+                    </div>
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Doctor ID / User ID</label>
+                      <div class="dprof-field-value highlight-cyan" id="dprofCardUid">3001</div>
+                    </div>
+                  </div>
+                  <div class="dprof-field-row">
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Registered Email</label>
+                      <div class="dprof-field-value" id="dprofCardEmail">admin@gmail.com</div>
+                    </div>
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Mobile / Phone Number</label>
+                      <div class="dprof-field-value" id="dprofCardMobile">Not Provided</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Account Role & Authentication Status Card -->
+              <div class="dprof-card">
+                <div class="dprof-card-header">
+                  <div class="dprof-card-title-group">
+                    <div class="dprof-icon-box cyan">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 class="dprof-card-title">Account & Authentication</h2>
+                      <p class="dprof-card-subtitle">System role and verified authentication status</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="dprof-card-body">
+                  <div class="dprof-field-row">
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Account Role</label>
+                      <div class="dprof-field-value" id="dprofCardRole">Doctor</div>
+                    </div>
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Account Status</label>
+                      <div class="dprof-field-value" id="dprofCardStatus"><span class="dprof-tag-green">Active</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="dprof-field-row">
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Registration Date</label>
+                      <div class="dprof-field-value" id="dprofCardCreatedAt">Available upon login</div>
+                    </div>
+                    <div class="dprof-field-item">
+                      <label class="dprof-field-label">Biometric Authentication</label>
+                      <div class="dprof-field-value" id="dprofCardBiometricStatus">
+                        <span class="dprof-tag-neutral">Not Enrolled</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- DOCTOR ACTIVITY LOG CONTENT VIEW -->
+          <div id="doctorActivityLogContent" class="ddash-role-content dact-content" style="display: none;">
+            <!-- Activity Log Header Controls -->
+            <div class="dact-header-card">
+              <div class="dact-header-left">
+                <div class="dact-header-title-group">
+                  <div class="dprof-icon-box cyan">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                  </div>
+                  <div>
+                    <h1 class="dact-title">Doctor Activity Log</h1>
+                    <p class="dact-subtitle">Real-time audit trail of clinical sessions, hardware actions, and portal
+                      authentications</p>
+                  </div>
+                </div>
+              </div>
+              <div class="dact-header-stats">
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num" id="dactTotalCount">0</span>
+                  <span class="dact-stat-lbl">Total Events</span>
+                </div>
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num cyan" id="dactSessionCount">0</span>
+                  <span class="dact-stat-lbl">Sessions</span>
+                </div>
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num purple" id="dactDeviceCount">0</span>
+                  <span class="dact-stat-lbl">Hardware</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Filter and Search Toolbar -->
+            <div class="dact-toolbar">
+              <div class="dact-search-wrap">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="dactSearchInput" class="dact-search-input"
+                  placeholder="Search activities by title, session ID, device or description..." />
+                <button type="button" id="dactSearchClearBtn" class="dact-search-clear" style="display:none;"
+                  title="Clear search">✕</button>
+              </div>
+
+              <div class="dact-filter-tabs">
+                <button type="button" class="dact-tab active" data-filter="all">All Activities</button>
+                <button type="button" class="dact-tab" data-filter="auth">Authentication</button>
+                <button type="button" class="dact-tab" data-filter="session">Clinical Sessions</button>
+                <button type="button" class="dact-tab" data-filter="hardware">Hardware & Probe</button>
+                <button type="button" class="dact-tab" data-filter="system">System & Profile</button>
+              </div>
+
+              <div class="dact-actions">
+                <button type="button" id="dactRefreshBtn" class="dact-btn-icon" title="Refresh Activity Log">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+                <button type="button" id="dactClearBtn" class="dact-btn-text" title="Clear log entries">
+                  <span>Clear History</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Activity Timeline Container -->
+            <div class="dact-timeline-panel">
+              <div class="dact-timeline-list" id="dactTimelineList">
+                <!-- Dynamically rendered activity items -->
+              </div>
+              <div class="dact-empty-state" id="dactEmptyState" style="display: none;">
+                <div class="dact-empty-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                </div>
+                <h3 class="dact-empty-title">No Activities Found</h3>
+                <p class="dact-empty-subtitle">No matching activity records found for the selected filter or search
+                  query.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- DOCTOR INSIGHTS & ANALYTICS CONTENT VIEW -->
+          <div id="doctorInsightsContent" class="ddash-role-content dins-content" style="display: none;">
+            <!-- Header Card -->
+            <div class="dact-header-card dins-header-card">
+              <div class="dact-header-left">
+                <div class="dact-header-title-group">
+                  <div class="dprof-icon-box purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="18" y1="20" x2="18" y2="10"></line>
+                      <line x1="12" y1="20" x2="12" y2="4"></line>
+                      <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                  </div>
+                  <div>
+                    <h1 class="dact-title">Clinical Insights & Performance</h1>
+                    <p class="dact-subtitle">Telemetry analytics, diagnostic scan distributions, and tele-robotic
+                      ultrasound efficiency</p>
+                  </div>
+                </div>
+              </div>
+              <div class="dins-header-controls">
+                <div class="dins-period-toggle">
+                  <button type="button" class="dins-period-btn active" data-period="7d">Last 7 Days</button>
+                  <button type="button" class="dins-period-btn" data-period="30d">Last 30 Days</button>
+                  <button type="button" class="dins-period-btn" data-period="all">All Time</button>
+                </div>
+                <button type="button" id="dinsRefreshBtn" class="dact-btn-icon" title="Refresh Analytics Metrics">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Top KPI Metric Cards Grid -->
+            <div class="dins-kpi-grid">
+              <div class="dins-kpi-card">
+                <div class="dins-kpi-header">
+                  <span class="dins-kpi-label">TOTAL SCANS</span>
+                  <div class="dins-kpi-icon purple">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                    </svg>
+                  </div>
+                </div>
+                <div class="dins-kpi-body">
+                  <span class="dins-kpi-value" id="dinsTotalScans">16</span>
+                  <span class="dins-kpi-badge positive">↑ 12% vs last week</span>
+                </div>
+                <div class="dins-kpi-footer">Clinical ultrasound sessions logged</div>
+              </div>
+
+              <div class="dins-kpi-card">
+                <div class="dins-kpi-header">
+                  <span class="dins-kpi-label">COMPLETED SCANS</span>
+                  <div class="dins-kpi-icon cyan">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  </div>
+                </div>
+                <div class="dins-kpi-body">
+                  <span class="dins-kpi-value highlight-cyan" id="dinsCompletedScans">12</span>
+                  <span class="dins-kpi-rate" id="dinsCompletionRate">75.0% Rate</span>
+                </div>
+                <div class="dins-kpi-footer">Finalized diagnostic exams</div>
+              </div>
+
+              <div class="dins-kpi-card">
+                <div class="dins-kpi-header">
+                  <span class="dins-kpi-label">ACTIVE / SCHEDULED</span>
+                  <div class="dins-kpi-icon emerald">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                  </div>
+                </div>
+                <div class="dins-kpi-body">
+                  <span class="dins-kpi-value highlight-emerald" id="dinsActiveSched">1 / 3</span>
+                  <span class="dins-kpi-badge neutral">Active live queue</span>
+                </div>
+                <div class="dins-kpi-footer">1 In progress • 3 Upcoming today</div>
+              </div>
+
+              <div class="dins-kpi-card">
+                <div class="dins-kpi-header">
+                  <span class="dins-kpi-label">AVG SCAN DURATION</span>
+                  <div class="dins-kpi-icon amber">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="7"></circle>
+                      <polyline points="12 9 12 12 13.5 13.5"></polyline>
+                    </svg>
+                  </div>
+                </div>
+                <div class="dins-kpi-body">
+                  <span class="dins-kpi-value" id="dinsAvgDuration">21.4m</span>
+                  <span class="dins-kpi-badge positive">↓ 3.2m efficiency</span>
+                </div>
+                <div class="dins-kpi-footer">Median probe active contact time</div>
+              </div>
+
+              <div class="dins-kpi-card">
+                <div class="dins-kpi-header">
+                  <span class="dins-kpi-label">ROBOTIC LATENCY</span>
+                  <div class="dins-kpi-icon cyan">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                    </svg>
+                  </div>
+                </div>
+                <div class="dins-kpi-body">
+                  <span class="dins-kpi-value highlight-cyan" id="dinsLatency">16.8ms</span>
+                  <span class="dins-kpi-badge positive">Optimal</span>
+                </div>
+                <div class="dins-kpi-footer">Encrypted WebRTC sub-20ms channel</div>
+              </div>
+
+              <div class="dins-kpi-card">
+                <div class="dins-kpi-header">
+                  <span class="dins-kpi-label">IMAGE QUALITY SCORE</span>
+                  <div class="dins-kpi-icon purple">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon
+                        points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
+                      </polygon>
+                    </svg>
+                  </div>
+                </div>
+                <div class="dins-kpi-body">
+                  <span class="dins-kpi-value highlight-purple" id="dinsQuality">98.6%</span>
+                  <span class="dins-kpi-badge positive">Grade A</span>
+                </div>
+                <div class="dins-kpi-footer">Diagnostic clarity score & DICOM sync</div>
+              </div>
+            </div>
+
+            <!-- Charts Section 1: Scan Type Breakdown + Completion Ring -->
+            <div class="dins-charts-row">
+              <!-- Scan Type Distribution -->
+              <div class="dprof-card dins-chart-card">
+                <div class="dprof-card-header">
+                  <div class="dprof-card-title-group">
+                    <div class="dprof-icon-box purple">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 class="dprof-card-title">Scan Type Distribution</h2>
+                      <p class="dprof-card-subtitle">Volume breakdown across clinical ultrasound anatomical regions</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="dprof-card-body dins-type-body">
+                  <div class="dins-type-list" id="dinsTypeList">
+                    <!-- Dynamically populated with type bars -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Scan Completion Status Ring -->
+              <div class="dprof-card dins-chart-card">
+                <div class="dprof-card-header">
+                  <div class="dprof-card-title-group">
+                    <div class="dprof-icon-box cyan">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 14 14"></polyline>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 class="dprof-card-title">Session Lifecycle Status</h2>
+                      <p class="dprof-card-subtitle">Completed, upcoming scheduled, and active in-flight procedures</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="dprof-card-body dins-donut-body">
+                  <div class="dins-donut-wrap">
+                    <svg class="dins-donut-svg" viewBox="0 0 160 160">
+                      <circle cx="80" cy="80" r="62" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="16">
+                      </circle>
+                      <!-- Completed 75% (~292) -->
+                      <circle cx="80" cy="80" r="62" fill="none" stroke="#8b5cf6" stroke-width="16"
+                        stroke-dasharray="292 390" stroke-dashoffset="0" stroke-linecap="round"></circle>
+                      <!-- Scheduled 18.8% (~73) -->
+                      <circle cx="80" cy="80" r="62" fill="none" stroke="#06b6d4" stroke-width="16"
+                        stroke-dasharray="73 390" stroke-dashoffset="-292" stroke-linecap="round"></circle>
+                      <!-- Active 6.2% (~24) -->
+                      <circle cx="80" cy="80" r="62" fill="none" stroke="#10b981" stroke-width="16"
+                        stroke-dasharray="24 390" stroke-dashoffset="-365" stroke-linecap="round"></circle>
+                    </svg>
+                    <div class="dins-donut-center">
+                      <span class="dins-donut-main" id="dinsDonutTotal">16</span>
+                      <span class="dins-donut-sub">Total Scans</span>
+                    </div>
+                  </div>
+                  <div class="dins-donut-legend">
+                    <div class="dins-legend-item">
+                      <span class="dins-legend-dot purple"></span>
+                      <span class="dins-legend-label">Completed Scans</span>
+                      <span class="dins-legend-val" id="dinsLegendCompleted">12 (75%)</span>
+                    </div>
+                    <div class="dins-legend-item">
+                      <span class="dins-legend-dot cyan"></span>
+                      <span class="dins-legend-label">Scheduled Sessions</span>
+                      <span class="dins-legend-val" id="dinsLegendScheduled">3 (19%)</span>
+                    </div>
+                    <div class="dins-legend-item">
+                      <span class="dins-legend-dot emerald"></span>
+                      <span class="dins-legend-label">Active / Live</span>
+                      <span class="dins-legend-val" id="dinsLegendActive">1 (6%)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Charts Section 2: Weekly Scan Trend & Tele-Robotics Fleet Performance -->
+            <div class="dins-charts-row">
+              <!-- Weekly Trend Bar Chart -->
+              <div class="dprof-card dins-chart-card">
+                <div class="dprof-card-header">
+                  <div class="dprof-card-title-group">
+                    <div class="dprof-icon-box cyan">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M3 3v18h18"></path>
+                        <path d="M18 9l-5 5-4-4-6 6"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 class="dprof-card-title">Daily Ultrasound Session Trends</h2>
+                      <p class="dprof-card-subtitle">Volume of ultrasound scans conducted over recent cycle</p>
+                    </div>
+                  </div>
+                  <div class="dins-chart-stat-badge">Avg: 2.3 scans/day</div>
+                </div>
+                <div class="dprof-card-body dins-trend-body">
+                  <div class="dins-trend-chart" id="dinsTrendChart">
+                    <!-- SVG Trend chart with glowing bars -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Fleet Tele-Robotic Performance -->
+              <div class="dprof-card dins-chart-card">
+                <div class="dprof-card-header">
+                  <div class="dprof-card-title-group">
+                    <div class="dprof-icon-box emerald">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                        <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                        <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 class="dprof-card-title">TORUS Robotic Fleet Telemetry</h2>
+                      <p class="dprof-card-subtitle">Robotic arm contact force compliance & streaming stability</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="dprof-card-body dins-fleet-body">
+                  <div class="dins-fleet-item">
+                    <div class="dins-fleet-top">
+                      <span class="dins-fleet-id"><strong class="highlight-cyan">TORUS-A12</strong> • Primary
+                        Tele-Arm</span>
+                      <span class="dins-fleet-status active">Active • 60 FPS</span>
+                    </div>
+                    <div class="dins-fleet-progress">
+                      <div class="dins-fleet-bar cyan" style="width: 88%;"></div>
+                    </div>
+                    <div class="dins-fleet-metrics">
+                      <span>7 Sessions</span>
+                      <span>Avg Force: 1.8 N</span>
+                      <span>Latency: 14ms</span>
+                      <span>Safety: 100%</span>
+                    </div>
+                  </div>
+
+                  <div class="dins-fleet-item">
+                    <div class="dins-fleet-top">
+                      <span class="dins-fleet-id"><strong class="highlight-purple">TORUS-B08</strong> • Secondary
+                        Station</span>
+                      <span class="dins-fleet-status standby">Standby Ready</span>
+                    </div>
+                    <div class="dins-fleet-progress">
+                      <div class="dins-fleet-bar purple" style="width: 65%;"></div>
+                    </div>
+                    <div class="dins-fleet-metrics">
+                      <span>5 Sessions</span>
+                      <span>Avg Force: 2.1 N</span>
+                      <span>Latency: 18ms</span>
+                      <span>Safety: 100%</span>
+                    </div>
+                  </div>
+
+                  <div class="dins-fleet-item">
+                    <div class="dins-fleet-top">
+                      <span class="dins-fleet-id"><strong class="highlight-emerald">TORUS-C15</strong> • Mobile Robotic
+                        Rig</span>
+                      <span class="dins-fleet-status scheduled">Scheduled</span>
+                    </div>
+                    <div class="dins-fleet-progress">
+                      <div class="dins-fleet-bar emerald" style="width: 45%;"></div>
+                    </div>
+                    <div class="dins-fleet-metrics">
+                      <span>3 Sessions</span>
+                      <span>Avg Force: 1.9 N</span>
+                      <span>Latency: 16ms</span>
+                      <span>Safety: 100%</span>
+                    </div>
+                  </div>
+
+                  <div class="dins-fleet-item">
+                    <div class="dins-fleet-top">
+                      <span class="dins-fleet-id"><strong>TORUS-K03</strong> • Clinical Station</span>
+                      <span class="dins-fleet-status active">In Progress</span>
+                    </div>
+                    <div class="dins-fleet-progress">
+                      <div class="dins-fleet-bar cyan" style="width: 50%;"></div>
+                    </div>
+                    <div class="dins-fleet-metrics">
+                      <span>1 Session Live</span>
+                      <span>Avg Force: 2.3 N</span>
+                      <span>Latency: 15ms</span>
+                      <span>Safety: 100%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- DOCTOR PATIENT REPORTS CONTENT VIEW -->
+          <div id="doctorReportsContent" class="ddash-role-content drep-content" style="display: none;">
+            <!-- Header Card -->
+            <div class="dact-header-card drep-header-card">
+              <div class="dact-header-left">
+                <div class="dact-header-title-group">
+                  <div class="dprof-icon-box purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="16" y1="13" x2="8" y2="13"></line>
+                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                  </div>
+                  <div>
+                    <h1 class="dact-title">Patient Diagnostic Reports</h1>
+                    <p class="dact-subtitle">Manage, review, and download official medical ultrasound examination
+                      reports</p>
+                  </div>
+                </div>
+              </div>
+              <div class="dact-header-stats">
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num" id="drepTotalCount">12</span>
+                  <span class="dact-stat-lbl">Total Reports</span>
+                </div>
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num cyan" id="drepFinalizedCount">10</span>
+                  <span class="dact-stat-lbl">Finalized</span>
+                </div>
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num purple" id="drepPendingCount">2</span>
+                  <span class="dact-stat-lbl">Pending</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Filter & Search Toolbar -->
+            <div class="dact-toolbar drep-toolbar">
+              <div class="dact-search-wrap">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="drepSearchInput" class="dact-search-input"
+                  placeholder="Search by patient name, ID (e.g. P-12345), report code, or scan type..." />
+                <button type="button" id="drepSearchClearBtn" class="dact-search-clear" style="display:none;"
+                  title="Clear search">✕</button>
+              </div>
+
+              <div class="dact-filter-tabs">
+                <button type="button" class="dact-tab active" data-filter="all">All Reports</button>
+                <button type="button" class="dact-tab" data-filter="ready">Finalized / Ready</button>
+                <button type="button" class="dact-tab" data-filter="pending">Pending Review</button>
+              </div>
+
+              <div class="drep-type-select-wrap">
+                <select id="drepScanTypeFilter" class="drep-filter-select" aria-label="Filter by scan type">
+                  <option value="all">All Scan Types</option>
+                  <option value="Abdominal">Abdominal</option>
+                  <option value="Cardiac">Cardiac</option>
+                  <option value="Pelvic">Pelvic</option>
+                  <option value="Vascular">Vascular</option>
+                  <option value="Thyroid">Thyroid</option>
+                </select>
+              </div>
+
+              <div class="dact-actions">
+                <button type="button" id="drepRefreshBtn" class="dact-btn-icon" title="Refresh Reports">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Reports List Table Container -->
+            <div class="drep-table-container">
+              <div class="drep-table-head">
+                <span class="drep-col-patient">PATIENT / ID</span>
+                <span class="drep-col-scan">SCAN TYPE</span>
+                <span class="drep-col-date">EXAM DATE</span>
+                <span class="drep-col-doctor">DOCTOR / SESSION</span>
+                <span class="drep-col-status">STATUS</span>
+                <span class="drep-col-actions">ACTIONS</span>
+              </div>
+              <div class="drep-list" id="drepList">
+                <!-- Dynamically rendered report rows -->
+              </div>
+              <div class="dact-empty-state" id="drepEmptyState" style="display: none;">
+                <div class="dact-empty-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                  </svg>
+                </div>
+                <h3 class="dact-empty-title">No Patient Reports Found</h3>
+                <p class="dact-empty-subtitle">No matching medical report records found for the applied search or filter
+                  parameters.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- DOCTOR SESSION & SCAN HISTORY CONTENT VIEW -->
+          <div id="doctorHistoryContent" class="ddash-role-content dhist-content" style="display: none;">
+            <!-- Header Card -->
+            <div class="dact-header-card dhist-header-card">
+              <div class="dact-header-left">
+                <div class="dact-header-title-group">
+                  <div class="dprof-icon-box cyan">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                      <polyline points="3 3 3 8 8 8"></polyline>
+                      <polyline points="12 7 12 12 15 15"></polyline>
+                    </svg>
+                  </div>
+                  <div>
+                    <h1 class="dact-title">Ultrasound Scan History</h1>
+                    <p class="dact-subtitle">Comprehensive historical log of past robotic tele-ultrasound clinical
+                      procedures</p>
+                  </div>
+                </div>
+              </div>
+              <div class="dact-header-stats">
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num cyan" id="dhistTotalCount">12</span>
+                  <span class="dact-stat-lbl">Completed</span>
+                </div>
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num purple" id="dhistDurationTotal">4h 18m</span>
+                  <span class="dact-stat-lbl">Total Time</span>
+                </div>
+                <div class="dact-stat-pill">
+                  <span class="dact-stat-num emerald" id="dhistFleetCount">4</span>
+                  <span class="dact-stat-lbl">Robotic Rigs</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- History Toolbar -->
+            <div class="dact-toolbar dhist-toolbar">
+              <div class="dact-search-wrap">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="dhistSearchInput" class="dact-search-input"
+                  placeholder="Search history by patient, device ID (e.g. TORUS-A12), or scan type..." />
+                <button type="button" id="dhistSearchClearBtn" class="dact-search-clear" style="display:none;"
+                  title="Clear search">✕</button>
+              </div>
+
+              <div class="dact-filter-tabs">
+                <button type="button" class="dact-tab active" data-filter="all">All Sessions</button>
+                <button type="button" class="dact-tab" data-filter="completed">Completed</button>
+                <button type="button" class="dact-tab" data-filter="transferred">Transferred</button>
+              </div>
+
+              <div class="drep-type-select-wrap">
+                <select id="dhistScanTypeFilter" class="drep-filter-select" aria-label="Filter history by scan type">
+                  <option value="all">All Scan Types</option>
+                  <option value="Abdominal">Abdominal</option>
+                  <option value="Cardiac">Cardiac</option>
+                  <option value="Pelvic">Pelvic</option>
+                  <option value="Vascular">Vascular</option>
+                  <option value="Thyroid">Thyroid</option>
+                </select>
+              </div>
+
+              <div class="drep-type-select-wrap">
+                <select id="dhistSortOrder" class="drep-filter-select" aria-label="Sort order">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="duration">Longest Duration</option>
+                </select>
+              </div>
+
+              <div class="dact-actions">
+                <button type="button" id="dhistRefreshBtn" class="dact-btn-icon" title="Refresh Session History">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- History Table Container -->
+            <div class="dhist-table-container">
+              <div class="dhist-table-head">
+                <span class="dhist-col-patient">PATIENT / ID</span>
+                <span class="dhist-col-device">TORUS DEVICE</span>
+                <span class="dhist-col-scan">SCAN TYPE</span>
+                <span class="dhist-col-date">SESSION DATE</span>
+                <span class="dhist-col-duration">DURATION</span>
+                <span class="dhist-col-status">STATUS</span>
+                <span class="dhist-col-actions">ACTION</span>
+              </div>
+              <div class="dhist-list" id="dhistList">
+                <!-- Dynamically rendered history session rows -->
+              </div>
+              <div class="dact-empty-state" id="dhistEmptyState" style="display: none;">
+                <div class="dact-empty-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 14 14"></polyline>
+                  </svg>
+                </div>
+                <h3 class="dact-empty-title">No Session History Records</h3>
+                <p class="dact-empty-subtitle">No ultrasound session logs match the selected search query or category
+                  filters.</p>
+              </div>
+            </div>
+          </div>
         </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Doctor Profile Modal -->
+  <div id="doctorProfileEditModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box dprof-modal-box">
+      <div class="modal-header">
+        <div class="modal-header-title-group">
+          <div class="dprof-icon-box purple" style="width:34px;height:34px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </div>
+          <div>
+            <h2 class="modal-title">Edit Doctor Profile</h2>
+            <p class="modal-subtitle" style="font-size: 11.5px; color: #94a3b8; margin: 2px 0 0 0;">Update your
+              registered name and contact number</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" id="dprofModalCloseBtn" onclick="closeDoctorProfileEditModal()"
+          aria-label="Close modal">✕</button>
+      </div>
+      <form id="doctorProfileEditForm" class="dprof-edit-form" onsubmit="return false;">
+        <div class="form-group">
+          <label for="dprofEditNameInput" class="form-label">Doctor Full Name</label>
+          <input type="text" id="dprofEditNameInput" class="form-input" required placeholder="e.g. Dr. Admin Doctor" />
+        </div>
+        <div class="form-group">
+          <label for="dprofEditMobileInput" class="form-label">Mobile / Phone Number</label>
+          <input type="text" id="dprofEditMobileInput" class="form-input" placeholder="e.g. +91 98765 43210" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Registered Email (System Identifier • Read-Only)</label>
+          <input type="text" id="dprofEditEmailInput" class="form-input" disabled
+            style="opacity: 0.65; cursor: not-allowed; background: rgba(255, 255, 255, 0.03);" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Doctor ID / User ID (System Assigned • Read-Only)</label>
+          <input type="text" id="dprofEditUidInput" class="form-input" disabled
+            style="opacity: 0.65; cursor: not-allowed; background: rgba(255, 255, 255, 0.03);" />
+        </div>
+        <div id="dprofEditAlert" class="alert-message alert-danger"
+          style="display: none; margin-bottom: 12px; font-size: 13px; padding: 10px 14px; border-radius: 8px;"></div>
+        <div class="modal-actions" style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 18px;">
+          <button type="button" class="btn btn-secondary" id="dprofModalCancelBtn"
+            onclick="closeDoctorProfileEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="dprofModalSaveBtn">
+            <span>Save Changes</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Patient Report Preview Modal -->
+  <div id="doctorReportPreviewModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box drep-modal-box">
+      <div class="modal-header">
+        <div class="modal-header-title-group">
+          <div class="dprof-icon-box purple" style="width:34px;height:34px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+          </div>
+          <div>
+            <h2 class="modal-title" id="drepModalReportTitle">Medical Diagnostic Report</h2>
+            <p class="modal-subtitle" id="drepModalReportSub">TORUS Tele-Operated Ultrasound System • Official Document
+            </p>
+          </div>
+        </div>
+        <div class="drep-modal-header-actions">
+          <span class="drep-badge-ready" id="drepModalStatusBadge">Finalized</span>
+          <button type="button" class="modal-close-btn" id="drepModalCloseBtn" aria-label="Close modal">✕</button>
+        </div>
+      </div>
+
+      <div class="drep-modal-body" id="drepModalBody">
+        <!-- Dynamically rendered patient report document -->
+      </div>
+
+      <div class="modal-actions drep-modal-footer">
+        <button type="button" class="btn btn-secondary" id="drepModalDismissBtn">Close Preview</button>
+        <button type="button" class="btn btn-primary" id="drepModalDownloadPdfBtn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Download PDF Report</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session & Telemetry History Detail Modal -->
+  <div id="doctorSessionDetailModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box dhist-modal-box">
+      <div class="modal-header">
+        <div class="modal-header-title-group">
+          <div class="dprof-icon-box cyan" style="width:34px;height:34px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div>
+            <h2 class="modal-title" id="dhistModalTitle">Ultrasound Procedure Telemetry</h2>
+            <p class="modal-subtitle" id="dhistModalSub">Detailed kinematics, duration, and clinical record</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" id="dhistModalCloseBtn" aria-label="Close modal">✕</button>
+      </div>
+
+      <div class="dhist-modal-body" id="dhistModalBody">
+        <!-- Dynamically rendered session details -->
+      </div>
+
+      <div class="modal-actions dhist-modal-footer">
+        <button type="button" class="btn btn-secondary" id="dhistModalDismissBtn">Close</button>
       </div>
     </div>
   </div>
@@ -2146,7 +3242,7 @@
             <label id="settings-token-wrapper" class="full-width">
               <span>Token</span>
               <input id="token" type="text" placeholder="Enter Agora Token"
-                value="007eJxTYNgtqr/S9M1xU8nZU48f/j81sundxBOtfu9z9rO/ts1Ls9ihwGBkamRpmGhoYphkmGJiYmyYZJ5sbGKYkphiYJycYmKRxPV8cVZDICPDVpZDrIwMEAjiszKU5BeVFjMwAADYlCFJ"
+                value="007eJxTYBA3PffTs+xm/1eT01c+tS6o5zDMTfc21jR+6ugo+9zyXoYCg7mlSaJFiqmRgamBhYmZSaJlUqKxuXmyMVDALNXYNDXHY15WQyAjw52G/0yMDBAI4rMylOQXlRYzMAAAU48fsw=="
                 spellcheck="false" autocomplete="off" />
             </label>
 
