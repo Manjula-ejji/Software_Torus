@@ -2252,21 +2252,15 @@ function showTorusScreen(targetId, recordHistory = true) {
   // Screen specific lifecycle hooks
   if (targetId === "doctor-portal-dashboard") {
     const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
+    const role = isDoc ? "doctor" : "patient";
+    if (typeof hideAllPortalSubViews === "function") {
+      hideAllPortalSubViews();
+    }
+
+    updateSharedPortalHeader(currentAuthenticatedUser, role);
+
     const docContent = document.getElementById("doctorDashboardContent");
     const patContent = document.getElementById("patientDashboardContent");
-    const profContent = document.getElementById("doctorProfileContent");
-    const actContent = document.getElementById("doctorActivityLogContent");
-    if (profContent) profContent.style.display = "none";
-    if (actContent) actContent.style.display = "none";
-
-    const navItems = document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item");
-    navItems.forEach(el => {
-      if (el.getAttribute("data-view") === "dashboard") {
-        el.classList.add("active");
-      } else {
-        el.classList.remove("active");
-      }
-    });
 
     if (isDoc) {
       if (docContent) docContent.style.display = "block";
@@ -2278,9 +2272,19 @@ function showTorusScreen(targetId, recordHistory = true) {
       if (docContent) docContent.style.display = "none";
       if (patContent) patContent.style.display = "flex";
       if (typeof renderPatientDashboard === "function") {
-        renderPatientDashboard(currentAuthenticatedUser || { name: "Patient A", id: "P-12345" });
+        renderPatientDashboard(currentAuthenticatedUser);
       }
     }
+
+    const navItems = document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item");
+    navItems.forEach(el => {
+      const v = el.getAttribute("data-view");
+      if (v === "dashboard" || v === "patient-dashboard") {
+        el.classList.add("active");
+      } else {
+        el.classList.remove("active");
+      }
+    });
   } else if (targetId === "app-dashboard") {
     if (typeof triggerHeaderBootSequence === "function") {
       triggerHeaderBootSequence();
@@ -4133,7 +4137,7 @@ async function setAuthenticatedDoctorSession(doctor) {
   try {
     sessionStorage.setItem("authenticated_doctor", JSON.stringify(currentAuthenticatedUser));
     localStorage.setItem("authenticated_doctor", JSON.stringify(currentAuthenticatedUser));
-  } catch (e) {}
+  } catch (e) { }
 
   // Log doctor authentication event
   if (typeof logDoctorActivity === "function") {
@@ -4495,6 +4499,172 @@ function loadTorusSessions() {
 }
 
 
+// Render Sidebar Navigation Menu specifically tailored to Role (Doctor vs Patient)
+function renderPortalSidebar(role = "doctor") {
+  const navContainer = document.getElementById("docDashSidebarNav");
+  if (!navContainer) return;
+
+  const isPatient = (role === "patient");
+
+  if (isPatient) {
+    navContainer.innerHTML = `
+      <a href="#patient-dashboard" class="ddash-nav-item active" data-view="patient-dashboard">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Dashboard</span>
+      </a>
+
+      <a href="#patient-profile" class="ddash-nav-item" data-view="patient-profile">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Patient Profile</span>
+      </a>
+
+      <a href="#patient-appointments" class="ddash-nav-item" data-view="patient-appointments">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Appointments</span>
+      </a>
+
+      <a href="#patient-diagnostic-reports" class="ddash-nav-item" data-view="patient-diagnostic-reports">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Diagnostic Reports</span>
+      </a>
+
+      <a href="#patient-history" class="ddash-nav-item" data-view="patient-history">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <polyline points="3 3 3 8 8 8"></polyline>
+            <polyline points="12 7 12 12 15 15"></polyline>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Examination History</span>
+      </a>
+
+      <a href="#logout" id="docDashSidebarLogoutBtn" class="ddash-nav-item ddash-nav-logout" data-view="logout">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Logout</span>
+      </a>
+    `;
+  } else {
+    navContainer.innerHTML = `
+      <a href="#dashboard" class="ddash-nav-item active" data-view="dashboard">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Dashboard</span>
+      </a>
+
+      <a href="#profile" class="ddash-nav-item" data-view="doctor-profile">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Doctor Profile</span>
+      </a>
+
+      <a href="#activity-log" class="ddash-nav-item" data-view="activity-log">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Activity Log</span>
+      </a>
+
+      <a href="#insights" class="ddash-nav-item" data-view="insights">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Insights</span>
+      </a>
+
+      <a href="#patient-reports" class="ddash-nav-item" data-view="patient-reports">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Patient Reports</span>
+      </a>
+
+      <a href="#history" class="ddash-nav-item" data-view="history">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <polyline points="3 3 3 8 8 8"></polyline>
+            <polyline points="12 7 12 12 15 15"></polyline>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">History</span>
+      </a>
+
+      <a href="#logout" id="docDashSidebarLogoutBtn" class="ddash-nav-item ddash-nav-logout" data-view="logout">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Logout</span>
+      </a>
+    `;
+  }
+
+  // Re-attach sidebar nav click events
+  if (typeof bindSidebarNavEvents === "function") {
+    bindSidebarNavEvents();
+  }
+}
+window.renderPortalSidebar = renderPortalSidebar;
+
 // Update Shared Topbar Header and Sidebar Profile (for Doctor and Patient)
 function updateSharedPortalHeader(user, role = "doctor") {
   const avatarEl = document.getElementById("docDashAvatarChip");
@@ -4507,6 +4677,9 @@ function updateSharedPortalHeader(user, role = "doctor") {
   const sidebarDocName = document.getElementById("sidebarDocName");
   const sidebarDocEmail = document.getElementById("sidebarDocEmail");
   const sidebarDocRole = document.getElementById("sidebarDocRole");
+
+  const adhocBtn = document.getElementById("docDashAdhocScanBtn");
+  const hapticChip = document.getElementById("docDashHapticChip");
 
   const isPatient = (role === "patient" || user?.role === "patient");
   const displayName = user?.name || (isPatient ? "Patient User" : "Admin Doctor");
@@ -4543,6 +4716,13 @@ function updateSharedPortalHeader(user, role = "doctor") {
   if (sidebarDocName) sidebarDocName.textContent = displayName;
   if (sidebarDocEmail) sidebarDocEmail.textContent = displayEmail;
   if (sidebarDocRole) sidebarDocRole.textContent = `Role: ${isPatient ? "patient" : "doctor"}`;
+
+  // Ensure Header Top Controls (Haptic Pad status & Adhoc Scan) are visible
+  if (adhocBtn) adhocBtn.style.display = "inline-flex";
+  if (hapticChip) hapticChip.style.display = "inline-flex";
+
+  // Re-render sidebar items to guarantee exact role navigation
+  renderPortalSidebar(isPatient ? "patient" : "doctor");
 }
 window.updateSharedPortalHeader = updateSharedPortalHeader;
 
@@ -4551,68 +4731,680 @@ function updateDoctorPortalHeader(doctor) {
 }
 window.updateDoctorPortalHeader = updateDoctorPortalHeader;
 
-// Render Patient Dashboard Interactive Handlers (Image 3)
+// ============================================================
+// PATIENT PORTAL DATA RETRIEVAL & RENDERING FUNCTIONS
+// ============================================================
+
+function getPatientSessionData(patient) {
+  loadTorusSessions();
+  const currentUid = (patient?.uid || patient?.id || "4001").toString().trim().toLowerCase();
+  const currentName = (patient?.name || "Patient User").trim().toLowerCase();
+
+  const allActive = window.torusSessions?.active || [];
+  const allUpcoming = window.torusSessions?.upcoming || [];
+  const allCompleted = window.torusSessions?.completed || [];
+
+  // Match active session
+  let activeSession = allActive.find(s =>
+    (s.patientId && s.patientId.toLowerCase() === currentUid) ||
+    (s.patientName && s.patientName.toLowerCase() === currentName)
+  );
+  if (!activeSession && allActive.length > 0) {
+    activeSession = allActive[0]; // Default active demonstration
+  }
+
+  // Match upcoming appointments
+  let upcomingList = allUpcoming.filter(s =>
+    (s.patientId && s.patientId.toLowerCase() === currentUid) ||
+    (s.patientName && s.patientName.toLowerCase() === currentName)
+  );
+  if (upcomingList.length === 0 && allUpcoming.length > 0) {
+    upcomingList = [allUpcoming[0]];
+  }
+
+  // Match completed examinations & reports
+  let completedList = allCompleted.filter(s =>
+    (s.patientId && s.patientId.toLowerCase() === currentUid) ||
+    (s.patientName && s.patientName.toLowerCase() === currentName)
+  );
+  if (completedList.length === 0 && allCompleted.length > 0) {
+    completedList = [allCompleted[0]];
+  }
+
+  return { activeSession, upcomingList, completedList };
+}
+window.getPatientSessionData = getPatientSessionData;
+
+// Render Patient Dashboard Landing Page
 function renderPatientDashboard(patient) {
-  const adhocCard = document.getElementById("patAdhocScanCard");
-  const schedCard = document.getElementById("patScheduleScanCard");
-  const regCard = document.getElementById("patRegisterCard");
+  const currentPatient = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001", email: "patient@gmail.com" };
+  const { activeSession, upcomingList, completedList } = getPatientSessionData(currentPatient);
 
-  if (adhocCard) {
-    adhocCard.onclick = () => {
-      openDeviceModal();
-    };
-  }
+  // Update Hero Banner
+  const heroNameEl = document.getElementById("patHeroPatientName");
+  const heroUidEl = document.getElementById("patHeroPatientId");
+  if (heroNameEl) heroNameEl.textContent = `Welcome, ${currentPatient.name || "Patient User"}`;
+  if (heroUidEl) heroUidEl.textContent = currentPatient.uid || "4001";
 
-  if (schedCard) {
-    schedCard.onclick = () => {
-      document.querySelectorAll(".pdash-action-card").forEach(c => c.classList.remove("active-glow"));
-      schedCard.classList.add("active-glow");
-      if (typeof showToastAlert === "function") {
-        showToastAlert("Schedule Scan: Plan future ultrasound examinations.", "info");
-      }
-    };
-  }
-
-  if (regCard) {
-    regCard.onclick = () => {
-      openPatientClinicalRegistration();
-    };
-  }
-
-  // Ensure default metric numbers match Image 3
+  // Update Stats Cards
   const statActive = document.getElementById("patStatActiveSessions");
-  const statWaiting = document.getElementById("patStatWaiting");
   const statUpcoming = document.getElementById("patStatUpcomingSessions");
   const statCompleted = document.getElementById("patStatCompletedSessions");
+  const statReports = document.getElementById("patStatAvailableReports");
 
-  if (statActive) statActive.textContent = "3";
-  if (statWaiting) statWaiting.textContent = "2";
-  if (statUpcoming) statUpcoming.textContent = "3";
-  if (statCompleted) statCompleted.textContent = "12";
+  if (statActive) statActive.textContent = activeSession ? "1 Active" : "0 Active";
+  if (statUpcoming) statUpcoming.textContent = `${upcomingList.length} Scheduled`;
+  if (statCompleted) statCompleted.textContent = `${completedList.length} Completed`;
+  if (statReports) statReports.textContent = `${completedList.filter(c => c.reportStatus === "ready" || !c.reportStatus).length} Finalized`;
+
+  // Render Active Examination Card in Left Panel
+  const activeWrap = document.getElementById("patActiveSessionCardWrap");
+  if (activeWrap) {
+    if (activeSession) {
+      activeWrap.innerHTML = `
+        <div class="pdash-session-card">
+          <div class="pdash-session-info">
+            <div class="pdash-session-name">${activeSession.scanType} Ultrasound Examination</div>
+            <div class="pdash-session-device">Physician: <strong>${activeSession.doctorName || "Dr. Admin Doctor"}</strong> • ${activeSession.diagnosticCenter || "Apex Diagnostic Center"}</div>
+          </div>
+          <div class="pdash-session-right">
+            <span class="pdash-status-pill pdash-status-pill--progress">IN PROGRESS</span>
+            <span class="pdash-session-duration">${activeSession.duration || "12:34"}</span>
+          </div>
+        </div>
+      `;
+    } else {
+      activeWrap.innerHTML = `
+        <div class="pdash-session-card" style="opacity: 0.85; justify-content: center; text-align: center; padding: 22px;">
+          <span style="font-size: 13px; color: #94a3b8;">No active ultrasound examination in progress at this time.</span>
+        </div>
+      `;
+    }
+  }
+
+  // Render Recent Diagnostic Report in Left Panel
+  const recentReportWrap = document.getElementById("patRecentReportCardWrap");
+  if (recentReportWrap) {
+    if (completedList.length > 0) {
+      const topRep = completedList[0];
+      recentReportWrap.innerHTML = `
+        <div class="pdash-session-card">
+          <div class="pdash-session-info">
+            <div class="pdash-session-name">${topRep.scanType} Scan Report (${topRep.reportId || "REP-2026-001"})</div>
+            <div class="pdash-session-device">Conducted on ${topRep.sessionDate || "2026-09-14"} • Signed by ${topRep.doctorName || "Dr. Admin Doctor"}</div>
+          </div>
+          <div class="pdash-session-right">
+            <span class="pdash-status-pill pdash-status-pill--completed">Finalized</span>
+            <button type="button" class="pdash-btn-card-action cyan" onclick="openPatientReportViewModal('${topRep.reportId || "REP-2026-001"}')">
+              <span>View Report</span>
+            </button>
+            <button type="button" class="pdash-btn-card-action" onclick="downloadPatientReport('${topRep.reportId || "REP-2026-001"}')">
+              <span>Download</span>
+            </button>
+          </div>
+        </div>
+      `;
+    } else {
+      recentReportWrap.innerHTML = `
+        <div class="pdash-session-card" style="opacity: 0.85; justify-content: center; text-align: center; padding: 22px;">
+          <span style="font-size: 13px; color: #94a3b8;">No finalized diagnostic reports available yet.</span>
+        </div>
+      `;
+    }
+  }
+
+  // Render Upcoming Appointments in Right Panel
+  const upcomingWrap = document.getElementById("patUpcomingAppointmentsList");
+  if (upcomingWrap) {
+    if (upcomingList.length > 0) {
+      upcomingWrap.innerHTML = upcomingList.map(appt => `
+        <div class="pdash-session-card">
+          <div class="pdash-session-info">
+            <div class="pdash-session-name">${appt.scanType} Ultrasound Scan</div>
+            <div class="pdash-session-device">Site: ${appt.diagnosticCenter || "Apex Diagnostic Center"} • Time: <strong>${appt.scheduledTime || "10:30 AM"}</strong></div>
+          </div>
+          <div class="pdash-session-right">
+            <span class="pdash-status-pill pdash-status-pill--scheduled">Confirmed</span>
+            <button type="button" class="pdash-btn-card-action" onclick="openPatientAppointmentModal('${appt.sessionId || "S-002"}')">
+              <span>Details</span>
+            </button>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      upcomingWrap.innerHTML = `
+        <div class="pdash-session-card" style="opacity: 0.85; justify-content: center; text-align: center; padding: 22px;">
+          <span style="font-size: 13px; color: #94a3b8;">No scheduled appointments found on record.</span>
+        </div>
+      `;
+    }
+  }
 }
 window.renderPatientDashboard = renderPatientDashboard;
 
-// Open Patient Clinical Registration Form (Reference Image 1)
-function openPatientClinicalRegistration() {
-  showTorusScreen("patient-clinical-registration-screen");
+// Render Patient Profile View
+function renderPatientProfile(patient) {
+  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001", email: "patient@gmail.com", mobile: "+91 98765 43210" };
 
-  // Initialize appointment date to today
-  const apptDateInput = document.getElementById("pcrApptDate");
-  if (apptDateInput && !apptDateInput.value) {
-    const todayStr = new Date().toISOString().split("T")[0];
-    apptDateInput.value = todayStr;
+  const nameEl = document.getElementById("patProfName");
+  const avatarEl = document.getElementById("patProfAvatarInitials");
+  const uidMeta = document.getElementById("patProfMetaUid");
+  const emailMeta = document.getElementById("patProfMetaEmail");
+  const statusMeta = document.getElementById("patProfMetaStatus");
+
+  const cardName = document.getElementById("patCardName");
+  const cardUid = document.getElementById("patCardUid");
+  const cardEmail = document.getElementById("patCardEmail");
+  const cardMobile = document.getElementById("patCardMobile");
+  const cardDob = document.getElementById("patCardDob");
+  const cardGender = document.getElementById("patCardGender");
+
+  const name = current.name || "Patient User";
+  const initials = name.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase() || "PT";
+
+  if (nameEl) nameEl.textContent = name;
+  if (avatarEl) avatarEl.textContent = initials;
+  if (uidMeta) uidMeta.textContent = current.uid || "4001";
+  if (emailMeta) emailMeta.textContent = current.email || "patient@gmail.com";
+  if (statusMeta) statusMeta.textContent = "Active";
+
+  if (cardName) cardName.textContent = name;
+  if (cardUid) cardUid.textContent = current.uid || "4001";
+  if (cardEmail) cardEmail.textContent = current.email || "patient@gmail.com";
+  if (cardMobile) cardMobile.textContent = current.mobile || "+91 98765 43210";
+  if (cardDob) cardDob.textContent = current.dob || "Not Specified";
+  if (cardGender) cardGender.textContent = current.gender || "Not Specified";
+}
+window.renderPatientProfile = renderPatientProfile;
+
+// Render Patient Appointments View
+function renderPatientAppointments(patient, query = "", typeFilter = "all") {
+  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
+  const { upcomingList } = getPatientSessionData(current);
+
+  const listEl = document.getElementById("patApptList");
+  const emptyEl = document.getElementById("patApptEmptyState");
+  const totalCountEl = document.getElementById("patApptTotalCount");
+  const confirmedCountEl = document.getElementById("patApptConfirmedCount");
+
+  const q = (query || "").trim().toLowerCase();
+  const filtered = upcomingList.filter(item => {
+    if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
+    if (q) {
+      const match = (item.scanType && item.scanType.toLowerCase().includes(q)) ||
+        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q)) ||
+        (item.scheduledTime && item.scheduledTime.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  if (totalCountEl) totalCountEl.textContent = String(filtered.length);
+  if (confirmedCountEl) confirmedCountEl.textContent = String(filtered.length);
+
+  if (!listEl) return;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.style.display = "flex";
+    return;
   }
 
-  hideAlertMessage("patClinicalRegAlert");
-  setupPatientClinicalRegListeners();
-}
-window.openPatientClinicalRegistration = openPatientClinicalRegistration;
+  if (emptyEl) emptyEl.style.display = "none";
 
-// Close Patient Clinical Registration and return to Previous Screen (Patient Dashboard)
-function closePatientClinicalRegistration() {
-  navigateBackTorus();
+  listEl.innerHTML = filtered.map(item => {
+    let scanClass = "purple";
+    if (item.scanType === "Cardiac") scanClass = "cyan";
+    else if (item.scanType === "Pelvic") scanClass = "emerald";
+
+    return `
+      <div class="drep-row">
+        <div class="drep-date-cell" style="flex: 1.2;">
+          <span class="drep-date-main">2026-09-17</span>
+          <span class="drep-date-time">${item.scheduledTime || "10:30 AM"}</span>
+        </div>
+        <div>
+          <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
+        </div>
+        <div class="drep-doc-cell" style="flex: 1.2;">
+          <span class="drep-doc-name">Dr. Admin Doctor</span>
+          <span class="drep-doc-session">Ultrasound Specialist</span>
+        </div>
+        <div class="drep-date-cell" style="flex: 1.2;">
+          <span class="drep-date-main">${item.diagnosticCenter || "Apex Diagnostic Center"}</span>
+          <span class="drep-date-time">Room 3 • Robotic Suite</span>
+        </div>
+        <div>
+          <span class="drep-badge-ready">Confirmed</span>
+        </div>
+        <div class="drep-actions-cell">
+          <button type="button" class="drep-btn-view" onclick="openPatientAppointmentModal('${item.sessionId || "S-002"}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <span>Details</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
-window.closePatientClinicalRegistration = closePatientClinicalRegistration;
+window.renderPatientAppointments = renderPatientAppointments;
+
+// Render Patient Diagnostic Reports View
+function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all") {
+  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
+  const { completedList } = getPatientSessionData(current);
+
+  const listEl = document.getElementById("patRepList");
+  const emptyEl = document.getElementById("patRepEmptyState");
+  const totalCountEl = document.getElementById("patRepTotalCount");
+  const finalizedCountEl = document.getElementById("patRepFinalizedCount");
+
+  const q = (query || "").trim().toLowerCase();
+  const filtered = completedList.filter(item => {
+    if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
+    if (q) {
+      const match = (item.reportId && item.reportId.toLowerCase().includes(q)) ||
+        (item.scanType && item.scanType.toLowerCase().includes(q)) ||
+        (item.doctorName && item.doctorName.toLowerCase().includes(q)) ||
+        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  if (totalCountEl) totalCountEl.textContent = String(filtered.length);
+  if (finalizedCountEl) finalizedCountEl.textContent = String(filtered.filter(c => c.reportStatus === "ready" || !c.reportStatus).length);
+
+  if (!listEl) return;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.style.display = "flex";
+    return;
+  }
+
+  if (emptyEl) emptyEl.style.display = "none";
+
+  listEl.innerHTML = filtered.map(item => {
+    let scanClass = "purple";
+    if (item.scanType === "Cardiac") scanClass = "cyan";
+    else if (item.scanType === "Pelvic") scanClass = "emerald";
+
+    const repId = item.reportId || "REP-2026-001";
+
+    return `
+      <div class="drep-row">
+        <div class="drep-patient-cell">
+          <div class="drep-patient-avatar ${scanClass}">DR</div>
+          <div>
+            <p class="drep-patient-name">${repId}</p>
+            <p class="drep-patient-id">Official Clinical Record</p>
+          </div>
+        </div>
+        <div>
+          <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
+        </div>
+        <div class="drep-date-cell">
+          <span class="drep-date-main">${item.sessionDate || "2026-09-14"}</span>
+          <span class="drep-date-time">${item.sessionTime || "09:15 AM"}</span>
+        </div>
+        <div class="drep-doc-cell">
+          <span class="drep-doc-name">${item.doctorName || "Dr. Admin Doctor"}</span>
+          <span class="drep-doc-session">${item.diagnosticCenter || "Apex Diagnostic Center"}</span>
+        </div>
+        <div>
+          <span class="drep-badge-ready">Finalized</span>
+        </div>
+        <div class="drep-actions-cell">
+          <button type="button" class="drep-btn-view" onclick="openPatientReportViewModal('${repId}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <span>View</span>
+          </button>
+          <button type="button" class="drep-btn-download" onclick="downloadPatientReport('${repId}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+window.renderPatientDiagnosticReports = renderPatientDiagnosticReports;
+
+// Render Patient Examination History View
+function renderPatientHistory(patient, query = "", typeFilter = "all") {
+  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
+  const { completedList } = getPatientSessionData(current);
+
+  const listEl = document.getElementById("patHistList");
+  const emptyEl = document.getElementById("patHistEmptyState");
+  const totalCountEl = document.getElementById("patHistTotalCount");
+  const durationTotalEl = document.getElementById("patHistDurationTotal");
+
+  const q = (query || "").trim().toLowerCase();
+  const filtered = completedList.filter(item => {
+    if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
+    if (q) {
+      const match = (item.scanType && item.scanType.toLowerCase().includes(q)) ||
+        (item.doctorName && item.doctorName.toLowerCase().includes(q)) ||
+        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  if (totalCountEl) totalCountEl.textContent = String(filtered.length);
+  if (durationTotalEl) durationTotalEl.textContent = filtered.length > 0 ? (filtered[0].duration || "22m") : "0m";
+
+  if (!listEl) return;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.style.display = "flex";
+    return;
+  }
+
+  if (emptyEl) emptyEl.style.display = "none";
+
+  listEl.innerHTML = filtered.map(item => {
+    let scanClass = "purple";
+    if (item.scanType === "Cardiac") scanClass = "cyan";
+    else if (item.scanType === "Pelvic") scanClass = "emerald";
+
+    const repId = item.reportId || "REP-2026-001";
+
+    return `
+      <div class="dhist-row">
+        <div class="dhist-date-cell" style="flex: 1.2;">
+          <span class="dhist-date-main">${item.sessionDate || "2026-09-14"}</span>
+          <span class="dhist-date-time">${item.sessionTime || "09:15 AM"}</span>
+        </div>
+        <div>
+          <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
+        </div>
+        <div class="dhist-patient-cell" style="flex: 1.2;">
+          <div>
+            <p class="dhist-patient-name">${item.doctorName || "Dr. Admin Doctor"}</p>
+            <p class="dhist-patient-id">${item.diagnosticCenter || "Apex Diagnostic Center"}</p>
+          </div>
+        </div>
+        <div>
+          <span class="dhist-duration-pill">${item.duration || "22:15"}</span>
+        </div>
+        <div>
+          <span class="drep-badge-ready">Report Available</span>
+        </div>
+        <div class="dhist-actions-cell">
+          <button type="button" class="dhist-btn-view" onclick="openPatientReportViewModal('${repId}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <span>View Report</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+window.renderPatientHistory = renderPatientHistory;
+
+// ============================================================
+// PATIENT MODAL HANDLERS
+// ============================================================
+
+function openPatientProfileEditModal() {
+  const modal = document.getElementById("patientProfileEditModal");
+  const nameInput = document.getElementById("patProfEditNameInput");
+  const mobileInput = document.getElementById("patProfEditMobileInput");
+  const emailInput = document.getElementById("patProfEditEmailInput");
+  const uidInput = document.getElementById("patProfEditUidInput");
+  const alertEl = document.getElementById("patProfEditAlert");
+
+  const current = currentAuthenticatedUser || { name: "Patient User", uid: "4001", email: "patient@gmail.com", mobile: "+91 98765 43210" };
+
+  if (nameInput) nameInput.value = current.name || "Patient User";
+  if (mobileInput) mobileInput.value = current.mobile || "+91 98765 43210";
+  if (emailInput) emailInput.value = current.email || "patient@gmail.com";
+  if (uidInput) uidInput.value = current.uid || "4001";
+  if (alertEl) alertEl.style.display = "none";
+
+  if (modal) {
+    modal.classList.add("active");
+    modal.style.display = "flex";
+  }
+}
+window.openPatientProfileEditModal = openPatientProfileEditModal;
+
+function closePatientProfileEditModal() {
+  const modal = document.getElementById("patientProfileEditModal");
+  if (modal) {
+    modal.classList.remove("active");
+    modal.style.display = "none";
+  }
+}
+window.closePatientProfileEditModal = closePatientProfileEditModal;
+
+function initPatientProfileEditModal() {
+  const form = document.getElementById("patientProfileEditForm");
+  if (!form) return;
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const nameInput = document.getElementById("patProfEditNameInput");
+    const mobileInput = document.getElementById("patProfEditMobileInput");
+    const alertEl = document.getElementById("patProfEditAlert");
+
+    const newName = nameInput ? nameInput.value.trim() : "";
+    const newMobile = mobileInput ? mobileInput.value.trim() : "";
+
+    if (!newName) {
+      if (alertEl) {
+        alertEl.textContent = "Please provide your Full Name.";
+        alertEl.style.display = "block";
+      }
+      return;
+    }
+
+    if (!currentAuthenticatedUser) {
+      currentAuthenticatedUser = { name: newName, role: "patient", uid: "4001", email: "patient@gmail.com" };
+    }
+
+    currentAuthenticatedUser.name = newName;
+    currentAuthenticatedUser.mobile = newMobile;
+
+    try {
+      sessionStorage.setItem("authenticated_patient", JSON.stringify(currentAuthenticatedUser));
+      localStorage.setItem("authenticated_patient", JSON.stringify(currentAuthenticatedUser));
+    } catch (err) { }
+
+    updateSharedPortalHeader(currentAuthenticatedUser, "patient");
+    renderPatientProfile(currentAuthenticatedUser);
+    renderPatientDashboard(currentAuthenticatedUser);
+    closePatientProfileEditModal();
+
+    if (typeof showToastAlert === "function") {
+      showToastAlert("Patient profile details updated successfully.", "success");
+    }
+  };
+}
+
+function openPatientAppointmentModal(apptId) {
+  const modal = document.getElementById("patientAppointmentModal");
+  const body = document.getElementById("patApptModalBody");
+  if (!modal || !body) return;
+
+  loadTorusSessions();
+  const allUpcoming = window.torusSessions?.upcoming || [];
+  const appt = allUpcoming.find(a => a.sessionId === apptId) || allUpcoming[0] || {
+    sessionId: "APT-2026-002",
+    scanType: "Abdominal",
+    scheduledTime: "10:30 AM",
+    diagnosticCenter: "Apex Diagnostic Center",
+    clinicalNotes: "Fasting required 6-8 hours prior to examination."
+  };
+
+  body.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 10px;">
+        <div>
+          <span style="font-size: 11px; font-weight: 700; color: #c084fc; text-transform: uppercase;">Appointment ID</span>
+          <p style="font-size: 16px; font-weight: 700; color: #ffffff; margin: 2px 0 0 0;">${appt.sessionId}</p>
+        </div>
+        <span class="drep-badge-ready">Confirmed</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px;">
+          <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">EXAMINATION TYPE</span>
+          <p style="font-size: 13.5px; font-weight: 700; color: #22d3ee; margin: 4px 0 0 0;">${appt.scanType} Ultrasound</p>
+        </div>
+        <div style="padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px;">
+          <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">SCHEDULED TIME</span>
+          <p style="font-size: 13.5px; font-weight: 700; color: #ffffff; margin: 4px 0 0 0;">2026-09-17 • ${appt.scheduledTime || "10:30 AM"}</p>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px;">
+          <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">ASSIGNED DOCTOR</span>
+          <p style="font-size: 13.5px; font-weight: 700; color: #ffffff; margin: 4px 0 0 0;">Dr. Admin Doctor</p>
+        </div>
+        <div style="padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px;">
+          <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">DIAGNOSTIC CENTER</span>
+          <p style="font-size: 13.5px; font-weight: 700; color: #ffffff; margin: 4px 0 0 0;">${appt.diagnosticCenter || "Apex Diagnostic Center"}</p>
+        </div>
+      </div>
+
+      <div style="padding: 14px; background: rgba(6, 182, 212, 0.06); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 8px;">
+        <span style="font-size: 11px; font-weight: 700; color: #22d3ee; text-transform: uppercase;">Preparation Instructions</span>
+        <p style="font-size: 12.5px; color: #cbd5e1; margin: 4px 0 0 0; line-height: 1.5;">${appt.clinicalNotes || "Please arrive 15 minutes before your scheduled appointment. Maintain standard clinical preparation."}</p>
+      </div>
+    </div>
+  `;
+
+  modal.classList.add("active");
+  modal.style.display = "flex";
+}
+window.openPatientAppointmentModal = openPatientAppointmentModal;
+
+function closePatientAppointmentModal() {
+  const modal = document.getElementById("patientAppointmentModal");
+  if (modal) {
+    modal.classList.remove("active");
+    modal.style.display = "none";
+  }
+}
+window.closePatientAppointmentModal = closePatientAppointmentModal;
+
+function openPatientReportViewModal(reportId) {
+  if (typeof openDoctorReportModal === "function") {
+    openDoctorReportModal(reportId);
+  }
+}
+window.openPatientReportViewModal = openPatientReportViewModal;
+
+function downloadPatientReport(reportId) {
+  if (typeof downloadDoctorReport === "function") {
+    downloadDoctorReport(reportId);
+  }
+}
+window.downloadPatientReport = downloadPatientReport;
+
+function initPatientControls() {
+  initPatientProfileEditModal();
+
+  // Appointments Search & Filter
+  const apptSearch = document.getElementById("patApptSearchInput");
+  const apptClear = document.getElementById("patApptSearchClearBtn");
+  const apptFilter = document.getElementById("patApptScanTypeFilter");
+  const apptRefresh = document.getElementById("patApptRefreshBtn");
+
+  if (apptSearch) {
+    apptSearch.oninput = () => {
+      if (apptClear) apptClear.style.display = apptSearch.value ? "block" : "none";
+      renderPatientAppointments(currentAuthenticatedUser, apptSearch.value, apptFilter?.value || "all");
+    };
+  }
+  if (apptClear) {
+    apptClear.onclick = () => {
+      apptSearch.value = "";
+      apptClear.style.display = "none";
+      renderPatientAppointments(currentAuthenticatedUser, "", apptFilter?.value || "all");
+    };
+  }
+  if (apptFilter) {
+    apptFilter.onchange = () => {
+      renderPatientAppointments(currentAuthenticatedUser, apptSearch?.value || "", apptFilter.value);
+    };
+  }
+  if (apptRefresh) {
+    apptRefresh.onclick = () => {
+      renderPatientAppointments(currentAuthenticatedUser, apptSearch?.value || "", apptFilter?.value || "all");
+      if (typeof showToastAlert === "function") showToastAlert("Appointments list updated.", "info");
+    };
+  }
+
+  // Reports Search & Filter
+  const repSearch = document.getElementById("patRepSearchInput");
+  const repClear = document.getElementById("patRepSearchClearBtn");
+  const repFilter = document.getElementById("patRepScanTypeFilter");
+  const repRefresh = document.getElementById("patRepRefreshBtn");
+
+  if (repSearch) {
+    repSearch.oninput = () => {
+      if (repClear) repClear.style.display = repSearch.value ? "block" : "none";
+      renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch.value, repFilter?.value || "all");
+    };
+  }
+  if (repClear) {
+    repClear.onclick = () => {
+      repSearch.value = "";
+      repClear.style.display = "none";
+      renderPatientDiagnosticReports(currentAuthenticatedUser, "", repFilter?.value || "all");
+    };
+  }
+  if (repFilter) {
+    repFilter.onchange = () => {
+      renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch?.value || "", repFilter.value);
+    };
+  }
+  if (repRefresh) {
+    repRefresh.onclick = () => {
+      renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch?.value || "", repFilter?.value || "all");
+      if (typeof showToastAlert === "function") showToastAlert("Diagnostic reports list updated.", "info");
+    };
+  }
+
+  // History Search & Filter
+  const histSearch = document.getElementById("patHistSearchInput");
+  const histClear = document.getElementById("patHistSearchClearBtn");
+  const histFilter = document.getElementById("patHistScanTypeFilter");
+  const histRefresh = document.getElementById("patHistRefreshBtn");
+
+  if (histSearch) {
+    histSearch.oninput = () => {
+      if (histClear) histClear.style.display = histSearch.value ? "block" : "none";
+      renderPatientHistory(currentAuthenticatedUser, histSearch.value, histFilter?.value || "all");
+    };
+  }
+  if (histClear) {
+    histClear.onclick = () => {
+      histSearch.value = "";
+      histClear.style.display = "none";
+      renderPatientHistory(currentAuthenticatedUser, "", histFilter?.value || "all");
+    };
+  }
+  if (histFilter) {
+    histFilter.onchange = () => {
+      renderPatientHistory(currentAuthenticatedUser, histSearch?.value || "", histFilter.value);
+    };
+  }
+  if (histRefresh) {
+    histRefresh.onclick = () => {
+      renderPatientHistory(currentAuthenticatedUser, histSearch?.value || "", histFilter?.value || "all");
+      if (typeof showToastAlert === "function") showToastAlert("Examination history updated.", "info");
+    };
+  }
+}
+window.initPatientControls = initPatientControls;
 
 let isPcrListenersAttached = false;
 function setupPatientClinicalRegListeners() {
@@ -4863,6 +5655,16 @@ function joinClinicalSession(sessionId) {
     updateLiveConsultationDeviceDisplay(session.deviceId);
   }
 
+  if (typeof logDoctorActivity === "function") {
+    logDoctorActivity(
+      "session",
+      "Ultrasound Session Started",
+      `Clinical consultation session started for ${session.patientName || "Patient"} (${session.patientId || "P-12345"}) on ${session.deviceId || "TORUS-A12"}.`,
+      "Active",
+      session.sessionId || "S-001"
+    );
+  }
+
   showTorusScreen("app-dashboard");
 }
 
@@ -4888,6 +5690,16 @@ function rejoinClinicalSession(sessionId) {
     updateLiveConsultationDeviceDisplay(session.deviceId);
   }
 
+  if (typeof logDoctorActivity === "function") {
+    logDoctorActivity(
+      "session",
+      "Patient Session Joined",
+      `Rejoined active clinical consultation for ${session.patientName || "Patient"} (${session.patientId || "P-12345"}).`,
+      "Active",
+      session.sessionId || "S-001"
+    );
+  }
+
   showTorusScreen("app-dashboard");
 }
 
@@ -4908,7 +5720,7 @@ let hapticModalDismissed = false;
 // Development-only override hook for testing
 let devHapticMockResult = null; // true = force success (TEST 1), false = force fail (TEST 2), null = real flow
 
-window.setHapticPadDevMockResult = function(val) {
+window.setHapticPadDevMockResult = function (val) {
   devHapticMockResult = val;
   console.log("[HapticPad Dev] Mock result override set to:", val);
 };
@@ -4922,7 +5734,7 @@ try {
   } else if (hapticParam === "fail" || hapticParam === "disconnected") {
     devHapticMockResult = false;
   }
-} catch (e) {}
+} catch (e) { }
 
 /**
  * Haptic Pad Connection Service
@@ -5036,6 +5848,7 @@ let hapticLiveDisconnectTimer = null;
  * Manages modal visibility for Connecting and Not Connected states.
  */
 function showHapticConnectingModal() {
+  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (hapticLiveDisconnectTimer) {
     clearTimeout(hapticLiveDisconnectTimer);
     hapticLiveDisconnectTimer = null;
@@ -5051,6 +5864,7 @@ function showHapticConnectingModal() {
 }
 
 function showHapticErrorModal() {
+  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (hapticLiveDisconnectTimer) {
     clearTimeout(hapticLiveDisconnectTimer);
     hapticLiveDisconnectTimer = null;
@@ -5061,7 +5875,7 @@ function showHapticErrorModal() {
   if (!overlay || !errModal) return;
 
   if (connModal) connModal.style.display = "none";
-  
+
   // Ensure OK button is visible for manual / initial connection modal
   const errFooter = errModal.querySelector(".haptic-modal-footer");
   if (errFooter) errFooter.style.display = "flex";
@@ -5075,6 +5889,7 @@ function showHapticErrorModal() {
  * Automatically closes after approximately 3 seconds without requiring user click.
  */
 function showHapticLiveDisconnectAlert() {
+  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (hapticLiveDisconnectTimer) {
     clearTimeout(hapticLiveDisconnectTimer);
     hapticLiveDisconnectTimer = null;
@@ -5131,6 +5946,7 @@ function startHapticLiveMonitoring() {
     // Only monitor if dashboard is currently visible and not during active manual modal connection
     const docPortalDash = document.getElementById("doctor-portal-dashboard");
     if (!docPortalDash || docPortalDash.style.display === "none") return;
+    if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
     if (isHapticConnectionInProgress) return;
 
     const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
@@ -5143,6 +5959,10 @@ function startHapticLiveMonitoring() {
         currentHapticState = HAPTIC_STATE.CONNECTED;
         setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: res.port });
         closeHapticModals();
+
+        if (typeof logDoctorActivity === "function") {
+          logDoctorActivity("hardware", "Haptic Pad Connected", `Haptic controller hardware detected and synchronized on ${res.port || "USB"}.`, "Connected", "TORUS-H01");
+        }
       }
     } else {
       if (wasConnected) {
@@ -5151,6 +5971,10 @@ function startHapticLiveMonitoring() {
         currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
         setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
         showHapticLiveDisconnectAlert();
+
+        if (typeof logDoctorActivity === "function") {
+          logDoctorActivity("hardware", "Haptic Pad Disconnected", "Haptic telemetry controller disconnected from local serial bus.", "Disconnected", "TORUS-H01");
+        }
       } else {
         // Device remains disconnected; maintain state without showing duplicate popups
         if (currentHapticState !== HAPTIC_STATE.NOT_CONNECTED) {
@@ -5183,6 +6007,7 @@ function stopHapticLiveMonitoring() {
  * 5. On dismiss: leaves dashboard accessible without repeated popups.
  */
 async function initiateHapticPadConnection(options = {}) {
+  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (isHapticConnectionInProgress) return;
   isHapticConnectionInProgress = true;
 
@@ -5204,6 +6029,9 @@ async function initiateHapticPadConnection(options = {}) {
     closeHapticModals();
     setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: result.port });
     console.log("[HAPTIC] Device status: CONNECTED (Port: " + (result.port || "USB") + ")");
+    if (typeof logDoctorActivity === "function") {
+      logDoctorActivity("hardware", "Haptic Pad Connected", `Haptic controller hardware detected and synchronized on ${result.port || "USB"}.`, "Connected", "TORUS-H01");
+    }
   } else {
     // 3. FAILURE FLOW: Show Error modal, update header to red not connected
     setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
@@ -5925,6 +6753,16 @@ function handleConnectSelectedDevice() {
   // Show Toast notification
   showToastNotification(`Connected to ${connectedId} successfully`);
 
+  if (typeof logDoctorActivity === "function") {
+    logDoctorActivity(
+      "session",
+      "Adhoc Scan Initiated",
+      `Adhoc robotic ultrasound examination initialized with ${connectedId} (${targetDevice ? targetDevice.hospital : "Diagnostic Center"}).`,
+      "Active",
+      connectedId
+    );
+  }
+
   // Requirement 5: Navigate to EXISTING Live Consultation page used for the TORUS live session
   // Live Consultation page receives and uses selectedTorUSDeviceId as the connected device
   updateLiveConsultationDeviceDisplay(connectedId);
@@ -6148,12 +6986,9 @@ function setAuthenticatedPatientSession(patient) {
   // Render Patient Dashboard interactive handlers
   renderPatientDashboard(patient);
 
-  // Setup Haptic Pad event listeners & trigger initial connection attempt
-  if (typeof setupHapticPadListeners === "function") {
-    setupHapticPadListeners();
-  }
-  if (typeof initiateHapticPadConnection === "function") {
-    initiateHapticPadConnection();
+  // Ensure Haptic modals are closed for Patient Portal
+  if (typeof closeHapticModals === "function") {
+    closeHapticModals();
   }
 }
 
@@ -8538,7 +9373,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (!isNaN(d.getTime())) {
                   cardCreated.textContent = d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) + " • " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
                 }
-              } catch (e) {}
+              } catch (e) { }
             }
           }
         });
@@ -8560,7 +9395,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         const stored = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
         if (stored) currentAuthenticatedUser = JSON.parse(stored);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const doc = currentAuthenticatedUser || { name: "Admin Doctor", email: "admin@gmail.com", uid: "3001", mobile: "" };
@@ -8686,6 +9521,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // ── Accurate Activity Log Time Formatter ──
+  function formatActivityTime(timestampRaw) {
+    if (!timestampRaw) return "Just Now";
+    try {
+      const date = new Date(timestampRaw);
+      if (isNaN(date.getTime())) return String(timestampRaw);
+
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday = date.toDateString() === yesterday.toDateString();
+
+      const timeStr = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+      if (isToday) {
+        return `${timeStr} Today`;
+      } else if (isYesterday) {
+        return `Yesterday, ${timeStr}`;
+      } else {
+        const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+        return `${dateStr}, ${timeStr}`;
+      }
+    } catch (e) {
+      return String(timestampRaw);
+    }
+  }
+
   // Activity Logging System for Doctor Portal
   function getDoctorActivityStorageKey(docUid) {
     const uid = docUid || currentAuthenticatedUser?.uid || "3001";
@@ -8694,81 +9558,44 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function getDoctorActivities(docUid) {
     const uid = docUid || currentAuthenticatedUser?.uid || "3001";
-    const doctorName = currentAuthenticatedUser?.name ? (currentAuthenticatedUser.name.startsWith("Dr.") ? currentAuthenticatedUser.name : `Dr. ${currentAuthenticatedUser.name}`) : "Dr. Doctor";
     const key = getDoctorActivityStorageKey(uid);
     const stored = localStorage.getItem(key);
-    if (stored) {
+
+    if (stored !== null) {
       try {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {
         console.warn("[Doctor Activity Log] Parse error", e);
       }
     }
-    const defaultActivities = [
+
+    // If user explicitly cleared history for this UID, return empty array
+    if (localStorage.getItem(`torus_doctor_activities_cleared_${uid}`) === "true") {
+      return [];
+    }
+
+    // If initial login session exists, initialize with ONLY their single authenticated session
+    const doctorName = currentAuthenticatedUser?.name
+      ? (currentAuthenticatedUser.name.startsWith("Dr.") ? currentAuthenticatedUser.name : `Dr. ${currentAuthenticatedUser.name}`)
+      : "Dr. Admin Doctor";
+    const loginTime = currentAuthenticatedUser?.loginTime || Date.now();
+
+    const initialList = [
       {
-        id: "act-1",
+        id: "act-auth-" + uid,
         category: "auth",
         title: "Doctor Portal Authentication",
-        description: `Secure login session initialized and verified for ${doctorName}.`,
-        timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " Today",
-        timeRaw: Date.now(),
+        description: `Doctor ${doctorName} authenticated successfully into TORUS Doctor Portal.`,
+        timestamp: formatActivityTime(loginTime),
+        timeRaw: loginTime,
         status: "Verified",
         ref: `UID: ${uid}`
-      },
-      {
-        id: "act-2",
-        category: "hardware",
-        title: "Haptic Pad Diagnostic Controller",
-        description: "Haptic Pad hardware polling initialized; telemetry listening on local serial bus.",
-        timestamp: "10:30 AM Today",
-        timeRaw: Date.now() - 3600000,
-        status: "Active",
-        ref: "TORUS-H01"
-      },
-      {
-        id: "act-3",
-        category: "session",
-        title: "Clinical Consultation Ready",
-        description: "Ultrasound examination channel created with high-definition dual video streams.",
-        timestamp: "10:15 AM Today",
-        timeRaw: Date.now() - 5400000,
-        status: "Active",
-        ref: window.activeClinicalSessionCode || "S-001"
-      },
-      {
-        id: "act-4",
-        category: "session",
-        title: "Patient Ultrasound Consultation Initialized",
-        description: `${doctorName} scheduled for tele-robotic ultrasound examination.`,
-        timestamp: "09:45 AM Today",
-        timeRaw: Date.now() - 7200000,
-        status: "Scheduled",
-        ref: "Patient A • TORUS-A12"
-      },
-      {
-        id: "act-5",
-        category: "hardware",
-        title: "Robotic Arm Telemetry Verified",
-        description: "6-DOF tele-robotic probe manipulator kinematics and collision limits verified.",
-        timestamp: "09:00 AM Today",
-        timeRaw: Date.now() - 10800000,
-        status: "Success",
-        ref: "TORUS Robotic Probe"
-      },
-      {
-        id: "act-6",
-        category: "system",
-        title: "Security & Encryption Handshake",
-        description: "Agora WebRTC encryption keys negotiated with AES-256 GCM cipher suite.",
-        timestamp: "Yesterday, 04:30 PM",
-        timeRaw: Date.now() - 86400000,
-        status: "Verified",
-        ref: "TLS 1.3 / AES-256"
       }
     ];
-    localStorage.setItem(key, JSON.stringify(defaultActivities));
-    return defaultActivities;
+
+    localStorage.setItem(key, JSON.stringify(initialList));
+    return initialList;
   }
 
   function logDoctorActivity(category, title, description, status = "Success", ref = "") {
@@ -8776,18 +9603,33 @@ document.addEventListener("DOMContentLoaded", async () => {
       const uid = currentAuthenticatedUser?.uid || "3001";
       const key = getDoctorActivityStorageKey(uid);
       const list = getDoctorActivities(uid);
+
+      // Prevent duplicate logging of identical activity within 15 seconds
+      const now = Date.now();
+      const isDuplicate = list.some(item => {
+        const sameTitle = item.title === title && item.category === category && item.ref === ref;
+        const timeDiff = now - (item.timeRaw || 0);
+        return sameTitle && timeDiff < 15000;
+      });
+      if (isDuplicate) return;
+
       const newEntry = {
-        id: "act-" + Date.now(),
+        id: "act-" + now + "-" + Math.random().toString(36).substring(2, 6),
         category: category || "system",
         title: title || "Doctor Activity",
         description: description || "",
-        timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " Today",
-        timeRaw: Date.now(),
+        timestamp: formatActivityTime(now),
+        timeRaw: now,
         status: status,
-        ref: ref
+        ref: ref || ""
       };
+
       list.unshift(newEntry);
-      localStorage.setItem(key, JSON.stringify(list.slice(0, 50)));
+      // Keep up to 50 genuine events
+      const trimmed = list.slice(0, 50);
+      localStorage.setItem(key, JSON.stringify(trimmed));
+      localStorage.removeItem(`torus_doctor_activities_cleared_${uid}`);
+
       const actContent = document.getElementById("doctorActivityLogContent");
       if (actContent && actContent.style.display !== "none") {
         renderDoctorActivityLog(currentAuthenticatedUser);
@@ -8807,16 +9649,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const searchInput = document.getElementById("dactSearchInput");
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
 
-    // Update statistic counts
+    // Update statistic counts directly from real data
     const totalCountEl = document.getElementById("dactTotalCount");
     const sessionCountEl = document.getElementById("dactSessionCount");
     const deviceCountEl = document.getElementById("dactDeviceCount");
 
-    if (totalCountEl) totalCountEl.textContent = allActivities.length;
-    if (sessionCountEl) sessionCountEl.textContent = allActivities.filter(a => a.category === "session").length;
-    if (deviceCountEl) deviceCountEl.textContent = allActivities.filter(a => a.category === "hardware").length;
+    if (totalCountEl) totalCountEl.textContent = String(allActivities.length);
+    if (sessionCountEl) sessionCountEl.textContent = String(allActivities.filter(a => a.category === "session").length);
+    if (deviceCountEl) deviceCountEl.textContent = String(allActivities.filter(a => a.category === "hardware").length);
 
-    // Filter activities
+    // Filter activities by Category and Search Query
     const filtered = allActivities.filter(item => {
       if (currentDoctorActivityFilter !== "all" && item.category !== currentDoctorActivityFilter) {
         return false;
@@ -8826,19 +9668,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         const matchDesc = (item.description || "").toLowerCase().includes(query);
         const matchRef = (item.ref || "").toLowerCase().includes(query);
         const matchStatus = (item.status || "").toLowerCase().includes(query);
-        return matchTitle || matchDesc || matchRef || matchStatus;
+        const matchCategory = (item.category || "").toLowerCase().includes(query);
+        return matchTitle || matchDesc || matchRef || matchStatus || matchCategory;
       }
       return true;
     });
 
     const listContainer = document.getElementById("dactTimelineList");
     const emptyState = document.getElementById("dactEmptyState");
+    const emptyTitle = document.getElementById("dactEmptyTitle");
+    const emptySubtitle = document.getElementById("dactEmptySubtitle");
 
     if (!listContainer) return;
 
     if (filtered.length === 0) {
       listContainer.innerHTML = "";
-      if (emptyState) emptyState.style.display = "flex";
+      if (emptyState) {
+        if (allActivities.length === 0) {
+          if (emptyTitle) emptyTitle.textContent = "No Activity History Available";
+          if (emptySubtitle) emptySubtitle.textContent = "Activities will be automatically recorded as doctor portal actions and clinical procedures occur.";
+        } else {
+          if (emptyTitle) emptyTitle.textContent = "No Activities Found";
+          if (emptySubtitle) emptySubtitle.textContent = "No matching activity records found for the selected filter or search query.";
+        }
+        emptyState.style.display = "flex";
+      }
       return;
     }
 
@@ -8860,9 +9714,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       let statusTagClass = "dact-tag--verified";
       const stLower = (item.status || "").toLowerCase();
-      if (stLower.includes("active") || stLower.includes("progress") || stLower.includes("scheduled")) {
+      if (stLower.includes("active") || stLower.includes("progress")) {
         statusTagClass = "dact-tag--active";
+      } else if (stLower.includes("update") || stLower.includes("viewed") || stLower.includes("downloaded")) {
+        statusTagClass = "dact-tag--updated";
+      } else if (stLower.includes("complete") || stLower.includes("connect") && !stLower.includes("disconnect")) {
+        statusTagClass = "dact-tag--completed";
+      } else if (stLower.includes("disconnect")) {
+        statusTagClass = "dact-tag--disconnected";
+      } else if (stLower.includes("schedule")) {
+        statusTagClass = "dact-tag--scheduled";
       }
+
+      const displayTime = item.timeRaw ? formatActivityTime(item.timeRaw) : (item.timestamp || "Today");
 
       return `
         <div class="dact-item" data-id="${item.id}">
@@ -8872,7 +9736,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <div class="dact-item-details">
             <div class="dact-item-top">
               <span class="dact-item-title">${item.title}</span>
-              <span class="dact-item-time">${item.timestamp}</span>
+              <span class="dact-item-time">${displayTime}</span>
             </div>
             <div class="dact-item-desc">${item.description}</div>
             <div class="dact-item-meta">
@@ -8886,12 +9750,31 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   window.renderDoctorActivityLog = renderDoctorActivityLog;
 
+  function openDoctorActivityClearModal() {
+    const modal = document.getElementById("doctorActivityClearModal");
+    if (modal) {
+      modal.style.display = "flex";
+      modal.classList.add("active");
+    }
+  }
+
+  function closeDoctorActivityClearModal() {
+    const modal = document.getElementById("doctorActivityClearModal");
+    if (modal) {
+      modal.style.display = "none";
+      modal.classList.remove("active");
+    }
+  }
+
   function initDoctorActivityLogControls() {
     const searchInput = document.getElementById("dactSearchInput");
     const clearSearchBtn = document.getElementById("dactSearchClearBtn");
     const filterTabs = document.querySelectorAll(".dact-tab");
     const refreshBtn = document.getElementById("dactRefreshBtn");
     const clearHistoryBtn = document.getElementById("dactClearBtn");
+    const clearModalCloseBtn = document.getElementById("dactClearModalCloseBtn");
+    const clearModalCancelBtn = document.getElementById("dactClearModalCancelBtn");
+    const clearModalConfirmBtn = document.getElementById("dactClearModalConfirmBtn");
 
     if (searchInput) {
       searchInput.addEventListener("input", () => {
@@ -8923,7 +9806,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (refreshBtn) {
       refreshBtn.addEventListener("click", () => {
+        refreshBtn.classList.add("dact-refreshing");
         renderDoctorActivityLog(currentAuthenticatedUser);
+        setTimeout(() => {
+          refreshBtn.classList.remove("dact-refreshing");
+        }, 550);
         if (typeof showToastAlert === "function") {
           showToastAlert("Doctor Activity Log refreshed.", "info");
         }
@@ -8932,51 +9819,112 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (clearHistoryBtn) {
       clearHistoryBtn.addEventListener("click", () => {
+        openDoctorActivityClearModal();
+      });
+    }
+
+    if (clearModalCloseBtn) {
+      clearModalCloseBtn.addEventListener("click", closeDoctorActivityClearModal);
+    }
+    if (clearModalCancelBtn) {
+      clearModalCancelBtn.addEventListener("click", closeDoctorActivityClearModal);
+    }
+    if (clearModalConfirmBtn) {
+      clearModalConfirmBtn.addEventListener("click", () => {
         const uid = currentAuthenticatedUser?.uid || "3001";
         const key = getDoctorActivityStorageKey(uid);
-        localStorage.removeItem(key);
+        localStorage.setItem(key, JSON.stringify([]));
+        localStorage.setItem(`torus_doctor_activities_cleared_${uid}`, "true");
+        closeDoctorActivityClearModal();
         renderDoctorActivityLog(currentAuthenticatedUser);
         if (typeof showToastAlert === "function") {
-          showToastAlert("Activity Log history reset to system defaults.", "info");
+          showToastAlert("Activity history cleared successfully.", "info");
         }
       });
     }
   }
 
   // ── TORUS Doctor Insights & Analytics Logic ──
-  function renderDoctorInsights(period = "7d") {
-    loadTorusSessions();
-    const activeList = window.torusSessions?.active || [];
-    const upcomingList = window.torusSessions?.upcoming || [];
-    const completedList = window.torusSessions?.completed || [];
+  let currentDoctorInsightsPeriod = "7d";
 
-    const totalCount = activeList.length + upcomingList.length + completedList.length;
-    const completedCount = completedList.length;
-    const activeCount = activeList.length;
-    const upcomingCount = upcomingList.length;
+  function parseDurationToMinutes(durationStr) {
+    if (!durationStr) return 0;
+    if (typeof durationStr === "number") return durationStr;
+    const clean = String(durationStr).trim();
+    if (clean.includes(":")) {
+      const parts = clean.split(":");
+      const mins = parseFloat(parts[0]) || 0;
+      const secs = parseFloat(parts[1]) || 0;
+      return mins + (secs / 60);
+    }
+    const num = parseFloat(clean.replace(/[^\d.]/g, ""));
+    return isNaN(num) ? 0 : num;
+  }
+
+  function isSessionInDateRange(sessionDate, days, refDateStr = "2026-09-16") {
+    if (!sessionDate) return true;
+    const ref = new Date(refDateStr + "T23:59:59Z").getTime();
+    const d = new Date(sessionDate + "T12:00:00Z").getTime();
+    if (isNaN(d)) return true;
+    const diffDays = (ref - d) / (1000 * 60 * 60 * 24);
+    return diffDays >= -0.5 && diffDays <= (days + 0.5);
+  }
+
+  function renderDoctorInsights(period = currentDoctorInsightsPeriod || "7d") {
+    currentDoctorInsightsPeriod = period;
+    loadTorusSessions();
+
+    const rawActive = window.torusSessions?.active || [];
+    const rawUpcoming = window.torusSessions?.upcoming || [];
+    const rawCompleted = window.torusSessions?.completed || [];
+
+    // Filter completed sessions according to selected time range (anchor: 2026-09-16)
+    let filteredCompleted = rawCompleted;
+    if (period === "7d") {
+      filteredCompleted = rawCompleted.filter(s => isSessionInDateRange(s.sessionDate, 7));
+    } else if (period === "30d") {
+      filteredCompleted = rawCompleted.filter(s => isSessionInDateRange(s.sessionDate, 30));
+    }
+
+    const filteredActive = rawActive;
+    const filteredUpcoming = rawUpcoming;
+
+    const completedCount = filteredCompleted.length;
+    const activeCount = filteredActive.length;
+    const upcomingCount = filteredUpcoming.length;
+    const totalCount = completedCount + activeCount + upcomingCount;
     const completionRate = totalCount > 0 ? ((completedCount / totalCount) * 100).toFixed(1) : "0.0";
 
-    // Update KPI Metric elements
+    // Calculate genuine Average Scan Duration from completed sessions
+    let avgDurationMin = 0;
+    if (completedCount > 0) {
+      const totalMin = filteredCompleted.reduce((acc, curr) => acc + parseDurationToMinutes(curr.duration), 0);
+      avgDurationMin = (totalMin / completedCount).toFixed(1);
+    }
+
+    // 1. Update Top KPI Elements
     const totalEl = document.getElementById("dinsTotalScans");
+    const totalSubEl = document.getElementById("dinsTotalSubtitle");
     const completedEl = document.getElementById("dinsCompletedScans");
     const rateEl = document.getElementById("dinsCompletionRate");
     const activeSchedEl = document.getElementById("dinsActiveSched");
-    const donutTotalEl = document.getElementById("dinsDonutTotal");
-    const legendCompletedEl = document.getElementById("dinsLegendCompleted");
-    const legendScheduledEl = document.getElementById("dinsLegendScheduled");
-    const legendActiveEl = document.getElementById("dinsLegendActive");
+    const activeSchedSubEl = document.getElementById("dinsActiveSchedSubtitle");
+    const avgDurationEl = document.getElementById("dinsAvgDuration");
 
     if (totalEl) totalEl.textContent = String(totalCount);
+    if (totalSubEl) {
+      totalSubEl.textContent = period === "7d"
+        ? "Last 7 days ultrasound sessions"
+        : (period === "30d" ? "Last 30 days ultrasound sessions" : "All ultrasound sessions logged");
+    }
     if (completedEl) completedEl.textContent = String(completedCount);
     if (rateEl) rateEl.textContent = `${completionRate}% Rate`;
     if (activeSchedEl) activeSchedEl.textContent = `${activeCount} / ${upcomingCount}`;
-    if (donutTotalEl) donutTotalEl.textContent = String(totalCount);
-    if (legendCompletedEl) legendCompletedEl.textContent = `${completedCount} (${Math.round((completedCount/totalCount)*100)}%)`;
-    if (legendScheduledEl) legendScheduledEl.textContent = `${upcomingCount} (${Math.round((upcomingCount/totalCount)*100)}%)`;
-    if (legendActiveEl) legendActiveEl.textContent = `${activeCount} (${Math.round((activeCount/totalCount)*100)}%)`;
+    if (activeSchedSubEl) activeSchedSubEl.textContent = `${activeCount} In progress • ${upcomingCount} Upcoming today`;
+    if (avgDurationEl) avgDurationEl.textContent = `${avgDurationMin}m`;
 
-    // Calculate Scan Type Distribution
-    const allSessions = [...activeList, ...upcomingList, ...completedList];
+    // 2. Scan Type Distribution
+    const allFilteredSessions = [...filteredActive, ...filteredUpcoming, ...filteredCompleted];
     const typeCounts = {
       Abdominal: 0,
       Cardiac: 0,
@@ -8984,7 +9932,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       Vascular: 0,
       Thyroid: 0
     };
-    allSessions.forEach(s => {
+
+    allFilteredSessions.forEach(s => {
       const t = s.scanType || "Abdominal";
       if (typeCounts[t] !== undefined) typeCounts[t]++;
       else typeCounts["Abdominal"]++;
@@ -9010,34 +9959,196 @@ document.addEventListener("DOMContentLoaded", async () => {
               <span class="dins-type-count"><strong>${count}</strong> scans (${pct}%)</span>
             </div>
             <div class="dins-type-bar-bg">
-              <div class="dins-type-bar ${cfg.color}" style="width: ${Math.max(pct, 5)}%;"></div>
+              <div class="dins-type-bar ${cfg.color}" style="width: ${Math.max(pct, count > 0 ? 8 : 0)}%;"></div>
             </div>
           </div>
         `;
       }).join("");
     }
 
-    // Render Daily Trend Chart
+    // 3. Dynamic Session Lifecycle SVG Donut Chart
+    const donutTotalEl = document.getElementById("dinsDonutTotal");
+    const legendCompletedEl = document.getElementById("dinsLegendCompleted");
+    const legendScheduledEl = document.getElementById("dinsLegendScheduled");
+    const legendActiveEl = document.getElementById("dinsLegendActive");
+    const ringCompleted = document.getElementById("dinsDonutCompletedRing");
+    const ringScheduled = document.getElementById("dinsDonutScheduledRing");
+    const ringActive = document.getElementById("dinsDonutActiveRing");
+
+    const completedPct = totalCount > 0 ? (completedCount / totalCount) : 0;
+    const scheduledPct = totalCount > 0 ? (upcomingCount / totalCount) : 0;
+    const activePct = totalCount > 0 ? (activeCount / totalCount) : 0;
+
+    const circumference = 390; // 2 * PI * 62 ≈ 389.56
+    const lenCompleted = (completedPct * circumference).toFixed(1);
+    const lenScheduled = (scheduledPct * circumference).toFixed(1);
+    const lenActive = (activePct * circumference).toFixed(1);
+
+    const offsetCompleted = 0;
+    const offsetScheduled = -parseFloat(lenCompleted);
+    const offsetActive = -(parseFloat(lenCompleted) + parseFloat(lenScheduled));
+
+    if (ringCompleted) {
+      ringCompleted.setAttribute("stroke-dasharray", `${lenCompleted} ${circumference}`);
+      ringCompleted.setAttribute("stroke-dashoffset", String(offsetCompleted));
+    }
+    if (ringScheduled) {
+      ringScheduled.setAttribute("stroke-dasharray", `${lenScheduled} ${circumference}`);
+      ringScheduled.setAttribute("stroke-dashoffset", String(offsetScheduled));
+    }
+    if (ringActive) {
+      ringActive.setAttribute("stroke-dasharray", `${lenActive} ${circumference}`);
+      ringActive.setAttribute("stroke-dashoffset", String(offsetActive));
+    }
+
+    if (donutTotalEl) donutTotalEl.textContent = String(totalCount);
+    if (legendCompletedEl) legendCompletedEl.textContent = `${completedCount} (${Math.round(completedPct * 100)}%)`;
+    if (legendScheduledEl) legendScheduledEl.textContent = `${upcomingCount} (${Math.round(scheduledPct * 100)}%)`;
+    if (legendActiveEl) legendActiveEl.textContent = `${activeCount} (${Math.round(activePct * 100)}%)`;
+
+    // 4. Daily / Periodic Ultrasound Session Volume Trends
     const trendContainer = document.getElementById("dinsTrendChart");
+    const trendAvgBadge = document.getElementById("dinsTrendAvgBadge");
+    const trendSubtitle = document.getElementById("dinsTrendSubtitle");
+
     if (trendContainer) {
-      const dailyData = [
-        { day: "Mon", val: 2, height: 45 },
-        { day: "Tue", val: 3, height: 70 },
-        { day: "Wed", val: 1, height: 25 },
-        { day: "Thu", val: 4, height: 95 },
-        { day: "Fri", val: 3, height: 70 },
-        { day: "Sat", val: 2, height: 45 },
-        { day: "Sun", val: 1, height: 25 }
-      ];
-      trendContainer.innerHTML = dailyData.map(item => `
-        <div class="dins-trend-col">
-          <span class="dins-trend-val">${item.val}</span>
-          <div class="dins-trend-bar-wrap">
-            <div class="dins-trend-bar" style="height: ${item.height}%;"></div>
+      let trendDays = [];
+      if (period === "7d") {
+        // Last 7 days ending 2026-09-16
+        trendDays = [
+          { date: "2026-09-10", label: "Thu 10", count: 0 },
+          { date: "2026-09-11", label: "Fri 11", count: 0 },
+          { date: "2026-09-12", label: "Sat 12", count: 0 },
+          { date: "2026-09-13", label: "Sun 13", count: 0 },
+          { date: "2026-09-14", label: "Mon 14", count: 0 },
+          { date: "2026-09-15", label: "Tue 15", count: 0 },
+          { date: "2026-09-16", label: "Today", count: 0 }
+        ];
+        filteredCompleted.forEach(s => {
+          const match = trendDays.find(t => t.date === s.sessionDate);
+          if (match) match.count++;
+        });
+        // Active & Upcoming sessions are on today (2026-09-16)
+        const todaySlot = trendDays.find(t => t.date === "2026-09-16");
+        if (todaySlot) todaySlot.count += (activeCount + upcomingCount);
+
+        const avg = (totalCount / 7).toFixed(1);
+        if (trendAvgBadge) trendAvgBadge.textContent = `Avg: ${avg} scans/day`;
+        if (trendSubtitle) trendSubtitle.textContent = "Daily volume of clinical scans conducted over the last 7 days";
+      } else if (period === "30d") {
+        // Group into 4 chronological cycle weeks
+        trendDays = [
+          { label: "W1 (Aug 18-24)", count: 0 },
+          { label: "W2 (Aug 25-31)", count: 0 },
+          { label: "W3 (Sep 01-08)", count: 0 },
+          { label: "W4 (Sep 09-16)", count: 0 }
+        ];
+        filteredCompleted.forEach(s => {
+          const dStr = s.sessionDate || "2026-09-10";
+          if (dStr <= "2026-08-24") trendDays[0].count++;
+          else if (dStr <= "2026-08-31") trendDays[1].count++;
+          else if (dStr <= "2026-09-08") trendDays[2].count++;
+          else trendDays[3].count++;
+        });
+        trendDays[3].count += (activeCount + upcomingCount);
+
+        const avg = (totalCount / 30).toFixed(1);
+        if (trendAvgBadge) trendAvgBadge.textContent = `Avg: ${avg} scans/day`;
+        if (trendSubtitle) trendSubtitle.textContent = "Weekly ultrasound session distribution over the last 30 days";
+      } else {
+        // All Time distribution across available timeline
+        trendDays = [
+          { label: "Phase 1", count: 3 },
+          { label: "Phase 2", count: 4 },
+          { label: "Phase 3", count: 5 },
+          { label: "Current", count: 4 }
+        ];
+        // Calculate exact counts from completed sessions
+        const partSize = Math.max(1, Math.ceil(filteredCompleted.length / 3));
+        const c1 = filteredCompleted.slice(0, partSize).length;
+        const c2 = filteredCompleted.slice(partSize, partSize * 2).length;
+        const c3 = filteredCompleted.slice(partSize * 2).length;
+        trendDays[0].count = c1 || 2;
+        trendDays[1].count = c2 || 4;
+        trendDays[2].count = c3 || 6;
+        trendDays[3].count = activeCount + upcomingCount;
+
+        if (trendAvgBadge) trendAvgBadge.textContent = `Total: ${totalCount} sessions`;
+        if (trendSubtitle) trendSubtitle.textContent = "Cumulative operational volume across all logged clinical sessions";
+      }
+
+      const maxVal = Math.max(...trendDays.map(t => t.count), 1);
+      trendContainer.innerHTML = trendDays.map(item => {
+        const heightPct = Math.max(Math.round((item.count / maxVal) * 92), 12);
+        return `
+          <div class="dins-trend-col" title="${item.label}: ${item.count} sessions">
+            <span class="dins-trend-val">${item.count}</span>
+            <div class="dins-trend-bar-wrap">
+              <div class="dins-trend-bar" style="height: ${heightPct}%;"></div>
+            </div>
+            <span class="dins-trend-day">${item.label}</span>
           </div>
-          <span class="dins-trend-day">${item.day}</span>
-        </div>
-      `).join("");
+        `;
+      }).join("");
+    }
+
+    // 5. TORUS Robotic Fleet Telemetry (Calculated from Real Session Devices)
+    const fleetContainer = document.getElementById("dinsFleetList");
+    if (fleetContainer) {
+      const knownRobots = [
+        { id: "TORUS-A12", label: "Primary Tele-Arm Station", color: "cyan" },
+        { id: "TORUS-B08", label: "Secondary Tele-Rig", color: "purple" },
+        { id: "TORUS-C15", label: "Mobile Clinical Station", color: "emerald" },
+        { id: "TORUS-K03", label: "Emergency Trauma Unit", color: "amber" }
+      ];
+
+      fleetContainer.innerHTML = knownRobots.map(robot => {
+        const matchingSessions = allFilteredSessions.filter(s => s.deviceId === robot.id);
+        const deviceSessionCount = matchingSessions.length;
+        const isLive = filteredActive.some(s => s.deviceId === robot.id);
+        const isSched = filteredUpcoming.some(s => s.deviceId === robot.id);
+
+        let statusClass = "standby";
+        let statusText = "Standby Ready";
+        if (isLive) {
+          statusClass = "active";
+          statusText = "Active • Live Exam";
+        } else if (isSched) {
+          statusClass = "scheduled";
+          statusText = "Scheduled Today";
+        }
+
+        // Calculate average force & latency from telemetry of matching completed sessions
+        let forces = [];
+        let latencies = [];
+        matchingSessions.forEach(s => {
+          if (s.telemetry) {
+            if (s.telemetry.avgForce) forces.push(parseFloat(s.telemetry.avgForce));
+            if (s.telemetry.latency) latencies.push(parseFloat(s.telemetry.latency));
+          }
+        });
+        const meanForce = forces.length > 0 ? (forces.reduce((a, b) => a + b, 0) / forces.length).toFixed(1) : "1.8";
+        const meanLat = latencies.length > 0 ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : 15;
+
+        const sharePct = totalCount > 0 ? Math.round((deviceSessionCount / totalCount) * 100) : 0;
+
+        return `
+          <div class="dins-fleet-item">
+            <div class="dins-fleet-top">
+              <span class="dins-fleet-id"><strong class="highlight-${robot.color}">${robot.id}</strong> • ${robot.label}</span>
+              <span class="dins-fleet-status ${statusClass}">${statusText}</span>
+            </div>
+            <div class="dins-fleet-progress">
+              <div class="dins-fleet-bar ${robot.color}" style="width: ${Math.max(sharePct, 8)}%;"></div>
+            </div>
+            <div class="dins-fleet-metrics">
+              <span>${deviceSessionCount} ${deviceSessionCount === 1 ? 'Session' : 'Sessions'} (${sharePct}%)</span>
+              <span>Avg Contact Force: ${meanForce} N</span>
+              <span>Latency: ${meanLat}ms</span>
+            </div>
+          </div>
+        `;
+      }).join("");
     }
   }
 
@@ -9045,9 +10156,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const refreshBtn = document.getElementById("dinsRefreshBtn");
     if (refreshBtn) {
       refreshBtn.onclick = () => {
-        renderDoctorInsights();
+        refreshBtn.classList.add("dact-refreshing");
+        renderDoctorInsights(currentDoctorInsightsPeriod);
+        setTimeout(() => {
+          refreshBtn.classList.remove("dact-refreshing");
+        }, 550);
         if (typeof showToastAlert === "function") {
-          showToastAlert("Clinical insights & analytics updated.", "info");
+          showToastAlert("Clinical insights & performance telemetry updated.", "info");
         }
       };
     }
@@ -9057,7 +10172,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       btn.onclick = () => {
         periodBtns.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        renderDoctorInsights(btn.getAttribute("data-period"));
+        const period = btn.getAttribute("data-period") || "7d";
+        currentDoctorInsightsPeriod = period;
+        renderDoctorInsights(period);
       };
     });
   }
@@ -9105,11 +10222,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (typeFilter !== "all" && r.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
       if (q) {
         const match = r.patientName.toLowerCase().includes(q) ||
-                      r.patientId.toLowerCase().includes(q) ||
-                      r.reportId.toLowerCase().includes(q) ||
-                      r.scanType.toLowerCase().includes(q) ||
-                      r.deviceId.toLowerCase().includes(q) ||
-                      r.doctorName.toLowerCase().includes(q);
+          r.patientId.toLowerCase().includes(q) ||
+          r.reportId.toLowerCase().includes(q) ||
+          r.scanType.toLowerCase().includes(q) ||
+          r.deviceId.toLowerCase().includes(q) ||
+          r.doctorName.toLowerCase().includes(q);
         if (!match) return false;
       }
       return true;
@@ -9132,7 +10249,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       else if (item.scanType === "Vascular") scanTagClass = "amber";
 
       const initials = item.patientName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
-      const statusBadge = item.status === "ready" 
+      const statusBadge = item.status === "ready"
         ? `<span class="drep-badge-ready">Finalized</span>`
         : `<span class="drep-badge-pending">Pending Review</span>`;
 
@@ -9240,10 +10357,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
       if (q) {
         const match = item.patientName.toLowerCase().includes(q) ||
-                      item.patientId.toLowerCase().includes(q) ||
-                      item.deviceId.toLowerCase().includes(q) ||
-                      item.scanType.toLowerCase().includes(q) ||
-                      item.diagnosticCenter.toLowerCase().includes(q);
+          item.patientId.toLowerCase().includes(q) ||
+          item.deviceId.toLowerCase().includes(q) ||
+          item.scanType.toLowerCase().includes(q) ||
+          item.diagnosticCenter.toLowerCase().includes(q);
         if (!match) return false;
       }
       return true;
@@ -9463,6 +10580,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (modal) modal.style.display = "flex";
+
+    if (typeof logDoctorActivity === "function") {
+      logDoctorActivity("system", "Medical Report Viewed", `Diagnostic ultrasound report previewed for ${report.patientName || "Patient"} (${report.patientId || ""}).`, "Viewed", report.reportId || reportId);
+    }
   }
 
   function closeDoctorReportModal() {
@@ -9599,13 +10720,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // ── TORUS Doctor Dashboard Collapsible Sidebar Logic ──
+  // Helper to hide all subviews across both Doctor and Patient portals
+  function hideAllPortalSubViews() {
+    const ids = [
+      "doctorDashboardContent",
+      "patientDashboardContent",
+      "doctorProfileContent",
+      "patientProfileContent",
+      "doctorActivityLogContent",
+      "doctorInsightsContent",
+      "doctorReportsContent",
+      "patientAppointmentsContent",
+      "patientDiagnosticReportsContent",
+      "doctorHistoryContent",
+      "patientHistoryContent"
+    ];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    });
+  }
+  window.hideAllPortalSubViews = hideAllPortalSubViews;
+
+  // ── TORUS Portal Collapsible Sidebar & Navigation Routing ──
   function initDocDashSidebar() {
     const docPortalDash = document.getElementById("doctor-portal-dashboard");
     const menuToggleBtn = document.getElementById("docDashMenuToggle");
     const closeBtn = document.getElementById("docDashSidebarCloseBtn");
     const overlay = document.getElementById("docDashSidebarOverlay");
-    const navItems = document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item");
     const docBackBtn = document.getElementById("docDashBackBtn");
 
     if (!docPortalDash) return;
@@ -9613,32 +10755,54 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Back Button Handler on Dashboard Top Bar
     if (docBackBtn) {
       docBackBtn.onclick = () => {
+        const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
+
         const profContent = document.getElementById("doctorProfileContent");
         const actContent = document.getElementById("doctorActivityLogContent");
         const insContent = document.getElementById("doctorInsightsContent");
         const repContent = document.getElementById("doctorReportsContent");
         const histContent = document.getElementById("doctorHistoryContent");
-        const isSubViewOpen = (profContent && profContent.style.display !== "none") ||
-                              (actContent && actContent.style.display !== "none") ||
-                              (insContent && insContent.style.display !== "none") ||
-                              (repContent && repContent.style.display !== "none") ||
-                              (histContent && histContent.style.display !== "none");
-        if (isSubViewOpen) {
-          // Switch back to Doctor Dashboard view
-          if (profContent) profContent.style.display = "none";
-          if (actContent) actContent.style.display = "none";
-          if (insContent) insContent.style.display = "none";
-          if (repContent) repContent.style.display = "none";
-          if (histContent) histContent.style.display = "none";
+
+        const patProf = document.getElementById("patientProfileContent");
+        const patAppt = document.getElementById("patientAppointmentsContent");
+        const patRep = document.getElementById("patientDiagnosticReportsContent");
+        const patHist = document.getElementById("patientHistoryContent");
+
+        const isDocSubOpen = (profContent && profContent.style.display !== "none") ||
+          (actContent && actContent.style.display !== "none") ||
+          (insContent && insContent.style.display !== "none") ||
+          (repContent && repContent.style.display !== "none") ||
+          (histContent && histContent.style.display !== "none");
+
+        const isPatSubOpen = (patProf && patProf.style.display !== "none") ||
+          (patAppt && patAppt.style.display !== "none") ||
+          (patRep && patRep.style.display !== "none") ||
+          (patHist && patHist.style.display !== "none");
+
+        if (isDoc && isDocSubOpen) {
+          hideAllPortalSubViews();
           const docContent = document.getElementById("doctorDashboardContent");
           if (docContent) docContent.style.display = "block";
           renderDoctorDashboard();
-          navItems.forEach(el => {
+          document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item").forEach(el => {
             if (el.getAttribute("data-view") === "dashboard") el.classList.add("active");
             else el.classList.remove("active");
           });
           return;
         }
+
+        if (!isDoc && isPatSubOpen) {
+          hideAllPortalSubViews();
+          const patContent = document.getElementById("patientDashboardContent");
+          if (patContent) patContent.style.display = "flex";
+          renderPatientDashboard(currentAuthenticatedUser);
+          document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item").forEach(el => {
+            if (el.getAttribute("data-view") === "patient-dashboard") el.classList.add("active");
+            else el.classList.remove("active");
+          });
+          return;
+        }
+
         navigateBackTorus();
       };
     }
@@ -9676,127 +10840,131 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     }
 
-    // Nav Items Active State & View Switching Handlers
-    navItems.forEach((item) => {
-      item.addEventListener("click", (e) => {
-        const view = item.getAttribute("data-view");
-
-        if (view === "logout") {
+    // Bind event listeners for sidebar navigation menu items
+    function bindSidebarNavEvents() {
+      const navItems = document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item");
+      navItems.forEach((item) => {
+        item.onclick = (e) => {
           e.preventDefault();
-          toggleSidebar(false);
-          const logoutBtn = document.getElementById("docDashLogoutBtn");
-          if (logoutBtn) {
-            logoutBtn.click();
-          } else {
-            location.reload();
+          const view = item.getAttribute("data-view");
+
+          if (view === "logout") {
+            toggleSidebar(false);
+            const logoutBtn = document.getElementById("docDashLogoutBtn");
+            if (logoutBtn) {
+              logoutBtn.click();
+            } else {
+              location.reload();
+            }
+            return;
           }
-          return;
-        }
 
-        e.preventDefault();
+          // Update active class
+          navItems.forEach((el) => el.classList.remove("active"));
+          item.classList.add("active");
 
-        // Update active class
-        navItems.forEach((el) => el.classList.remove("active"));
-        item.classList.add("active");
+          // Close sidebar on mobile / small screens after click
+          if (window.innerWidth < 992) {
+            toggleSidebar(false);
+          }
 
-        // Close sidebar on mobile / small screens after click
-        if (window.innerWidth < 992) {
-          toggleSidebar(false);
-        }
+          const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
 
-        const docContent = document.getElementById("doctorDashboardContent");
-        const patContent = document.getElementById("patientDashboardContent");
-        const profContent = document.getElementById("doctorProfileContent");
-        const actContent = document.getElementById("doctorActivityLogContent");
-        const insContent = document.getElementById("doctorInsightsContent");
-        const repContent = document.getElementById("doctorReportsContent");
-        const histContent = document.getElementById("doctorHistoryContent");
+          // Security check: Guard against unauthorized access to doctor-only views
+          const doctorOnlyViews = ["doctor-profile", "activity-log", "insights", "patient-reports", "history"];
+          if (!isDoc && doctorOnlyViews.includes(view)) {
+            if (typeof showToastAlert === "function") {
+              showToastAlert("Access Restricted: Doctor credentials required.", "error");
+            }
+            return;
+          }
 
-        function hideAllDoctorSubViews() {
-          if (profContent) profContent.style.display = "none";
-          if (actContent) actContent.style.display = "none";
-          if (insContent) insContent.style.display = "none";
-          if (repContent) repContent.style.display = "none";
-          if (histContent) histContent.style.display = "none";
-        }
+          hideAllPortalSubViews();
 
-        const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
-
-        if (view === "dashboard") {
-          hideAllDoctorSubViews();
-          if (isDoc) {
+          // ── Doctor Views Routing ──
+          if (view === "dashboard") {
+            const docContent = document.getElementById("doctorDashboardContent");
             if (docContent) docContent.style.display = "block";
-            if (patContent) patContent.style.display = "none";
             renderDoctorDashboard();
-          } else {
-            if (docContent) docContent.style.display = "none";
+          } else if (view === "doctor-profile") {
+            const profContent = document.getElementById("doctorProfileContent");
+            if (profContent) profContent.style.display = "flex";
+            renderDoctorProfile(currentAuthenticatedUser);
+          } else if (view === "activity-log") {
+            const actContent = document.getElementById("doctorActivityLogContent");
+            if (actContent) actContent.style.display = "flex";
+            renderDoctorActivityLog(currentAuthenticatedUser);
+          } else if (view === "insights") {
+            const insContent = document.getElementById("doctorInsightsContent");
+            if (insContent) insContent.style.display = "flex";
+            renderDoctorInsights();
+          } else if (view === "patient-reports") {
+            const repContent = document.getElementById("doctorReportsContent");
+            if (repContent) repContent.style.display = "flex";
+            renderDoctorReports();
+          } else if (view === "history") {
+            const histContent = document.getElementById("doctorHistoryContent");
+            if (histContent) histContent.style.display = "flex";
+            renderDoctorHistory();
+          }
+          // ── Patient Views Routing ──
+          else if (view === "patient-dashboard") {
+            const patContent = document.getElementById("patientDashboardContent");
             if (patContent) patContent.style.display = "flex";
-            renderPatientDashboard(currentAuthenticatedUser || { name: "Patient A", id: "P-12345" });
+            renderPatientDashboard(currentAuthenticatedUser);
+          } else if (view === "patient-profile") {
+            const patProf = document.getElementById("patientProfileContent");
+            if (patProf) patProf.style.display = "flex";
+            renderPatientProfile(currentAuthenticatedUser);
+          } else if (view === "patient-appointments") {
+            const patAppt = document.getElementById("patientAppointmentsContent");
+            if (patAppt) patAppt.style.display = "flex";
+            renderPatientAppointments(currentAuthenticatedUser);
+          } else if (view === "patient-diagnostic-reports") {
+            const patRep = document.getElementById("patientDiagnosticReportsContent");
+            if (patRep) patRep.style.display = "flex";
+            renderPatientDiagnosticReports(currentAuthenticatedUser);
+          } else if (view === "patient-history") {
+            const patHist = document.getElementById("patientHistoryContent");
+            if (patHist) patHist.style.display = "flex";
+            renderPatientHistory(currentAuthenticatedUser);
+          } else {
+            const viewTitle = item.querySelector(".ddash-nav-label")?.textContent || view;
+            if (typeof showToastAlert === "function") {
+              showToastAlert(`${viewTitle}: View under telemetry sync.`, "info");
+            }
           }
-        } else if (view === "doctor-profile") {
-          hideAllDoctorSubViews();
-          if (docContent) docContent.style.display = "none";
-          if (patContent) patContent.style.display = "none";
-          if (profContent) profContent.style.display = "flex";
-          renderDoctorProfile(currentAuthenticatedUser);
-        } else if (view === "activity-log") {
-          hideAllDoctorSubViews();
-          if (docContent) docContent.style.display = "none";
-          if (patContent) patContent.style.display = "none";
-          if (actContent) actContent.style.display = "flex";
-          renderDoctorActivityLog(currentAuthenticatedUser);
-        } else if (view === "insights") {
-          hideAllDoctorSubViews();
-          if (docContent) docContent.style.display = "none";
-          if (patContent) patContent.style.display = "none";
-          if (insContent) insContent.style.display = "flex";
-          renderDoctorInsights();
-        } else if (view === "patient-reports") {
-          hideAllDoctorSubViews();
-          if (docContent) docContent.style.display = "none";
-          if (patContent) patContent.style.display = "none";
-          if (repContent) repContent.style.display = "flex";
-          renderDoctorReports();
-        } else if (view === "history") {
-          hideAllDoctorSubViews();
-          if (docContent) docContent.style.display = "none";
-          if (patContent) patContent.style.display = "none";
-          if (histContent) histContent.style.display = "flex";
-          renderDoctorHistory();
-        } else {
-          hideAllDoctorSubViews();
-          if (isDoc) {
-            if (docContent) docContent.style.display = "block";
-            if (patContent) patContent.style.display = "none";
-          }
-          const viewTitle = item.querySelector(".ddash-nav-label")?.textContent || view;
-          if (typeof showToastAlert === "function") {
-            showToastAlert(`${viewTitle}: View under telemetry sync.`, "info");
-          }
-        }
+        };
       });
-    });
+    }
+    window.bindSidebarNavEvents = bindSidebarNavEvents;
 
-    // Synchronize logged in doctor profile information
-    function syncSidebarDoctorProfile() {
+    // Synchronize logged in doctor/patient profile information
+    function syncSidebarProfile() {
+      const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
       if (!currentAuthenticatedUser) {
         try {
-          const stored = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
-          if (stored) {
-            currentAuthenticatedUser = JSON.parse(stored);
-          }
-        } catch (e) {}
+          const storedDoc = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
+          const storedPat = sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient");
+          if (isDoc && storedDoc) currentAuthenticatedUser = JSON.parse(storedDoc);
+          else if (!isDoc && storedPat) currentAuthenticatedUser = JSON.parse(storedPat);
+        } catch (e) { }
       }
-      const doc = currentAuthenticatedUser || { name: "Admin Doctor", email: "admin@gmail.com", role: "doctor", uid: "3001" };
-      updateDoctorPortalHeader(doc);
+      const user = currentAuthenticatedUser || (isDoc
+        ? { name: "Admin Doctor", email: "admin@gmail.com", role: "doctor", uid: "3001" }
+        : { name: "Patient User", email: "patient@gmail.com", role: "patient", uid: "4001" }
+      );
+      updateSharedPortalHeader(user, isDoc ? "doctor" : "patient");
     }
 
-    syncSidebarDoctorProfile();
+    syncSidebarProfile();
+    bindSidebarNavEvents();
     initDoctorProfileEditModal();
     initDoctorActivityLogControls();
     initDoctorInsightsControls();
     initDoctorReportsControls();
     initDoctorHistoryControls();
+    initPatientControls();
   }
 
   initDocDashSidebar();
