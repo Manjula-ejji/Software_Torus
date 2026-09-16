@@ -197,6 +197,31 @@ def api_login_doctor():
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 
+@app.route("/api/doctors/profile", methods=["GET", "OPTIONS"])
+def api_get_doctor_profile():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    identifier = request.args.get("identifier", "").strip() or request.args.get("email", "").strip() or request.args.get("uid", "").strip()
+    if not identifier:
+        return jsonify({"success": False, "error": "Doctor identifier is required."}), 400
+    res = database.get_doctor_profile(identifier)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/doctors/profile/update", methods=["POST", "OPTIONS"])
+def api_update_doctor_profile():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
+    name = data.get("name", "").strip()
+    mobile = data.get("mobile", "").strip()
+    if not identifier:
+        return jsonify({"success": False, "error": "Doctor identifier (email or UID) is required."}), 400
+    res = database.update_doctor_profile(identifier, name=name, mobile=mobile)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
 @app.route("/api/doctors/forgot-password/send-otp", methods=["POST", "OPTIONS"])
 def api_forgot_password_send_otp():
     if request.method == "OPTIONS":

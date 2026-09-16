@@ -606,10 +606,77 @@ def authenticate_doctor(login_id: str, password: str):
                 "uid": row["uid"],
                 "name": row["name"],
                 "email": row["email"],
-                "role": row["role"]
+                "role": row["role"],
+                "mobile": row["mobile"] if "mobile" in row.keys() and row["mobile"] else "",
+                "created_at": row["created_at"] if "created_at" in row.keys() and row["created_at"] else ""
             }
         }
     return {"success": False, "error": "Invalid email/UID or password."}
+
+def get_doctor_profile(identifier: str):
+    clean_id = (identifier or "").strip().lower()
+    if not clean_id:
+        return {"success": False, "error": "Doctor identifier is required."}
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT d.id, d.uid, d.name, d.email, d.role, d.mobile, d.created_at,
+               b.fingerprint_slot
+        FROM doctors d
+        LEFT JOIN doctor_biometrics b ON d.id = b.doctor_id AND b.is_active = 1
+        WHERE LOWER(d.email) = ? OR LOWER(d.uid) = ?
+    """, (clean_id, clean_id))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "success": True,
+            "doctor": {
+                "id": row["id"],
+                "uid": row["uid"],
+                "name": row["name"],
+                "email": row["email"],
+                "role": row["role"],
+                "mobile": row["mobile"] or "",
+                "created_at": row["created_at"] or "",
+                "fingerprint_slot": row["fingerprint_slot"] or "",
+                "has_biometrics": bool(row["fingerprint_slot"])
+            }
+        }
+    return {"success": False, "error": "Doctor profile not found."}
+
+def update_doctor_profile(identifier: str, name: str = None, mobile: str = None):
+    clean_id = (identifier or "").strip().lower()
+    if not clean_id:
+        return {"success": False, "error": "Doctor identifier is required."}
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, uid, name, email, role, mobile, created_at FROM doctors WHERE LOWER(email) = ? OR LOWER(uid) = ?", (clean_id, clean_id))
+    doctor = cursor.fetchone()
+    if not doctor:
+        conn.close()
+        return {"success": False, "error": "Doctor not found."}
+    
+    new_name = name.strip() if (name and name.strip()) else doctor["name"]
+    new_mobile = mobile.strip() if mobile is not None else (doctor["mobile"] or "")
+    
+    cursor.execute("UPDATE doctors SET name = ?, mobile = ? WHERE id = ?", (new_name, new_mobile, doctor["id"]))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "message": "Doctor profile updated successfully.",
+        "doctor": {
+            "id": doctor["id"],
+            "uid": doctor["uid"],
+            "name": new_name,
+            "email": doctor["email"],
+            "role": doctor["role"],
+            "mobile": new_mobile,
+            "created_at": doctor["created_at"] or ""
+        }
+    }
 
 def generate_and_store_reset_otp(identifier: str):
     """Generates and dispatches OTP for Doctor password reset."""
@@ -1594,7 +1661,7 @@ def verify_doctor_biometric_by_slot(matched_slot_id: int) -> dict:
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_slot
+        SELECT d.id, d.uid, d.name, d.email, d.role, d.mobile, d.created_at, b.fingerprint_slot
         FROM doctors d
         JOIN doctor_biometrics b ON d.id = b.doctor_id
         WHERE b.fingerprint_slot = ? AND b.is_active = 1
@@ -1621,7 +1688,9 @@ def verify_doctor_biometric_by_slot(matched_slot_id: int) -> dict:
             "uid": row["uid"],
             "name": row["name"],
             "email": row["email"],
-            "role": row["role"]
+            "role": row["role"],
+            "mobile": row["mobile"] if "mobile" in row.keys() and row["mobile"] else "",
+            "created_at": row["created_at"] if "created_at" in row.keys() and row["created_at"] else ""
         }
     }
 
@@ -1645,7 +1714,7 @@ def verify_doctor_biometric_by_email(identifier: str, matched_slot_id: int) -> d
 
     # Get what slot THIS doctor is registered to
     cursor.execute("""
-        SELECT d.id, d.uid, d.name, d.email, d.role, b.fingerprint_slot
+        SELECT d.id, d.uid, d.name, d.email, d.role, d.mobile, d.created_at, b.fingerprint_slot
         FROM doctors d
         JOIN doctor_biometrics b ON d.id = b.doctor_id
         WHERE (LOWER(d.email) = ? OR LOWER(d.uid) = ?) AND b.is_active = 1
@@ -1683,7 +1752,9 @@ def verify_doctor_biometric_by_email(identifier: str, matched_slot_id: int) -> d
             "uid": row["uid"],
             "name": row["name"],
             "email": row["email"],
-            "role": row["role"]
+            "role": row["role"],
+            "mobile": row["mobile"] if "mobile" in row.keys() and row["mobile"] else "",
+            "created_at": row["created_at"] if "created_at" in row.keys() and row["created_at"] else ""
         }
     }
 
