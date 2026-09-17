@@ -1561,14 +1561,6 @@
               </svg>
               <span>Adhoc Scan</span>
             </button>
-            <button class="ddash-icon-btn" id="docDashBellBtn" type="button" aria-label="Notifications">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              <span class="ddash-bell-dot"></span>
-            </button>
             <!-- Profile Avatar with Popover -->
             <div class="ddash-avatar-wrap" id="docDashAvatarWrap">
               <div class="ddash-avatar" id="docDashAvatarChip" tabindex="0" role="button" aria-label="Doctor profile">AD
@@ -1686,46 +1678,89 @@
 
           <!-- PATIENT-SPECIFIC DASHBOARD CONTENT (Main Patient Overview) -->
           <div id="patientDashboardContent" class="ddash-role-content pdash-content" style="display: none;">
-            <!-- Patient Welcome Hero Banner -->
-            <div class="pdash-hero-card">
-              <div class="pdash-hero-left">
-                <div class="pdash-hero-greeting">
-                  <span class="pdash-greeting-tag">CLINICAL PATIENT PORTAL</span>
-                  <h1 class="pdash-hero-name" id="patHeroPatientName">Welcome, Patient User</h1>
-                  <p class="pdash-hero-sub">TORUS Remote Tele-Robotic Ultrasound Healthcare Network • Real-time clinical monitoring</p>
+            <!-- Top Action Cards -->
+            <div class="pdash-action-grid">
+              <div class="pdash-action-card pdash-action-card--purple" id="patAdhocScanCard" role="button" tabindex="0">
+                <div class="pdash-action-icon-wrap pdash-action-icon--purple">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                </div>
+                <div class="pdash-action-text">
+                  <div class="pdash-action-title">Adhoc Scan</div>
+                  <div class="pdash-action-subtitle">Initiate immediate examination</div>
                 </div>
               </div>
-              <div class="pdash-hero-meta">
-                <div class="pdash-meta-badge">
-                  <span class="pdash-meta-dot emerald"></span>
-                  <span>Patient ID: <strong id="patHeroPatientId" class="highlight-cyan">4001</strong></span>
+
+              <div class="pdash-action-card pdash-action-card--cyan active-glow" id="patScheduleScanCard" role="button"
+                tabindex="0">
+                <div class="pdash-action-icon-wrap pdash-action-icon--cyan">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
                 </div>
-                <div class="pdash-meta-badge">
-                  <span class="pdash-meta-dot purple"></span>
-                  <span>Account: <strong class="highlight-purple">Verified Patient</strong></span>
+                <div class="pdash-action-text">
+                  <div class="pdash-action-title">Schedule Scan</div>
+                  <div class="pdash-action-subtitle">Plan future examination</div>
+                </div>
+              </div>
+
+              <div class="pdash-action-card pdash-action-card--purple" id="patRegisterCard" role="button" tabindex="0">
+                <div class="pdash-action-icon-wrap pdash-action-icon--purple">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <line x1="20" y1="8" x2="20" y2="14"></line>
+                    <line x1="23" y1="11" x2="17" y2="11"></line>
+                  </svg>
+                </div>
+                <div class="pdash-action-text">
+                  <div class="pdash-action-title">Patient Registration</div>
+                  <div class="pdash-action-subtitle">Register new patient details</div>
                 </div>
               </div>
             </div>
 
             <!-- Patient Summary / Statistics (4 Clinical Metric Cards) -->
+            <!-- Patient Summary / Statistics (4 Cards) -->
             <div class="pdash-stats-grid">
               <div class="pdash-stat-card">
                 <div class="pdash-stat-icon-wrap pdash-stat-icon--cyan">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                  </svg>
+                </div>
+                <div class="pdash-stat-info">
+                  <span class="pdash-stat-label">ACTIVE SESSIONS</span>
+                  <span class="pdash-stat-value" id="patStatActiveSessions">3</span>
+                </div>
+              </div>
+
+              <div class="pdash-stat-card">
+                <div class="pdash-stat-icon-wrap pdash-stat-icon--amber">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <polyline points="12 6 12 12 16 14"></polyline>
                   </svg>
                 </div>
                 <div class="pdash-stat-info">
-                  <span class="pdash-stat-label">ACTIVE EXAMINATION</span>
-                  <span class="pdash-stat-value" id="patStatActiveSessions">1 Active</span>
-                  <span class="pdash-stat-desc" id="patStatActiveDesc">Live ultrasound session</span>
+                  <span class="pdash-stat-label">WAITING</span>
+                  <span class="pdash-stat-value" id="patStatWaiting">2</span>
                 </div>
               </div>
 
               <div class="pdash-stat-card">
                 <div class="pdash-stat-icon-wrap pdash-stat-icon--purple">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                     <line x1="16" y1="2" x2="16" y2="6"></line>
                     <line x1="8" y1="2" x2="8" y2="6"></line>
@@ -1733,118 +1768,133 @@
                   </svg>
                 </div>
                 <div class="pdash-stat-info">
-                  <span class="pdash-stat-label">UPCOMING APPOINTMENTS</span>
-                  <span class="pdash-stat-value" id="patStatUpcomingSessions">1 Scheduled</span>
-                  <span class="pdash-stat-desc">Next clinical visit</span>
+                  <span class="pdash-stat-label">UPCOMING SESSIONS</span>
+                  <span class="pdash-stat-value" id="patStatUpcomingSessions">3</span>
                 </div>
               </div>
 
               <div class="pdash-stat-card">
                 <div class="pdash-stat-icon-wrap pdash-stat-icon--green">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
                   </svg>
                 </div>
                 <div class="pdash-stat-info">
-                  <span class="pdash-stat-label">COMPLETED EXAMINATIONS</span>
-                  <span class="pdash-stat-value" id="patStatCompletedSessions">1 Completed</span>
-                  <span class="pdash-stat-desc">Total sessions on record</span>
-                </div>
-              </div>
-
-              <div class="pdash-stat-card">
-                <div class="pdash-stat-icon-wrap pdash-stat-icon--amber">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                  </svg>
-                </div>
-                <div class="pdash-stat-info">
-                  <span class="pdash-stat-label">DIAGNOSTIC REPORTS</span>
-                  <span class="pdash-stat-value" id="patStatAvailableReports">1 Finalized</span>
-                  <span class="pdash-stat-desc">Available for download</span>
+                  <span class="pdash-stat-label">COMPLETED TODAY</span>
+                  <span class="pdash-stat-value" id="patStatCompletedSessions">12</span>
                 </div>
               </div>
             </div>
 
-            <!-- Patient Main Overview Panels (2-Column Grid) -->
+            <!-- Patient Main Sections (2-Column Grid: Active Sessions & Upcoming Sessions) -->
             <div class="pdash-panels-grid">
-              <!-- Left Column: Active Examination & Recent Diagnostic Report -->
+              <!-- Left Column: Active Sessions -->
               <div class="pdash-panel">
                 <div class="pdash-panel-header">
                   <div class="pdash-panel-title-group">
                     <span class="pdash-title-icon-cyan">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                       </svg>
                     </span>
-                    <div>
-                      <h2 class="pdash-panel-title">Current Examination Status</h2>
-                      <p class="pdash-panel-subtitle">Live robotic tele-ultrasound procedure</p>
-                    </div>
+                    <h2 class="pdash-panel-title">Active Sessions</h2>
                   </div>
                 </div>
 
-                <div class="pdash-session-list" id="patActiveSessionCardWrap">
-                  <!-- Dynamically populated active examination card -->
-                </div>
-
-                <div class="pdash-section-divider"></div>
-
-                <div class="pdash-panel-header" style="margin-top: 14px;">
-                  <div class="pdash-panel-title-group">
-                    <span class="pdash-title-icon-purple">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                      </svg>
-                    </span>
-                    <div>
-                      <h2 class="pdash-panel-title">Recent Diagnostic Report</h2>
-                      <p class="pdash-panel-subtitle">Latest verified medical findings</p>
+                <div class="pdash-session-list" id="patActiveSessionsList">
+                  <!-- Session 1: Patient A -->
+                  <div class="pdash-session-card">
+                    <div class="pdash-session-info">
+                      <div class="pdash-session-name">Patient A</div>
+                      <div class="pdash-session-device">TORUS-A12</div>
+                    </div>
+                    <div class="pdash-session-right">
+                      <span class="pdash-status-pill pdash-status-pill--progress">IN PROGRESS</span>
+                      <span class="pdash-session-duration">12:34</span>
                     </div>
                   </div>
-                </div>
 
-                <div id="patRecentReportCardWrap">
-                  <!-- Dynamically populated recent report card -->
+                  <!-- Session 2: Patient B -->
+                  <div class="pdash-session-card">
+                    <div class="pdash-session-info">
+                      <div class="pdash-session-name">Patient B</div>
+                      <div class="pdash-session-device">TORUS-B08</div>
+                    </div>
+                    <div class="pdash-session-right">
+                      <span class="pdash-status-pill pdash-status-pill--waiting">WAITING</span>
+                      <span class="pdash-session-duration dim">00:00</span>
+                    </div>
+                  </div>
+
+                  <!-- Session 3: Patient C -->
+                  <div class="pdash-session-card">
+                    <div class="pdash-session-info">
+                      <div class="pdash-session-name">Patient C</div>
+                      <div class="pdash-session-device">TORUS-C15</div>
+                    </div>
+                    <div class="pdash-session-right">
+                      <span class="pdash-status-pill pdash-status-pill--waiting">WAITING</span>
+                      <span class="pdash-session-duration dim">00:00</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <!-- Right Column: Upcoming Appointments & Medical Guidelines -->
+              <!-- Right Column: Upcoming Sessions -->
               <div class="pdash-panel">
                 <div class="pdash-panel-header">
                   <div class="pdash-panel-title-group">
                     <span class="pdash-title-icon-purple">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                         <line x1="16" y1="2" x2="16" y2="6"></line>
                         <line x1="8" y1="2" x2="8" y2="6"></line>
                         <line x1="3" y1="10" x2="21" y2="10"></line>
                       </svg>
                     </span>
-                    <div>
-                      <h2 class="pdash-panel-title">Upcoming Appointments</h2>
-                      <p class="pdash-panel-subtitle">Scheduled examinations & diagnostic visits</p>
+                    <h2 class="pdash-panel-title">Upcoming Sessions</h2>
+                  </div>
+                </div>
+
+                <div class="pdash-session-list" id="patUpcomingSessionsList">
+                  <!-- Scheduled 1: John Smith -->
+                  <div class="pdash-session-card">
+                    <div class="pdash-session-info">
+                      <div class="pdash-session-name">John Smith</div>
+                      <div class="pdash-session-device">TORUS-A12</div>
+                    </div>
+                    <div class="pdash-session-right">
+                      <span class="pdash-session-time">10:30 AM</span>
                     </div>
                   </div>
-                </div>
 
-                <div class="pdash-session-list" id="patUpcomingAppointmentsList">
-                  <!-- Dynamically populated appointment cards -->
-                </div>
-
-                <div class="pdash-guidelines-box">
-                  <div class="pdash-guide-header">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                    <span class="pdash-guide-title">Clinical Examination Guidelines</span>
+                  <!-- Scheduled 2: Jane Smith -->
+                  <div class="pdash-session-card">
+                    <div class="pdash-session-info">
+                      <div class="pdash-session-name">Jane Smith</div>
+                      <div class="pdash-session-device">TORUS-B08</div>
+                    </div>
+                    <div class="pdash-session-right">
+                      <span class="pdash-session-time">12:00 PM</span>
+                    </div>
                   </div>
-                  <ul class="pdash-guide-list">
-                    <li>For <strong>Abdominal Scans</strong>: Fast for 6 to 8 hours prior to your scheduled examination. Water is permitted.</li>
-                    <li>For <strong>Pelvic Scans</strong>: Drink 1 liter of water 1 hour prior to your session to maintain a full bladder.</li>
-                    <li>Please check in 15 minutes before your scheduled appointment time.</li>
-                  </ul>
-                </div>
+
+                  <!-- Scheduled 3: Robert Brown -->
+                  <div class="pdash-session-card">
+                    <div class="pdash-session-info">
+                      <div class="pdash-session-name">Robert Brown</div>
+                      <div class="pdash-session-device">TORUS-C15</div>
+                    </div>
+                    <div class="pdash-session-right">
+                      <span class="pdash-session-time">02:15 PM</span>
+                    </div>
+                  </div>
+
+              </div>
               </div>
             </div>
           </div>

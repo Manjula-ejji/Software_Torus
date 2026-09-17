@@ -6472,11 +6472,22 @@ body[data-role="viewer"] #settings-uid-wrapper {
   background: rgba(6, 182, 212, 0.5);
 }
 
+/* ── DOCTOR ROLE CONTENT CONTAINER ── */
+.ddash-role-content,
+#doctorDashboardContent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* ── STATS GRID ── */
 .ddash-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  gap: 16px;
+  width: 100%;
   flex-shrink: 0;
 }
 
@@ -7484,122 +7495,126 @@ body[data-role="viewer"] #settings-uid-wrapper {
   animation: ddashFadeIn 0.3s ease-out;
 }
 
-/* Patient Hero Card */
-.pdash-hero-card {
+/* 1. Patient Action Cards Grid */
+.pdash-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.pdash-action-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 22px;
+  gap: 16px;
+  padding: 18px 22px;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(16, 22, 44, 0.88) 0%, rgba(10, 16, 32, 0.94) 100%);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(10, 15, 29, 0.9) 100%);
   border: 1px solid rgba(139, 92, 246, 0.25);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(12px);
-  position: relative;
-  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  user-select: none;
 }
 
-.pdash-hero-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(180deg, #8b5cf6 0%, #06b6d4 100%);
+.pdash-action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-.pdash-hero-left {
+.pdash-action-card--purple {
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.pdash-action-card--purple:hover {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 8px 25px rgba(139, 92, 246, 0.2);
+}
+
+.pdash-action-card--cyan.active-glow {
+  border-color: rgba(6, 182, 212, 0.7);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.2), inset 0 0 15px rgba(6, 182, 212, 0.05);
+  background: linear-gradient(135deg, rgba(8, 28, 48, 0.85) 0%, rgba(10, 20, 36, 0.9) 100%);
+}
+
+.pdash-action-card--cyan.active-glow:hover {
+  border-color: rgba(6, 182, 212, 0.9);
+  box-shadow: 0 0 28px rgba(6, 182, 212, 0.35), inset 0 0 20px rgba(6, 182, 212, 0.1);
+}
+
+.pdash-action-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.25s ease;
+}
+
+.pdash-action-card:hover .pdash-action-icon-wrap {
+  transform: scale(1.06);
+}
+
+.pdash-action-icon--purple {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: #c084fc;
+}
+
+.pdash-action-icon--cyan {
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  color: #22d3ee;
+}
+
+.pdash-action-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.pdash-greeting-tag {
-  font-size: 10.5px;
+.pdash-action-title {
+  font-size: 14.5px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #22d3ee;
-  text-transform: uppercase;
-}
-
-.pdash-hero-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffffff;
+  color: #f8fafc;
   letter-spacing: -0.01em;
-  margin: 0;
 }
 
-.pdash-hero-sub {
-  font-size: 12px;
+.pdash-action-subtitle {
+  font-size: 11.5px;
   color: #94a3b8;
-  margin: 0;
+  font-weight: 400;
 }
 
-.pdash-hero-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.pdash-meta-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  font-size: 12px;
-  color: #cbd5e1;
-}
-
-.pdash-meta-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.pdash-meta-dot.emerald {
-  background: #10b981;
-  box-shadow: 0 0 6px #10b981;
-}
-
-.pdash-meta-dot.purple {
-  background: #a855f7;
-  box-shadow: 0 0 6px #a855f7;
-}
-
-/* Patient Summary / Statistics (4 Cards Matching Reference Image 2) */
+/* 2. Patient Summary / Statistics (4 Cards) */
 .pdash-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: 16px;
 }
 
 .pdash-stat-card {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 18px;
+  padding: 16px 20px;
   border-radius: 12px;
-  background: rgba(13, 20, 38, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: all 0.25s ease;
+  background: rgba(13, 20, 38, 0.7);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.2s ease, transform 0.2s ease;
 }
 
 .pdash-stat-card:hover {
-  border-color: rgba(139, 92, 246, 0.4);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  border-color: rgba(139, 92, 246, 0.38);
+  transform: translateY(-1px);
 }
 
 .pdash-stat-icon-wrap {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7633,11 +7648,11 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .pdash-stat-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .pdash-stat-label {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #94a3b8;
   letter-spacing: 0.06em;
@@ -7648,37 +7663,33 @@ body[data-role="viewer"] #settings-uid-wrapper {
   font-size: 22px;
   font-weight: 800;
   color: #f8fafc;
-  line-height: 1.15;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
-.pdash-stat-desc {
-  display: none;
-}
-
-/* 3. Patient Main Panels Grid (Matching Reference Image 2) */
+/* 3. Patient Main Panels Grid (2 Columns: Active & Upcoming) */
 .pdash-panels-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 20px;
 }
 
 .pdash-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 16px;
+  padding: 20px;
   border-radius: 14px;
-  background: rgba(11, 17, 34, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(11, 17, 34, 0.75);
+  border: 1px solid rgba(139, 92, 246, 0.18);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(8px);
 }
 
 .pdash-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
 }
 
 .pdash-panel-title-group {
@@ -7709,115 +7720,59 @@ body[data-role="viewer"] #settings-uid-wrapper {
   margin: 0;
 }
 
-.pdash-panel-subtitle {
-  font-size: 11px;
-  color: #94a3b8;
-  margin: 1px 0 0 0;
-}
-
-.pdash-section-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.06);
-  margin: 2px 0;
-}
-
-/* Guidelines Box */
-.pdash-guidelines-box {
-  margin-top: 6px;
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: rgba(6, 182, 212, 0.04);
-  border: 1px solid rgba(6, 182, 212, 0.18);
-}
-
-.pdash-guide-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.pdash-guide-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #22d3ee;
-  letter-spacing: 0.02em;
-}
-
-.pdash-guide-list {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 11.5px;
-  color: #cbd5e1;
-  line-height: 1.55;
-}
-
-.pdash-guide-list li {
-  margin-bottom: 4px;
-}
-
-.pdash-guide-list strong {
-  color: #ffffff;
-}
-
-/* Patient Examination Cards */
+/* 4. Session Cards inside Panels */
 .pdash-session-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .pdash-session-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   transition: all 0.2s ease;
 }
 
 .pdash-session-card:hover {
-  background: rgba(20, 30, 55, 0.85);
-  border-color: rgba(139, 92, 246, 0.35);
-  transform: translateY(-1px);
+  background: rgba(20, 30, 55, 0.7);
+  border-color: rgba(139, 92, 246, 0.25);
+  transform: translateX(2px);
 }
 
 .pdash-session-info {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .pdash-session-name {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   color: #f8fafc;
 }
 
 .pdash-session-device {
-  font-size: 11.5px;
-  color: #94a3b8;
+  font-size: 12px;
+  color: #64748b;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 .pdash-session-right {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.pdash-session-duration {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #22d3ee;
+  gap: 14px;
 }
 
 .pdash-status-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 6px;
   text-transform: uppercase;
 }
@@ -7828,63 +7783,35 @@ body[data-role="viewer"] #settings-uid-wrapper {
   color: #34d399;
 }
 
-.pdash-status-pill--scheduled {
-  background: rgba(139, 92, 246, 0.12);
-  border: 1px solid rgba(139, 92, 246, 0.4);
-  color: #c084fc;
+.pdash-status-pill--waiting {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
 }
 
-.pdash-status-pill--completed {
-  background: rgba(6, 182, 212, 0.12);
-  border: 1px solid rgba(6, 182, 212, 0.4);
+.pdash-session-duration {
+  font-size: 13.5px;
+  font-weight: 700;
   color: #22d3ee;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.pdash-btn-card-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: 7px;
-  background: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.35);
+.pdash-session-duration.dim {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.pdash-session-time {
+  font-size: 13.5px;
+  font-weight: 700;
   color: #c084fc;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.pdash-btn-card-action:hover {
-  background: rgba(139, 92, 246, 0.25);
-  border-color: rgba(139, 92, 246, 0.6);
-  color: #ffffff;
-}
-
-.pdash-btn-card-action.cyan {
-  background: rgba(6, 182, 212, 0.15);
-  border-color: rgba(6, 182, 212, 0.35);
-  color: #22d3ee;
-}
-
-.pdash-btn-card-action.cyan:hover {
-  background: rgba(6, 182, 212, 0.25);
-  border-color: rgba(6, 182, 212, 0.6);
-  color: #ffffff;
-}
-
-.pdash-btn-card-action.cyan:hover {
-  background: rgba(6, 182, 212, 0.25);
-  border-color: rgba(6, 182, 212, 0.6);
-  color: #ffffff;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* Responsive queries */
 @media (max-width: 1024px) {
-  .pdash-hero-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
+  .pdash-action-grid {
+    grid-template-columns: 1fr;
   }
   .pdash-stats-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -7893,6 +7820,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
     grid-template-columns: 1fr;
   }
 }
+
 
 /* ============================================================
    PATIENT CLINICAL REGISTRATION PAGE (Reference Image 1)
@@ -10187,4 +10115,4 @@ body[data-role="viewer"] #settings-uid-wrapper {
   .drep-doc-grid-2col {
     grid-template-columns: 1fr;
   }
-}
+}

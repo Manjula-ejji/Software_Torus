@@ -2261,9 +2261,13 @@ function showTorusScreen(targetId, recordHistory = true) {
 
     const docContent = document.getElementById("doctorDashboardContent");
     const patContent = document.getElementById("patientDashboardContent");
+    const adhocBtn = document.getElementById("docDashAdhocScanBtn");
+    if (adhocBtn) {
+      adhocBtn.style.display = isDoc ? "inline-flex" : "none";
+    }
 
     if (isDoc) {
-      if (docContent) docContent.style.display = "block";
+      if (docContent) docContent.style.display = "flex";
       if (patContent) patContent.style.display = "none";
       if (typeof renderDoctorDashboard === "function") {
         renderDoctorDashboard();
@@ -2274,6 +2278,18 @@ function showTorusScreen(targetId, recordHistory = true) {
       if (typeof renderPatientDashboard === "function") {
         renderPatientDashboard(currentAuthenticatedUser);
       }
+    }
+
+    // Trigger Haptic Pad connection status check
+    if (typeof setupHapticPadListeners === "function") {
+      setupHapticPadListeners();
+    }
+    if (typeof initiateHapticPadConnection === "function" &&
+        typeof currentHapticState !== "undefined" &&
+        typeof HAPTIC_STATE !== "undefined" &&
+        currentHapticState !== HAPTIC_STATE.CONNECTED &&
+        !window.isHapticConnectionInProgress) {
+      initiateHapticPadConnection();
     }
 
     const navItems = document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item");
@@ -2350,6 +2366,12 @@ async function navigateBackTorus() {
   }
 
   // Pop previous screen from history
+  if (currentId === "doctor-portal-dashboard") {
+    const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
+    showTorusScreen(isDoc ? "doctor-login-screen" : "patient-login-screen");
+    return;
+  }
+
   let prevScreen = torusScreenHistory.length > 0 ? torusScreenHistory.pop() : null;
   while (prevScreen && prevScreen === currentId && torusScreenHistory.length > 0) {
     prevScreen = torusScreenHistory.pop();
@@ -4717,8 +4739,8 @@ function updateSharedPortalHeader(user, role = "doctor") {
   if (sidebarDocEmail) sidebarDocEmail.textContent = displayEmail;
   if (sidebarDocRole) sidebarDocRole.textContent = `Role: ${isPatient ? "patient" : "doctor"}`;
 
-  // Ensure Header Top Controls (Haptic Pad status & Adhoc Scan) are visible
-  if (adhocBtn) adhocBtn.style.display = "inline-flex";
+  // Ensure Header Top Controls (Haptic Pad status & Adhoc Scan) are properly displayed per role
+  if (adhocBtn) adhocBtn.style.display = isPatient ? "none" : "inline-flex";
   if (hapticChip) hapticChip.style.display = "inline-flex";
 
   // Re-render sidebar items to guarantee exact role navigation
@@ -4777,112 +4799,47 @@ window.getPatientSessionData = getPatientSessionData;
 
 // Render Patient Dashboard Landing Page
 function renderPatientDashboard(patient) {
-  const currentPatient = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001", email: "patient@gmail.com" };
-  const { activeSession, upcomingList, completedList } = getPatientSessionData(currentPatient);
+  const adhocCard = document.getElementById("patAdhocScanCard");
+  const schedCard = document.getElementById("patScheduleScanCard");
+  const regCard = document.getElementById("patRegisterCard");
 
-  // Update Hero Banner
-  const heroNameEl = document.getElementById("patHeroPatientName");
-  const heroUidEl = document.getElementById("patHeroPatientId");
-  if (heroNameEl) heroNameEl.textContent = `Welcome, ${currentPatient.name || "Patient User"}`;
-  if (heroUidEl) heroUidEl.textContent = currentPatient.uid || "4001";
+  if (adhocCard) {
+    adhocCard.onclick = () => {
+      openDeviceModal();
+    };
+  }
 
-  // Update Stats Cards
+  if (schedCard) {
+    schedCard.onclick = () => {
+      document.querySelectorAll(".pdash-action-card").forEach(c => c.classList.remove("active-glow"));
+      schedCard.classList.add("active-glow");
+      if (typeof showToastAlert === "function") {
+        showToastAlert("Schedule Scan: Plan future ultrasound examinations.", "info");
+      }
+    };
+  }
+
+  if (regCard) {
+    regCard.onclick = () => {
+      openPatientClinicalRegistration();
+    };
+  }
+
+  // Ensure default metric numbers match Image 3
   const statActive = document.getElementById("patStatActiveSessions");
+  const statWaiting = document.getElementById("patStatWaiting");
   const statUpcoming = document.getElementById("patStatUpcomingSessions");
   const statCompleted = document.getElementById("patStatCompletedSessions");
-  const statReports = document.getElementById("patStatAvailableReports");
 
-  if (statActive) statActive.textContent = activeSession ? "1 Active" : "0 Active";
-  if (statUpcoming) statUpcoming.textContent = `${upcomingList.length} Scheduled`;
-  if (statCompleted) statCompleted.textContent = `${completedList.length} Completed`;
-  if (statReports) statReports.textContent = `${completedList.filter(c => c.reportStatus === "ready" || !c.reportStatus).length} Finalized`;
-
-  // Render Active Examination Card in Left Panel
-  const activeWrap = document.getElementById("patActiveSessionCardWrap");
-  if (activeWrap) {
-    if (activeSession) {
-      activeWrap.innerHTML = `
-        <div class="pdash-session-card">
-          <div class="pdash-session-info">
-            <div class="pdash-session-name">${activeSession.scanType} Ultrasound Examination</div>
-            <div class="pdash-session-device">Physician: <strong>${activeSession.doctorName || "Dr. Admin Doctor"}</strong> • ${activeSession.diagnosticCenter || "Apex Diagnostic Center"}</div>
-          </div>
-          <div class="pdash-session-right">
-            <span class="pdash-status-pill pdash-status-pill--progress">IN PROGRESS</span>
-            <span class="pdash-session-duration">${activeSession.duration || "12:34"}</span>
-          </div>
-        </div>
-      `;
-    } else {
-      activeWrap.innerHTML = `
-        <div class="pdash-session-card" style="opacity: 0.85; justify-content: center; text-align: center; padding: 22px;">
-          <span style="font-size: 13px; color: #94a3b8;">No active ultrasound examination in progress at this time.</span>
-        </div>
-      `;
-    }
-  }
-
-  // Render Recent Diagnostic Report in Left Panel
-  const recentReportWrap = document.getElementById("patRecentReportCardWrap");
-  if (recentReportWrap) {
-    if (completedList.length > 0) {
-      const topRep = completedList[0];
-      recentReportWrap.innerHTML = `
-        <div class="pdash-session-card">
-          <div class="pdash-session-info">
-            <div class="pdash-session-name">${topRep.scanType} Scan Report (${topRep.reportId || "REP-2026-001"})</div>
-            <div class="pdash-session-device">Conducted on ${topRep.sessionDate || "2026-09-14"} • Signed by ${topRep.doctorName || "Dr. Admin Doctor"}</div>
-          </div>
-          <div class="pdash-session-right">
-            <span class="pdash-status-pill pdash-status-pill--completed">Finalized</span>
-            <button type="button" class="pdash-btn-card-action cyan" onclick="openPatientReportViewModal('${topRep.reportId || "REP-2026-001"}')">
-              <span>View Report</span>
-            </button>
-            <button type="button" class="pdash-btn-card-action" onclick="downloadPatientReport('${topRep.reportId || "REP-2026-001"}')">
-              <span>Download</span>
-            </button>
-          </div>
-        </div>
-      `;
-    } else {
-      recentReportWrap.innerHTML = `
-        <div class="pdash-session-card" style="opacity: 0.85; justify-content: center; text-align: center; padding: 22px;">
-          <span style="font-size: 13px; color: #94a3b8;">No finalized diagnostic reports available yet.</span>
-        </div>
-      `;
-    }
-  }
-
-  // Render Upcoming Appointments in Right Panel
-  const upcomingWrap = document.getElementById("patUpcomingAppointmentsList");
-  if (upcomingWrap) {
-    if (upcomingList.length > 0) {
-      upcomingWrap.innerHTML = upcomingList.map(appt => `
-        <div class="pdash-session-card">
-          <div class="pdash-session-info">
-            <div class="pdash-session-name">${appt.scanType} Ultrasound Scan</div>
-            <div class="pdash-session-device">Site: ${appt.diagnosticCenter || "Apex Diagnostic Center"} • Time: <strong>${appt.scheduledTime || "10:30 AM"}</strong></div>
-          </div>
-          <div class="pdash-session-right">
-            <span class="pdash-status-pill pdash-status-pill--scheduled">Confirmed</span>
-            <button type="button" class="pdash-btn-card-action" onclick="openPatientAppointmentModal('${appt.sessionId || "S-002"}')">
-              <span>Details</span>
-            </button>
-          </div>
-        </div>
-      `).join("");
-    } else {
-      upcomingWrap.innerHTML = `
-        <div class="pdash-session-card" style="opacity: 0.85; justify-content: center; text-align: center; padding: 22px;">
-          <span style="font-size: 13px; color: #94a3b8;">No scheduled appointments found on record.</span>
-        </div>
-      `;
-    }
-  }
+  if (statActive) statActive.textContent = "3";
+  if (statWaiting) statWaiting.textContent = "2";
+  if (statUpcoming) statUpcoming.textContent = "3";
+  if (statCompleted) statCompleted.textContent = "12";
 }
 window.renderPatientDashboard = renderPatientDashboard;
 
 // Render Patient Profile View
+
 function renderPatientProfile(patient) {
   const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001", email: "patient@gmail.com", mobile: "+91 98765 43210" };
 
@@ -5848,7 +5805,6 @@ let hapticLiveDisconnectTimer = null;
  * Manages modal visibility for Connecting and Not Connected states.
  */
 function showHapticConnectingModal() {
-  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (hapticLiveDisconnectTimer) {
     clearTimeout(hapticLiveDisconnectTimer);
     hapticLiveDisconnectTimer = null;
@@ -5864,7 +5820,6 @@ function showHapticConnectingModal() {
 }
 
 function showHapticErrorModal() {
-  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (hapticLiveDisconnectTimer) {
     clearTimeout(hapticLiveDisconnectTimer);
     hapticLiveDisconnectTimer = null;
@@ -5889,7 +5844,6 @@ function showHapticErrorModal() {
  * Automatically closes after approximately 3 seconds without requiring user click.
  */
 function showHapticLiveDisconnectAlert() {
-  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (hapticLiveDisconnectTimer) {
     clearTimeout(hapticLiveDisconnectTimer);
     hapticLiveDisconnectTimer = null;
@@ -5946,7 +5900,6 @@ function startHapticLiveMonitoring() {
     // Only monitor if dashboard is currently visible and not during active manual modal connection
     const docPortalDash = document.getElementById("doctor-portal-dashboard");
     if (!docPortalDash || docPortalDash.style.display === "none") return;
-    if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
     if (isHapticConnectionInProgress) return;
 
     const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
@@ -6007,7 +5960,6 @@ function stopHapticLiveMonitoring() {
  * 5. On dismiss: leaves dashboard accessible without repeated popups.
  */
 async function initiateHapticPadConnection(options = {}) {
-  if (window.currentUserRole === "patient" || sessionStorage.getItem("torus_current_role") === "patient") return;
   if (isHapticConnectionInProgress) return;
   isHapticConnectionInProgress = true;
 
@@ -6986,9 +6938,12 @@ function setAuthenticatedPatientSession(patient) {
   // Render Patient Dashboard interactive handlers
   renderPatientDashboard(patient);
 
-  // Ensure Haptic modals are closed for Patient Portal
-  if (typeof closeHapticModals === "function") {
-    closeHapticModals();
+  // Setup Haptic Pad event listeners & trigger initial connection attempt (Matching Doctor Portal)
+  if (typeof setupHapticPadListeners === "function") {
+    setupHapticPadListeners();
+  }
+  if (typeof initiateHapticPadConnection === "function") {
+    initiateHapticPadConnection();
   }
 }
 
@@ -10782,7 +10737,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (isDoc && isDocSubOpen) {
           hideAllPortalSubViews();
           const docContent = document.getElementById("doctorDashboardContent");
-          if (docContent) docContent.style.display = "block";
+          if (docContent) docContent.style.display = "flex";
           renderDoctorDashboard();
           document.querySelectorAll(".ddash-sidebar-nav .ddash-nav-item").forEach(el => {
             if (el.getAttribute("data-view") === "dashboard") el.classList.add("active");
@@ -10803,7 +10758,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           return;
         }
 
-        navigateBackTorus();
+        if (isDoc) {
+          showTorusScreen("doctor-login-screen");
+        } else {
+          showTorusScreen("patient-login-screen");
+        }
       };
     }
 
@@ -10884,7 +10843,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           // ── Doctor Views Routing ──
           if (view === "dashboard") {
             const docContent = document.getElementById("doctorDashboardContent");
-            if (docContent) docContent.style.display = "block";
+            if (docContent) docContent.style.display = "flex";
             renderDoctorDashboard();
           } else if (view === "doctor-profile") {
             const profContent = document.getElementById("doctorProfileContent");
