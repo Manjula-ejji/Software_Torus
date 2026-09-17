@@ -384,6 +384,78 @@ def api_patient_forgot_password():
     status_code = 200 if res.get("success") else 400
     return jsonify(res), status_code
 
+# -------------------- CLINICAL PATIENTS & APPOINTMENTS API --------------------
+@app.route("/api/patients/clinical-register", methods=["POST", "OPTIONS"])
+def api_clinical_register_patient():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name", "") or data.get("full_name", "")).strip()
+    age = data.get("age", "")
+    gender = data.get("gender", "Male")
+    mobile = data.get("mobile", "").strip()
+    email = data.get("email", "").strip()
+    scan_type = data.get("scan_type", "").strip()
+    appointment_date = data.get("appointment_date", "").strip()
+    blood_group = data.get("blood_group", "").strip()
+
+    res = database.register_clinical_patient(
+        name=name, age=age, gender=gender, mobile=mobile,
+        email=email, scan_type=scan_type,
+        appointment_date=appointment_date, blood_group=blood_group
+    )
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/patients/clinical-list", methods=["GET", "OPTIONS"])
+def api_clinical_patients_list():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    patients = database.get_clinical_patients()
+    return jsonify({"success": True, "patients": patients})
+
+@app.route("/api/doctors/list", methods=["GET", "OPTIONS"])
+def api_doctors_list():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    doctors = database.get_all_doctors_list()
+    return jsonify({"success": True, "doctors": doctors})
+
+@app.route("/api/appointments/schedule", methods=["POST", "OPTIONS"])
+def api_schedule_appointment():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    patient = data.get("patient", "").strip() or data.get("patient_id", "").strip() or data.get("patient_name", "").strip()
+    scan_type = data.get("scan_type", "").strip()
+    doctor = data.get("doctor", "").strip() or data.get("doctor_id", "").strip() or data.get("doctor_name", "").strip()
+    slot_day = str(data.get("slot_day", "")).strip()
+    slot_month = str(data.get("slot_month", "")).strip()
+    slot_year = str(data.get("slot_year", "")).strip()
+    slot_time = str(data.get("slot_time", "")).strip()
+
+    if (not slot_day or not slot_month or not slot_year) and data.get("appointment_date"):
+        parts = str(data.get("appointment_date")).split("-")
+        if len(parts) == 3:
+            slot_year, slot_month, slot_day = parts[0], parts[1], parts[2]
+    if not slot_time and data.get("appointment_time"):
+        slot_time = str(data.get("appointment_time")).strip()
+
+    res = database.schedule_scan_appointment(
+        patient_identifier=patient, scan_type=scan_type, doctor_identifier=doctor,
+        slot_day=slot_day, slot_month=slot_month, slot_year=slot_year, slot_time=slot_time
+    )
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
+@app.route("/api/appointments/list", methods=["GET", "OPTIONS"])
+def api_appointments_list():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    appts = database.get_scheduled_appointments()
+    return jsonify({"success": True, "appointments": appts})
+
+
 # -------------------- VIEWER AUTHENTICATION API --------------------
 @app.route("/api/viewers/register", methods=["POST", "OPTIONS"])
 def api_register_viewer():

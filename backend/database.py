@@ -394,6 +394,43 @@ def init_db():
             FOREIGN KEY(session_id) REFERENCES clinical_sessions(id)
         )
     """)
+
+    # 10. Clinical Patients Table (Patient Registration)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clinical_patients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            age INTEGER NOT NULL,
+            gender TEXT NOT NULL,
+            mobile TEXT NOT NULL,
+            email TEXT DEFAULT '',
+            scan_type TEXT NOT NULL,
+            appointment_date TEXT NOT NULL,
+            blood_group TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 11. Scheduled Appointments Table (Schedule Scan)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scheduled_appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id TEXT UNIQUE NOT NULL,
+            patient_id TEXT NOT NULL,
+            patient_name TEXT NOT NULL,
+            doctor_id TEXT NOT NULL,
+            doctor_name TEXT NOT NULL,
+            scan_type TEXT NOT NULL,
+            slot_day TEXT NOT NULL,
+            slot_month TEXT NOT NULL,
+            slot_year TEXT NOT NULL,
+            slot_time TEXT NOT NULL,
+            scheduled_datetime TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'scheduled',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     
     # Seed default Doctor: admin@gmail.com / admin123 (role: doctor, UID: 3001)
@@ -442,6 +479,33 @@ def init_db():
         """, (view_uid, "Viewer 1", "user@gmail.com", viewer_pass, "+91 98765 43210"))
         conn.commit()
         print(f"[Database] Default Viewer created (UID: {view_uid}, email: user@gmail.com).")
+
+    # Seed default Clinical Patients
+    cursor.execute("SELECT COUNT(*) as cnt FROM clinical_patients")
+    if cursor.fetchone()["cnt"] == 0:
+        cursor.execute("""
+            INSERT INTO clinical_patients (uid, name, age, gender, mobile, email, scan_type, appointment_date, blood_group)
+            VALUES 
+            ('PAT-4001', 'Patient User', 32, 'Male', '9876543210', 'patient@gmail.com', 'Abdominal', '2026-09-17', 'O+'),
+            ('P-8821', 'John Smith', 45, 'Male', '9876512345', 'john.smith@gmail.com', 'Abdominal', '2026-09-17', 'A+'),
+            ('P-9104', 'Jane Smith', 36, 'Female', '9876523456', 'jane.smith@gmail.com', 'Cardiac', '2026-09-17', 'B+'),
+            ('P-7543', 'Robert Brown', 52, 'Male', '9876534567', 'robert.brown@gmail.com', 'Pelvic', '2026-09-17', 'O+')
+        """)
+        conn.commit()
+        print("[Database] Seeded default clinical patients.")
+
+    # Seed default Scheduled Appointments
+    cursor.execute("SELECT COUNT(*) as cnt FROM scheduled_appointments")
+    if cursor.fetchone()["cnt"] == 0:
+        cursor.execute("""
+            INSERT INTO scheduled_appointments (appointment_id, patient_id, patient_name, doctor_id, doctor_name, scan_type, slot_day, slot_month, slot_year, slot_time, scheduled_datetime, status)
+            VALUES 
+            ('APT-2026-001', 'P-8821', 'John Smith', '3001', 'Admin Doctor', 'Abdominal', '17', '09', '2026', '10:30 AM', '2026-09-17 10:30:00', 'scheduled'),
+            ('APT-2026-002', 'P-9104', 'Jane Smith', '3001', 'Admin Doctor', 'Cardiac', '17', '09', '2026', '12:00 PM', '2026-09-17 12:00:00', 'scheduled'),
+            ('APT-2026-003', 'P-7543', 'Robert Brown', '3001', 'Admin Doctor', 'Pelvic', '17', '09', '2026', '02:15 PM', '2026-09-17 14:15:00', 'scheduled')
+        """)
+        conn.commit()
+        print("[Database] Seeded default scheduled appointments.")
         
     conn.close()
     _migrate_add_mobile_column()
@@ -2148,6 +2212,186 @@ def close_clinical_session(session_code: str) -> dict:
     conn.commit()
     conn.close()
     return {"success": True, "message": f"Session {code_clean} closed."}
+
+# ==============================================================================
+# CLINICAL PATIENT REGISTRATION & APPOINTMENTS (PATIENT PORTAL)
+# ==============================================================================
+
+def register_clinical_patient(name: str, age: int | str, gender: str, mobile: str, email: str = "", scan_type: str = "", appointment_date: str = "", blood_group: str = "") -> dict:
+    """
+    Registers a new clinical patient into the existing database.
+    Validates required fields, 10-digit mobile, optional email format, and scan information.
+    """
+    clean_name = (name or "").strip()
+    if not clean_name:
+        return {"success": False, "error": "Full name is required."}
+    
+    try:
+        age_int = int(age)
+        if age_int <= 0 or age_int > 130:
+            return {"success": False, "error": "Please enter a valid age between 1 and 130."}
+    except (ValueError, TypeError):
+        return {"success": False, "error": "Valid age is required."}
+    
+    clean_gender = (gender or "").strip().capitalize()
+    if clean_gender not in ["Male", "Female", "Other"]:
+        return {"success": False, "error": "Please select a valid gender (Male, Female, or Other)."}
+    
+    # 10-digit mobile number validation
+    clean_mobile = re.sub(r"[\s\-\(\)\+]", "", mobile or "")
+    if len(clean_mobile) == 12 and clean_mobile.startswith("91"):
+        clean_mobile = clean_mobile[2:]
+    if not re.match(r"^[0-9]{10}$", clean_mobile):
+        return {"success": False, "error": "Please enter a valid 10-digit mobile number."}
+    
+    clean_email = (email or "").strip().lower()
+    if clean_email and not validate_email_format(clean_email):
+        return {"success": False, "error": "Please enter a valid email address."}
+    
+    clean_scan = (scan_type or "").strip()
+    if not clean_scan:
+        return {"success": False, "error": "Scan type is required."}
+    
+    clean_date = (appointment_date or "").strip()
+    if not clean_date:
+        return {"success": False, "error": "Appointment date is required."}
+    
+    clean_blood = (blood_group or "").strip().upper()
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Generate unique Patient ID
+    for _ in range(100):
+        chars = string.digits
+        num_part = "".join(random.choices(chars, k=4))
+        p_uid = f"P-{num_part}"
+        cursor.execute("SELECT id FROM clinical_patients WHERE uid = ?", (p_uid,))
+        if not cursor.fetchone():
+            break
+    else:
+        p_uid = f"P-{secrets.token_hex(2).upper()}"
+
+    cursor.execute("""
+        INSERT INTO clinical_patients (uid, name, age, gender, mobile, email, scan_type, appointment_date, blood_group)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (p_uid, clean_name, age_int, clean_gender, clean_mobile, clean_email, clean_scan, clean_date, clean_blood))
+    patient_id = cursor.lastrowid
+
+    # Create matching appointment in scheduled_appointments
+    appt_code = f"APT-2026-{random.randint(100, 999)}"
+    cursor.execute("""
+        INSERT INTO scheduled_appointments (appointment_id, patient_id, patient_name, doctor_id, doctor_name, scan_type, slot_day, slot_month, slot_year, slot_time, scheduled_datetime, status)
+        VALUES (?, ?, ?, '3001', 'Admin Doctor', ?, ?, ?, ?, '10:30 AM', ?, 'scheduled')
+    """, (appt_code, p_uid, clean_name, clean_scan, clean_date.split("-")[-1] if "-" in clean_date else "17", "09", "2026", clean_date + " 10:30:00"))
+
+    conn.commit()
+
+    cursor.execute("SELECT * FROM clinical_patients WHERE id = ?", (patient_id,))
+    saved_patient = dict(cursor.fetchone())
+    conn.close()
+
+    print(f"[ClinicalPatient] Registered new patient {clean_name} (UID: {p_uid}) with scan {clean_scan}.")
+    return {
+        "success": True,
+        "message": "Patient registered successfully.",
+        "patient": saved_patient,
+        "appointment_id": appt_code
+    }
+
+def get_clinical_patients() -> list:
+    """Returns all clinical patients from database."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, uid, name, age, gender, mobile, email, scan_type, appointment_date, blood_group, created_at FROM clinical_patients ORDER BY id DESC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def get_all_doctors_list() -> list:
+    """Returns list of active doctors."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, uid, name, email, role FROM doctors ORDER BY id ASC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def schedule_scan_appointment(patient_identifier: str, scan_type: str, doctor_identifier: str, slot_day: str, slot_month: str, slot_year: str, slot_time: str) -> dict:
+    """
+    Schedules a new scan appointment and stores it in the scheduled_appointments database table.
+    """
+    if not patient_identifier:
+        return {"success": False, "error": "Patient selection is required."}
+    if not scan_type:
+        return {"success": False, "error": "Scan type is required."}
+    if not doctor_identifier:
+        return {"success": False, "error": "Doctor selection is required."}
+    if not slot_day or not slot_month or not slot_year or not slot_time:
+        return {"success": False, "error": "Complete date slot (Day, Month, Year, Time) is required."}
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Look up patient details
+    cursor.execute("SELECT uid, name FROM clinical_patients WHERE uid = ? OR name = ? OR email = ? LIMIT 1", 
+                   (patient_identifier, patient_identifier, patient_identifier))
+    p_row = cursor.fetchone()
+    if p_row:
+        p_uid = p_row["uid"]
+        p_name = p_row["name"]
+    else:
+        cursor.execute("SELECT uid, name FROM patients WHERE uid = ? OR name = ? OR email = ? LIMIT 1",
+                       (patient_identifier, patient_identifier, patient_identifier))
+        p2_row = cursor.fetchone()
+        if p2_row:
+            p_uid = p2_row["uid"]
+            p_name = p2_row["name"]
+        else:
+            p_uid = f"P-{random.randint(1000, 9999)}"
+            p_name = patient_identifier
+
+    # Look up doctor details
+    cursor.execute("SELECT uid, name FROM doctors WHERE uid = ? OR name = ? OR email = ? LIMIT 1",
+                   (doctor_identifier, doctor_identifier, doctor_identifier))
+    d_row = cursor.fetchone()
+    if d_row:
+        d_uid = d_row["uid"]
+        d_name = d_row["name"]
+    else:
+        d_uid = "3001"
+        d_name = doctor_identifier
+
+    appt_code = f"APT-{slot_year}-{secrets.token_hex(2).upper()}"
+    clean_datetime = f"{slot_year}-{str(slot_month).zfill(2)}-{str(slot_day).zfill(2)} {slot_time}"
+
+    cursor.execute("""
+        INSERT INTO scheduled_appointments (appointment_id, patient_id, patient_name, doctor_id, doctor_name, scan_type, slot_day, slot_month, slot_year, slot_time, scheduled_datetime, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+    """, (appt_code, p_uid, p_name, d_uid, d_name, scan_type, str(slot_day), str(slot_month), str(slot_year), slot_time, clean_datetime))
+    conn.commit()
+
+    cursor.execute("SELECT * FROM scheduled_appointments WHERE appointment_id = ?", (appt_code,))
+    saved_appt = dict(cursor.fetchone())
+    conn.close()
+
+    print(f"[Appointment] Scheduled {appt_code} for {p_name} with {d_name} on {clean_datetime}.")
+    return {
+        "success": True,
+        "message": "Scan scheduled successfully.",
+        "appointment": saved_appt
+    }
+
+def get_scheduled_appointments() -> list:
+    """Returns all scheduled appointments from database."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM scheduled_appointments ORDER BY id DESC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
 
 if __name__ == "__main__":
     init_db()

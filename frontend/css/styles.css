@@ -10116,3 +10116,565 @@ body[data-role="viewer"] #settings-uid-wrapper {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================ */
+/* SCHEDULE SCAN MODAL (PATIENT PORTAL) - MATCHING REFERENCE    */
+/* ============================================================ */
+
+.sched-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+  background-color: rgba(4, 7, 17, 0.88);
+  background-image:
+    radial-gradient(circle at 50% 30%, rgba(6, 182, 212, 0.13), transparent 60%),
+    radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.09), transparent 50%),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: schedOverlayFadeIn 0.22s ease-out;
+}
+
+@keyframes schedOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.sched-modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  background: #080d1a;
+  border: 1.5px solid #00e5ff;
+  border-radius: 14px;
+  box-shadow: 0 0 35px rgba(0, 229, 255, 0.28), 0 25px 60px rgba(0, 0, 0, 0.88);
+  padding: 24px 28px 26px;
+  box-sizing: border-box;
+  color: #f8fafc;
+  animation: schedModalScaleIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes schedModalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.sched-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.sched-modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+.sched-modal-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.18s ease;
+}
+
+.sched-modal-close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sched-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sched-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sched-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.1px;
+}
+
+.sched-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.sched-select {
+  width: 100%;
+  height: 42px;
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0 34px 0 14px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.sched-select:focus {
+  border-color: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.22);
+}
+
+.sched-select option {
+  background: #080d1a;
+  color: #f1f5f9;
+}
+
+.sched-select-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #64748b;
+}
+
+.sched-slot-row {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr 1.4fr;
+  gap: 8px;
+}
+
+.sched-slot-row .sched-select {
+  padding-left: 10px;
+  padding-right: 24px;
+  font-size: 12.5px;
+}
+
+.sched-slot-row .sched-select-chevron {
+  right: 8px;
+}
+
+.sched-submit-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-family: inherit;
+  margin-top: 10px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* Disabled state (default) */
+.sched-submit-btn:disabled,
+.sched-submit-btn[disabled] {
+  background: #232d3f;
+  border: 1px solid #334155;
+  color: #78889e;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Active / Enabled state */
+.sched-submit-btn:not(:disabled) {
+  background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+  border: 1px solid #38bdf8;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.45);
+}
+
+.sched-submit-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 24px rgba(14, 165, 233, 0.65);
+}
+
+/* ============================================================ */
+/* PATIENT REGISTRATION PAGE (PATIENT PORTAL) - REFERENCE 2      */
+/* ============================================================ */
+
+.patient-clinical-reg-screen {
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  background-color: #030611;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(6, 182, 212, 0.08), transparent 40%),
+    radial-gradient(circle at 85% 80%, rgba(168, 85, 247, 0.08), transparent 45%),
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  position: relative;
+  z-index: 10;
+  overflow-y: auto;
+}
+
+.pcr-container {
+  width: 100%;
+  max-width: 980px;
+  margin: auto;
+}
+
+.pcr-card {
+  background: rgba(8, 13, 27, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(6, 182, 212, 0.05);
+  padding: 32px 38px;
+  box-sizing: border-box;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.pcr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.pcr-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pcr-header-icon-wrap {
+  color: #00e5ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.6));
+}
+
+.pcr-header-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: #00e5ff;
+  letter-spacing: 0.25px;
+  margin: 0;
+  text-shadow: 0 0 18px rgba(0, 229, 255, 0.45);
+}
+
+.pcr-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e2e8f0;
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pcr-back-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: #00e5ff;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+  transform: translateX(-2px);
+}
+
+.pcr-alert {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+}
+
+.pcr-alert--success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+.pcr-alert--error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.pcr-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.pcr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pcr-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.pcr-section-icon--purple {
+  color: #c084fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.45));
+}
+
+.pcr-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #c084fc;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+.pcr-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.pcr-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pcr-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.pcr-req {
+  color: #ef4444;
+  margin-left: 2px;
+}
+
+.pcr-input {
+  width: 100%;
+  height: 44px;
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f8fafc;
+  font-size: 13.5px;
+  font-family: inherit;
+  padding: 0 14px;
+  box-sizing: border-box;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.pcr-input::placeholder {
+  color: #475569;
+}
+
+.pcr-input:focus {
+  border-color: #00e5ff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+  background: #060a16;
+}
+
+/* Gender Pills */
+.pcr-gender-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.pcr-gender-btn {
+  height: 44px;
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.pcr-gender-btn:hover {
+  border-color: rgba(0, 229, 255, 0.4);
+  color: #cbd5e1;
+}
+
+.pcr-gender-btn.active {
+  border: 1.5px solid #00e5ff;
+  color: #00e5ff;
+  background: rgba(0, 229, 255, 0.06);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.35);
+  font-weight: 700;
+}
+
+/* Select Wrappers */
+.pcr-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.pcr-select {
+  width: 100%;
+  height: 44px;
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f8fafc;
+  font-size: 13.5px;
+  font-family: inherit;
+  padding: 0 38px 0 14px;
+  box-sizing: border-box;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pcr-select:focus {
+  border-color: #00e5ff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+}
+
+.pcr-select option {
+  background: #080d1a;
+  color: #f1f5f9;
+}
+
+.pcr-select-chevron {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #00e5ff;
+}
+
+/* Date input styling */
+.pcr-date-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.pcr-date-input {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+.pcr-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(70%) sepia(80%) saturate(1800%) hue-rotate(145deg) brightness(108%) contrast(102%);
+  cursor: pointer;
+}
+
+.pcr-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.pcr-btn {
+  height: 42px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0 22px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.pcr-btn--clear {
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+}
+
+.pcr-btn--clear:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
+.pcr-btn--submit {
+  background: #1f2a3e;
+  border: 1px solid #334155;
+  color: #94a3b8;
+}
+
+.pcr-btn--submit:hover,
+.pcr-btn--submit.active {
+  background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(14, 165, 233, 0.45);
+}
+
+@media (max-width: 768px) {
+  .pcr-card {
+    padding: 22px 18px;
+  }
+  .pcr-form-row {
+    grid-template-columns: 1fr;
+  }
+  .sched-slot-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+

@@ -2372,6 +2372,12 @@ async function navigateBackTorus() {
     return;
   }
 
+  if (currentId === "doctor-login-screen" || currentId === "patient-login-screen") {
+    torusScreenHistory = ["role-selection-screen"];
+    showTorusScreen("role-selection-screen", false);
+    return;
+  }
+
   let prevScreen = torusScreenHistory.length > 0 ? torusScreenHistory.pop() : null;
   while (prevScreen && prevScreen === currentId && torusScreenHistory.length > 0) {
     prevScreen = torusScreenHistory.pop();
@@ -3897,25 +3903,30 @@ function validateMobileFormat(mobile) {
 
 // Register Doctor in SQLite
 // Universal API dispatcher supporting relative routes and local backend ports
-async function callBackendAPI(endpoint, payload) {
+async function callBackendAPI(endpoint, payload, method = "POST") {
   const isDirectBackend = window.location.port === "3000";
   const candidateUrls = isDirectBackend
     ? [endpoint, `http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`]
     : [`http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`, endpoint];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));
+  const reqMethod = (method || "POST").toUpperCase();
 
   for (const url of uniqueUrls) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-      const resp = await fetch(url, {
-        method: "POST",
+      const fetchOptions = {
+        method: reqMethod,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
         signal: controller.signal
-      });
+      };
+      if (reqMethod !== "GET" && reqMethod !== "HEAD" && payload !== undefined) {
+        fetchOptions.body = JSON.stringify(payload);
+      }
+
+      const resp = await fetch(url, fetchOptions);
       clearTimeout(timeoutId);
 
       // Skip 404/405/502/503 from static dev servers that don't host the backend API
@@ -3933,6 +3944,7 @@ async function callBackendAPI(endpoint, payload) {
   }
   return null;
 }
+
 
 // Mask email for secure UI display
 function maskEmailAddress(email) {
@@ -4813,14 +4825,14 @@ function renderPatientDashboard(patient) {
     schedCard.onclick = () => {
       document.querySelectorAll(".pdash-action-card").forEach(c => c.classList.remove("active-glow"));
       schedCard.classList.add("active-glow");
-      if (typeof showToastAlert === "function") {
-        showToastAlert("Schedule Scan: Plan future ultrasound examinations.", "info");
-      }
+      openScheduleScanModal();
     };
   }
 
   if (regCard) {
     regCard.onclick = () => {
+      document.querySelectorAll(".pdash-action-card").forEach(c => c.classList.remove("active-glow"));
+      regCard.classList.add("active-glow");
       openPatientClinicalRegistration();
     };
   }
@@ -5363,6 +5375,26 @@ function initPatientControls() {
 }
 window.initPatientControls = initPatientControls;
 
+// ============================================================
+// PATIENT CLINICAL REGISTRATION & SCHEDULE SCAN FUNCTIONALITY
+// ============================================================
+
+function openPatientClinicalRegistration() {
+  setupPatientClinicalRegListeners();
+  showTorusScreen("patient-clinical-registration-screen");
+  const apptDateInput = document.getElementById("pcrApptDate");
+  if (apptDateInput && !apptDateInput.value) {
+    const today = new Date();
+    apptDateInput.value = today.toISOString().split("T")[0];
+  }
+}
+window.openPatientClinicalRegistration = openPatientClinicalRegistration;
+
+function closePatientClinicalRegistration() {
+  showTorusScreen("doctor-portal-dashboard");
+}
+window.closePatientClinicalRegistration = closePatientClinicalRegistration;
+
 let isPcrListenersAttached = false;
 function setupPatientClinicalRegListeners() {
   if (isPcrListenersAttached) return;
@@ -5373,6 +5405,7 @@ function setupPatientClinicalRegListeners() {
   const form = document.getElementById("patient-clinical-reg-form");
   const genderBtns = document.querySelectorAll(".pcr-gender-btn");
   const genderVal = document.getElementById("pcrGenderVal");
+  const submitBtn = document.getElementById("pcrSubmitBtn");
 
   if (patPcrBackBtn) {
     patPcrBackBtn.addEventListener("click", () => {
@@ -5423,46 +5456,413 @@ function setupPatientClinicalRegListeners() {
       const apptDate = document.getElementById("pcrApptDate")?.value || "";
       const bloodGroup = document.getElementById("pcrBloodGroup")?.value || "";
 
-      if (!fullName || !age || !mobile || !scanType || !apptDate) {
-        showAlertMessage("patClinicalRegAlert", "Please fill in all required fields marked with *.");
+      if (!fullName || fullName.length < 2) {
+        showAlertMessage("patClinicalRegAlert", "Please enter a valid patient full name.", "error");
+        return;
+      }
+      const ageNum = parseInt(age, 10);
+      if (!age || isNaN(ageNum) || ageNum < 1 || ageNum > 130) {
+        showAlertMessage("patClinicalRegAlert", "Please enter a valid age between 1 and 130.", "error");
+        return;
+      }
+      if (!mobile || !/^\d{10}$/.test(mobile)) {
+        showAlertMessage("patClinicalRegAlert", "Please enter a valid 10-digit mobile number.", "error");
+        return;
+      }
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showAlertMessage("patClinicalRegAlert", "Please enter a valid email address.", "error");
+        return;
+      }
+      if (!scanType) {
+        showAlertMessage("patClinicalRegAlert", "Please select a scan type.", "error");
+        return;
+      }
+      if (!apptDate) {
+        showAlertMessage("patClinicalRegAlert", "Please choose an appointment date.", "error");
         return;
       }
 
-      if (!/^\d{10}$/.test(mobile)) {
-        showAlertMessage("patClinicalRegAlert", "Please enter a valid 10-digit mobile number.");
-        return;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Registering...";
       }
 
-      // Show success feedback
-      showAlertMessage("patClinicalRegAlert", `Patient "${fullName}" successfully registered for ${scanType} Scan on ${apptDate}!`, "success");
+      try {
+        const payload = {
+          full_name: fullName,
+          age: ageNum,
+          gender: gender,
+          mobile: mobile,
+          email: email,
+          scan_type: scanType,
+          appointment_date: apptDate,
+          blood_group: bloodGroup
+        };
 
-      // Optional: Add to upcoming sessions
-      if (window.torusSessions && Array.isArray(window.torusSessions.upcoming)) {
-        const newSessionId = `S-00${window.torusSessions.upcoming.length + 5}`;
-        const newPatientId = `P-${Math.floor(1000 + Math.random() * 9000)}`;
-        window.torusSessions.upcoming.unshift({
-          sessionId: newSessionId,
-          patientId: newPatientId,
-          patientName: fullName,
-          deviceId: "TORUS-A12",
-          scanType: scanType,
-          diagnosticCenter: "Main Hospital",
-          scheduledTime: "11:00 AM",
-          status: "scheduled",
-          doctorConnectionState: "not_joined"
-        });
-        saveTorusSessions();
+        const res = await callBackendAPI("/api/patients/clinical-register", payload, "POST");
+
+        if (res && res.success) {
+          showAlertMessage("patClinicalRegAlert", `Patient "${fullName}" registered successfully (ID: ${res.patient?.patient_id || 'PAT'})!`, "success");
+
+          // Update upcoming list on dashboard
+          const upList = document.getElementById("patUpcomingSessionsList");
+          if (upList) {
+            const card = document.createElement("div");
+            card.className = "pdash-session-card";
+            card.innerHTML = `
+              <div class="pdash-session-info">
+                <div class="pdash-session-name">${fullName}</div>
+                <div class="pdash-session-device">${scanType} Scan • ${apptDate}</div>
+              </div>
+              <div class="pdash-session-right">
+                <span class="pdash-session-time">10:00 AM</span>
+              </div>
+            `;
+            upList.prepend(card);
+          }
+
+          // Increment upcoming counter
+          const statUp = document.getElementById("patStatUpcomingSessions");
+          if (statUp) {
+            const cur = parseInt(statUp.textContent, 10) || 0;
+            statUp.textContent = String(cur + 1);
+          }
+
+          if (typeof showToastAlert === "function") {
+            showToastAlert(`Patient "${fullName}" registered successfully!`, "success");
+          }
+
+          setTimeout(() => {
+            closePatientClinicalRegistration();
+            if (form) form.reset();
+            hideAlertMessage("patClinicalRegAlert");
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = "Register Patient";
+            }
+          }, 1200);
+        } else {
+          showAlertMessage("patClinicalRegAlert", res?.error || "Failed to register patient.", "error");
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Register Patient";
+          }
+        }
+      } catch (err) {
+        console.error("Clinical register error:", err);
+        showAlertMessage("patClinicalRegAlert", "An error occurred during registration. Please check connection.", "error");
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Register Patient";
+        }
       }
-
-      // Return to Patient Dashboard after 1.2s
-      setTimeout(() => {
-        closePatientClinicalRegistration();
-        if (form) form.reset();
-        hideAlertMessage("patClinicalRegAlert");
-      }, 1200);
     });
   }
 }
+window.setupPatientClinicalRegListeners = setupPatientClinicalRegListeners;
+
+// ============================================================
+// SCHEDULE SCAN MODAL (PATIENT PORTAL)
+// ============================================================
+
+let isSchedScanModalInitialized = false;
+function initScheduleScanModal() {
+  if (isSchedScanModalInitialized) return;
+  isSchedScanModalInitialized = true;
+
+  const modalOverlay = document.getElementById("patScheduleScanModalOverlay");
+  const closeBtn = document.getElementById("patScheduleCloseBtn");
+  const form = document.getElementById("patScheduleScanForm");
+  const submitBtn = document.getElementById("schedSubmitBtn");
+
+  const patientSelect = document.getElementById("schedPatientSelect");
+  const scanTypeSelect = document.getElementById("schedScanTypeSelect");
+  const doctorSelect = document.getElementById("schedDoctorSelect");
+  const daySelect = document.getElementById("schedSlotDay");
+  const monthSelect = document.getElementById("schedSlotMonth");
+  const yearSelect = document.getElementById("schedSlotYear");
+  const timeSelect = document.getElementById("schedSlotTime");
+
+  // Populate Days 01 - 31
+  if (daySelect && daySelect.options.length <= 1) {
+    for (let d = 1; d <= 31; d++) {
+      const opt = document.createElement("option");
+      const val = d < 10 ? `0${d}` : `${d}`;
+      opt.value = val;
+      opt.textContent = val;
+      daySelect.appendChild(opt);
+    }
+  }
+
+  // Populate Months (01 - 12 with full month names)
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  if (monthSelect && monthSelect.options.length <= 1) {
+    monthNames.forEach((name, idx) => {
+      const opt = document.createElement("option");
+      const val = idx < 9 ? `0${idx + 1}` : `${idx + 1}`;
+      opt.value = val;
+      opt.textContent = name;
+      monthSelect.appendChild(opt);
+    });
+  }
+
+  // Populate Years (2026, 2027)
+  if (yearSelect && yearSelect.options.length <= 1) {
+    ["2026", "2027"].forEach(y => {
+      const opt = document.createElement("option");
+      opt.value = y;
+      opt.textContent = y;
+      yearSelect.appendChild(opt);
+    });
+  }
+
+  // Populate Times
+  const timeSlots = [
+    "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
+    "11:15 AM", "12:00 PM", "01:30 PM", "02:15 PM",
+    "03:00 PM", "03:45 PM", "04:30 PM", "05:15 PM"
+  ];
+  if (timeSelect && timeSelect.options.length <= 1) {
+    timeSlots.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t;
+      timeSelect.appendChild(opt);
+    });
+  }
+
+  // Check validity of all required fields to toggle submit button
+  function checkValidity() {
+    const p = patientSelect ? patientSelect.value : "";
+    const s = scanTypeSelect ? scanTypeSelect.value : "";
+    const d = doctorSelect ? doctorSelect.value : "";
+    const day = daySelect ? daySelect.value : "";
+    const month = monthSelect ? monthSelect.value : "";
+    const year = yearSelect ? yearSelect.value : "";
+    const time = timeSelect ? timeSelect.value : "";
+
+    const allValid = Boolean(p && s && d && day && month && year && time);
+    if (submitBtn) {
+      submitBtn.disabled = !allValid;
+    }
+  }
+
+  [patientSelect, scanTypeSelect, doctorSelect, daySelect, monthSelect, yearSelect, timeSelect].forEach(el => {
+    if (el) {
+      el.addEventListener("change", checkValidity);
+    }
+  });
+
+  // Close actions
+  if (closeBtn) {
+    closeBtn.addEventListener("click", closeScheduleScanModal);
+  }
+  if (modalOverlay) {
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target === modalOverlay) {
+        closeScheduleScanModal();
+      }
+    });
+  }
+
+  // Form Submission
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (submitBtn && submitBtn.disabled) return;
+
+      const pVal = patientSelect.value;
+      const patientName = patientSelect.options[patientSelect.selectedIndex]?.text?.split(" (")[0] || pVal;
+      const scanType = scanTypeSelect.value;
+      const dVal = doctorSelect.value;
+      const doctorName = doctorSelect.options[doctorSelect.selectedIndex]?.text || dVal;
+      const day = daySelect.value;
+      const month = monthSelect.value;
+      const year = yearSelect.value;
+      const time = timeSelect.value;
+
+      const apptDate = `${year}-${month}-${day}`;
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Scheduling...";
+      }
+
+      try {
+        const payload = {
+          patient: pVal,
+          patient_id: pVal,
+          patient_name: patientName,
+          doctor: doctorName,
+          doctor_id: dVal,
+          doctor_name: doctorName,
+          scan_type: scanType,
+          slot_day: day,
+          slot_month: month,
+          slot_year: year,
+          slot_time: time,
+          appointment_date: apptDate,
+          appointment_time: time,
+          notes: "Scheduled via Patient Portal"
+        };
+
+        const res = await callBackendAPI("/api/appointments/schedule", payload, "POST");
+
+        if (res && res.success) {
+          // Prepend to Upcoming Sessions on Dashboard
+          const upList = document.getElementById("patUpcomingSessionsList");
+          if (upList) {
+            const card = document.createElement("div");
+            card.className = "pdash-session-card";
+            card.innerHTML = `
+              <div class="pdash-session-info">
+                <div class="pdash-session-name">${patientName}</div>
+                <div class="pdash-session-device">${scanType} Scan • ${doctorName}</div>
+              </div>
+              <div class="pdash-session-right">
+                <span class="pdash-session-time">${time}</span>
+              </div>
+            `;
+            upList.prepend(card);
+          }
+
+          // Increment upcoming counter
+          const statUp = document.getElementById("patStatUpcomingSessions");
+          if (statUp) {
+            const cur = parseInt(statUp.textContent, 10) || 0;
+            statUp.textContent = String(cur + 1);
+          }
+
+          if (typeof showToastAlert === "function") {
+            showToastAlert(`Appointment scheduled successfully for ${patientName} on ${day}/${month}/${year} at ${time}!`, "success");
+          }
+
+          closeScheduleScanModal();
+        } else {
+          showAlertMessage("schedModalAlert", res?.error || "Failed to schedule appointment.", "error");
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Schedule Scan";
+          }
+        }
+      } catch (err) {
+        console.error("Error scheduling appointment:", err);
+        showAlertMessage("schedModalAlert", "Failed to schedule appointment. Please try again.", "error");
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Schedule Scan";
+        }
+      }
+    });
+  }
+}
+window.initScheduleScanModal = initScheduleScanModal;
+
+async function openScheduleScanModal() {
+  initScheduleScanModal();
+
+  const modalOverlay = document.getElementById("patScheduleScanModalOverlay");
+  const form = document.getElementById("patScheduleScanForm");
+  const submitBtn = document.getElementById("schedSubmitBtn");
+  const alertEl = document.getElementById("schedModalAlert");
+
+  if (form) form.reset();
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Schedule Scan";
+  }
+  if (alertEl) {
+    alertEl.style.display = "none";
+  }
+
+  // Populate patients from backend API
+  const patientSelect = document.getElementById("schedPatientSelect");
+  if (patientSelect) {
+    try {
+      const res = await callBackendAPI("/api/patients/clinical-list", {}, "GET");
+      if (res && res.patients && res.patients.length > 0) {
+        patientSelect.innerHTML = `<option value="" disabled selected>Choose a patient...</option>`;
+        res.patients.forEach(p => {
+          const pName = p.name || p.full_name || "Patient";
+          const pId = p.uid || p.patient_id || p.id || "PAT";
+          const opt = document.createElement("option");
+          opt.value = pId;
+          opt.textContent = `${pName} (${pId})`;
+          patientSelect.appendChild(opt);
+        });
+      } else {
+        // Fallback default patients
+        patientSelect.innerHTML = `
+          <option value="" disabled selected>Choose a patient...</option>
+          <option value="PAT-4001">Patient User (PAT-4001)</option>
+          <option value="P-8821">John Smith (P-8821)</option>
+          <option value="P-9104">Jane Smith (P-9104)</option>
+          <option value="P-7543">Robert Brown (P-7543)</option>
+        `;
+      }
+    } catch (e) {
+      console.warn("Using fallback patients:", e);
+      patientSelect.innerHTML = `
+        <option value="" disabled selected>Choose a patient...</option>
+        <option value="PAT-4001">Patient User (PAT-4001)</option>
+        <option value="P-8821">John Smith (P-8821)</option>
+        <option value="P-9104">Jane Smith (P-9104)</option>
+        <option value="P-7543">Robert Brown (P-7543)</option>
+      `;
+    }
+  }
+
+  // Populate doctors from backend API
+  const doctorSelect = document.getElementById("schedDoctorSelect");
+  if (doctorSelect) {
+    try {
+      const res = await callBackendAPI("/api/doctors/list", {}, "GET");
+      if (res && res.doctors && res.doctors.length > 0) {
+        doctorSelect.innerHTML = `<option value="" disabled selected>Choose a doctor...</option>`;
+        res.doctors.forEach(d => {
+          const opt = document.createElement("option");
+          opt.value = d.name;
+          const docPrefix = d.name.startsWith("Dr.") ? "" : "Dr. ";
+          opt.textContent = `${docPrefix}${d.name} (${d.specialty || 'Radiology'})`;
+          doctorSelect.appendChild(opt);
+        });
+      } else {
+        // Fallback doctors
+        doctorSelect.innerHTML = `
+          <option value="" disabled selected>Choose a doctor...</option>
+          <option value="Dr. John Smith">Dr. John Smith (Chief Radiologist)</option>
+          <option value="Dr. Elena Rodriguez">Dr. Elena Rodriguez (Senior Radiologist)</option>
+          <option value="Dr. Marcus Vance">Dr. Marcus Vance (Cardiovascular Sonography)</option>
+        `;
+      }
+    } catch (e) {
+      console.warn("Using fallback doctors:", e);
+      doctorSelect.innerHTML = `
+        <option value="" disabled selected>Choose a doctor...</option>
+        <option value="Dr. John Smith">Dr. John Smith (Chief Radiologist)</option>
+        <option value="Dr. Elena Rodriguez">Dr. Elena Rodriguez (Senior Radiologist)</option>
+        <option value="Dr. Marcus Vance">Dr. Marcus Vance (Cardiovascular Sonography)</option>
+      `;
+    }
+  }
+
+  if (modalOverlay) {
+    modalOverlay.style.display = "flex";
+  }
+}
+window.openScheduleScanModal = openScheduleScanModal;
+
+function closeScheduleScanModal() {
+  const modalOverlay = document.getElementById("patScheduleScanModalOverlay");
+  if (modalOverlay) {
+    modalOverlay.style.display = "none";
+  }
+}
+window.closeScheduleScanModal = closeScheduleScanModal;
+
 
 // Render Doctor Dashboard (Active & Upcoming Sessions)
 function renderDoctorDashboard() {
@@ -7131,12 +7531,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Back Button from Doctor Login to Role Selection / Previous Screen
+  // Back Button from Doctor Login to Role Selection
   const docBackBtn = document.getElementById("doctor-login-back-btn");
   if (docBackBtn) {
-    docBackBtn.addEventListener("click", () => {
-      navigateBackTorus();
-    });
+    docBackBtn.onclick = (e) => {
+      if (e) e.preventDefault();
+      torusScreenHistory = ["role-selection-screen"];
+      showTorusScreen("role-selection-screen", false);
+    };
   }
 
   // Doctor Portal Dashboard Back Button -> Return to Previous Screen (e.g. Doctor Login)
@@ -7756,12 +8158,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // 2. Back Button from Patient Login to Role Selection / Previous Screen
+  // 2. Back Button from Patient Login to Role Selection
   const patBackBtn = document.getElementById("patient-login-back-btn");
   if (patBackBtn) {
-    patBackBtn.addEventListener("click", () => {
-      navigateBackTorus();
-    });
+    patBackBtn.onclick = (e) => {
+      if (e) e.preventDefault();
+      torusScreenHistory = ["role-selection-screen"];
+      showTorusScreen("role-selection-screen", false);
+    };
   }
 
   // 3. Patient Secure Login Form Submission
@@ -10924,6 +11328,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     initDoctorReportsControls();
     initDoctorHistoryControls();
     initPatientControls();
+    if (typeof setupPatientClinicalRegListeners === "function") setupPatientClinicalRegListeners();
+    if (typeof initScheduleScanModal === "function") initScheduleScanModal();
   }
 
   initDocDashSidebar();
