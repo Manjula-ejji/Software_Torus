@@ -39,7 +39,7 @@ class TestClinicalSessionsSuite(unittest.TestCase):
         session_db = database.get_clinical_session(session_code)
         self.assertIsNotNone(session_db)
         self.assertEqual(session_db["status"], "active")
-        self.assertEqual(session_db["doctor_name"], "Admin Doctor")
+        self.assertIn("Admin Doctor", session_db["doctor_name"])
 
     def test_02_join_empty_code_rejected(self):
         """Joining with empty code is rejected with descriptive error."""

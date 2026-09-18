@@ -2285,10 +2285,10 @@ function showTorusScreen(targetId, recordHistory = true) {
       setupHapticPadListeners();
     }
     if (typeof initiateHapticPadConnection === "function" &&
-        typeof currentHapticState !== "undefined" &&
-        typeof HAPTIC_STATE !== "undefined" &&
-        currentHapticState !== HAPTIC_STATE.CONNECTED &&
-        !window.isHapticConnectionInProgress) {
+      typeof currentHapticState !== "undefined" &&
+      typeof HAPTIC_STATE !== "undefined" &&
+      currentHapticState !== HAPTIC_STATE.CONNECTED &&
+      !window.isHapticConnectionInProgress) {
       initiateHapticPadConnection();
     }
 
@@ -2346,6 +2346,12 @@ async function navigateBackTorus() {
     if (typeof saveTorusSessions === "function") {
       saveTorusSessions();
     }
+
+    // Unbind Haptic Pad routing from previous consultation session so signals are safely closed
+    if (typeof unbindHapticSessionAPI === "function") {
+      unbindHapticSessionAPI(window.currentActiveConsultationSessionId);
+    }
+    window.currentActiveConsultationSessionId = null;
 
     const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
       (roleInput && roleInput.value === "doctor") ||
@@ -5761,10 +5767,14 @@ function initScheduleScanModal() {
 }
 window.initScheduleScanModal = initScheduleScanModal;
 
-async function openScheduleScanModal() {
+function openScheduleScanModal() {
+  const modalOverlay = document.getElementById("patScheduleScanModalOverlay");
+  if (modalOverlay) {
+    modalOverlay.style.display = "flex";
+  }
+
   initScheduleScanModal();
 
-  const modalOverlay = document.getElementById("patScheduleScanModalOverlay");
   const form = document.getElementById("patScheduleScanForm");
   const submitBtn = document.getElementById("schedSubmitBtn");
   const alertEl = document.getElementById("schedModalAlert");
@@ -5778,79 +5788,85 @@ async function openScheduleScanModal() {
     alertEl.style.display = "none";
   }
 
-  // Populate patients from backend API
+  // Ensure default slot is set
+  const daySelect = document.getElementById("schedSlotDay");
+  const monthSelect = document.getElementById("schedSlotMonth");
+  const yearSelect = document.getElementById("schedSlotYear");
+  const timeSelect = document.getElementById("schedSlotTime");
+
+  const today = new Date();
+  const dStr = String(today.getDate()).padStart(2, "0");
+  const mStr = String(today.getMonth() + 1).padStart(2, "0");
+  const yStr = String(today.getFullYear());
+
+  if (daySelect && !daySelect.value) daySelect.value = dStr;
+  if (monthSelect && !monthSelect.value) monthSelect.value = mStr;
+  if (yearSelect && !yearSelect.value) yearSelect.value = yStr;
+
+  // Immediately ensure fallback patients exist so dropdown is NEVER empty
   const patientSelect = document.getElementById("schedPatientSelect");
-  if (patientSelect) {
-    try {
-      const res = await callBackendAPI("/api/patients/clinical-list", {}, "GET");
-      if (res && res.patients && res.patients.length > 0) {
-        patientSelect.innerHTML = `<option value="" disabled selected>Choose a patient...</option>`;
-        res.patients.forEach(p => {
-          const pName = p.name || p.full_name || "Patient";
-          const pId = p.uid || p.patient_id || p.id || "PAT";
-          const opt = document.createElement("option");
-          opt.value = pId;
-          opt.textContent = `${pName} (${pId})`;
-          patientSelect.appendChild(opt);
-        });
-      } else {
-        // Fallback default patients
-        patientSelect.innerHTML = `
-          <option value="" disabled selected>Choose a patient...</option>
-          <option value="PAT-4001">Patient User (PAT-4001)</option>
-          <option value="P-8821">John Smith (P-8821)</option>
-          <option value="P-9104">Jane Smith (P-9104)</option>
-          <option value="P-7543">Robert Brown (P-7543)</option>
-        `;
-      }
-    } catch (e) {
-      console.warn("Using fallback patients:", e);
-      patientSelect.innerHTML = `
-        <option value="" disabled selected>Choose a patient...</option>
-        <option value="PAT-4001">Patient User (PAT-4001)</option>
-        <option value="P-8821">John Smith (P-8821)</option>
-        <option value="P-9104">Jane Smith (P-9104)</option>
-        <option value="P-7543">Robert Brown (P-7543)</option>
-      `;
-    }
+  if (patientSelect && patientSelect.options.length <= 1) {
+    patientSelect.innerHTML = `
+      <option value="" disabled selected>Choose a patient...</option>
+      <option value="PAT-4001">Patient User (PAT-4001)</option>
+      <option value="P-8821">John Smith (P-8821)</option>
+      <option value="P-9104">Jane Smith (P-9104)</option>
+      <option value="P-7543">Robert Brown (P-7543)</option>
+    `;
   }
 
-  // Populate doctors from backend API
+  // Immediately ensure fallback doctors exist so dropdown is NEVER empty
   const doctorSelect = document.getElementById("schedDoctorSelect");
-  if (doctorSelect) {
-    try {
-      const res = await callBackendAPI("/api/doctors/list", {}, "GET");
-      if (res && res.doctors && res.doctors.length > 0) {
-        doctorSelect.innerHTML = `<option value="" disabled selected>Choose a doctor...</option>`;
-        res.doctors.forEach(d => {
-          const opt = document.createElement("option");
-          opt.value = d.name;
-          const docPrefix = d.name.startsWith("Dr.") ? "" : "Dr. ";
-          opt.textContent = `${docPrefix}${d.name} (${d.specialty || 'Radiology'})`;
-          doctorSelect.appendChild(opt);
-        });
-      } else {
-        // Fallback doctors
-        doctorSelect.innerHTML = `
-          <option value="" disabled selected>Choose a doctor...</option>
-          <option value="Dr. John Smith">Dr. John Smith (Chief Radiologist)</option>
-          <option value="Dr. Elena Rodriguez">Dr. Elena Rodriguez (Senior Radiologist)</option>
-          <option value="Dr. Marcus Vance">Dr. Marcus Vance (Cardiovascular Sonography)</option>
-        `;
-      }
-    } catch (e) {
-      console.warn("Using fallback doctors:", e);
-      doctorSelect.innerHTML = `
-        <option value="" disabled selected>Choose a doctor...</option>
-        <option value="Dr. John Smith">Dr. John Smith (Chief Radiologist)</option>
-        <option value="Dr. Elena Rodriguez">Dr. Elena Rodriguez (Senior Radiologist)</option>
-        <option value="Dr. Marcus Vance">Dr. Marcus Vance (Cardiovascular Sonography)</option>
-      `;
-    }
+  if (doctorSelect && doctorSelect.options.length <= 1) {
+    doctorSelect.innerHTML = `
+      <option value="" disabled selected>Choose a doctor...</option>
+      <option value="Dr. John Smith">Dr. John Smith (Chief Radiologist)</option>
+      <option value="Dr. Elena Rodriguez">Dr. Elena Rodriguez (Senior Radiologist)</option>
+      <option value="Dr. Marcus Vance">Dr. Marcus Vance (Cardiovascular Sonography)</option>
+      <option value="Dr. Admin Doctor">Dr. Admin Doctor (Radiology)</option>
+    `;
   }
 
-  if (modalOverlay) {
-    modalOverlay.style.display = "flex";
+  // Asynchronously fetch and refresh latest patients & doctors in background
+  if (typeof callBackendAPI === "function") {
+    callBackendAPI("/api/patients/clinical-list", {}, "GET")
+      .then(res => {
+        if (res && res.patients && res.patients.length > 0 && patientSelect) {
+          const curVal = patientSelect.value;
+          patientSelect.innerHTML = `<option value="" disabled ${!curVal ? "selected" : ""}>Choose a patient...</option>`;
+          res.patients.forEach(p => {
+            const pName = p.name || p.full_name || "Patient";
+            const pId = p.uid || p.patient_id || p.id || "PAT";
+            const opt = document.createElement("option");
+            opt.value = pId;
+            opt.textContent = `${pName} (${pId})`;
+            if (curVal && (curVal === pId || curVal === pName)) {
+              opt.selected = true;
+            }
+            patientSelect.appendChild(opt);
+          });
+        }
+      })
+      .catch(err => console.warn("Background patient list refresh:", err));
+
+    callBackendAPI("/api/doctors/list", {}, "GET")
+      .then(res => {
+        if (res && res.doctors && res.doctors.length > 0 && doctorSelect) {
+          const curDoc = doctorSelect.value;
+          doctorSelect.innerHTML = `<option value="" disabled ${!curDoc ? "selected" : ""}>Choose a doctor...</option>`;
+          res.doctors.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.name;
+            const docPrefix = d.name.startsWith("Dr.") ? "" : "Dr. ";
+            opt.textContent = `${docPrefix}${d.name} (${d.specialty || 'Radiology'})`;
+            if (curDoc && curDoc === d.name) {
+              opt.selected = true;
+            }
+            doctorSelect.appendChild(opt);
+          });
+        }
+      })
+      .catch(err => console.warn("Background doctor list refresh:", err));
   }
 }
 window.openScheduleScanModal = openScheduleScanModal;
@@ -6008,6 +6024,11 @@ function joinClinicalSession(sessionId) {
   window.currentActiveConsultationSessionId = session.sessionId;
   saveTorusSessions();
 
+  // Bind physical Haptic Pad telemetry exclusively to this active consultation session
+  if (typeof bindHapticSessionAPI === "function") {
+    bindHapticSessionAPI(session);
+  }
+
   if (typeof updateLiveConsultationDeviceDisplay === "function" && session && session.deviceId) {
     updateLiveConsultationDeviceDisplay(session.deviceId);
   }
@@ -6036,6 +6057,11 @@ function rejoinClinicalSession(sessionId) {
   window.currentActiveConsultationSessionId = session.sessionId;
   saveTorusSessions();
 
+  // Bind physical Haptic Pad telemetry exclusively to this active consultation session
+  if (typeof bindHapticSessionAPI === "function") {
+    bindHapticSessionAPI(session);
+  }
+
   // Re-use existing session code if available
   if (session.clinicalSessionCode) {
     window.activeClinicalSessionCode = session.clinicalSessionCode;
@@ -6059,6 +6085,159 @@ function rejoinClinicalSession(sessionId) {
 
   showTorusScreen("app-dashboard");
 }
+
+// ============================================================
+// HAPTIC PAD SESSION-BASED ROUTING & SERVICE LAYER
+// ============================================================
+
+/**
+ * Bind Doctor's active consultation session to Haptic Pad routing in backend
+ */
+async function bindHapticSessionAPI(session) {
+  if (!session) return { success: false, error: "No session specified" };
+  const payload = {
+    session_id: session.sessionId || session.session_id || "S-001",
+    session_code: session.clinicalSessionCode || session.session_code || window.activeClinicalSessionCode || `TORUS-CLI-${session.patientId || "P-12345"}`,
+    doctor_id: currentAuthenticatedUser?.uid || currentAuthenticatedUser?.id || "3001",
+    doctor_name: currentAuthenticatedUser?.name || "Admin Doctor",
+    patient_id: session.patientId || session.patient_id || "P-12345",
+    patient_name: session.patientName || session.patient_name || "Patient A",
+    device_id: session.deviceId || session.device_id || "TORUS-A12"
+  };
+
+  const isDirectBackend = window.location.port === "3000";
+  const urls = isDirectBackend
+    ? ["/api/haptic-pad/session/bind", "http://127.0.0.1:3000/api/haptic-pad/session/bind", "http://localhost:3000/api/haptic-pad/session/bind"]
+    : ["http://127.0.0.1:3000/api/haptic-pad/session/bind", "http://localhost:3000/api/haptic-pad/session/bind", "/api/haptic-pad/session/bind"];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res && res.ok) {
+        const data = await res.json();
+        console.log(`[Haptic Pad Routing] Bound to Session: ${payload.session_id} -> Patient: ${payload.patient_name} (${payload.patient_id})`);
+        return data;
+      }
+    } catch (e) {
+      // Continue fallback
+    }
+  }
+  return { success: false };
+}
+window.bindHapticSessionAPI = bindHapticSessionAPI;
+
+/**
+ * Unbind active consultation session from Haptic Pad routing in backend
+ */
+async function unbindHapticSessionAPI(sessionId = null) {
+  const payload = { session_id: sessionId || window.currentActiveConsultationSessionId || null };
+  const isDirectBackend = window.location.port === "3000";
+  const urls = isDirectBackend
+    ? ["/api/haptic-pad/session/unbind", "http://127.0.0.1:3000/api/haptic-pad/session/unbind", "http://localhost:3000/api/haptic-pad/session/unbind"]
+    : ["http://127.0.0.1:3000/api/haptic-pad/session/unbind", "http://localhost:3000/api/haptic-pad/session/unbind", "/api/haptic-pad/session/unbind"];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res && res.ok) {
+        const data = await res.json();
+        console.log("[Haptic Pad Routing] Consultation session unbound. Haptic Pad telemetry signals paused.");
+        return data;
+      }
+    } catch (e) {
+      // Continue fallback
+    }
+  }
+  return { success: false };
+}
+window.unbindHapticSessionAPI = unbindHapticSessionAPI;
+
+/**
+ * Patient Haptic Service
+ * Enforces session-based authorization and delivers real-time Haptic Pad telemetry
+ */
+const PatientHapticService = {
+  async getTelemetry(options = {}) {
+    const sessionId = options.sessionId || options.session_id || "";
+    const patientId = options.patientId || options.patient_id || currentAuthenticatedUser?.uid || "";
+    const patientName = options.patientName || options.patient_name || currentAuthenticatedUser?.name || "";
+
+    const queryParams = new URLSearchParams();
+    if (sessionId) queryParams.set("session_id", sessionId);
+    if (patientId) queryParams.set("patient_id", patientId);
+    if (patientName) queryParams.set("patient_name", patientName);
+
+    const isDirectBackend = window.location.port === "3000";
+    const baseUrls = isDirectBackend
+      ? ["/api/haptic-pad/patient/telemetry", "http://127.0.0.1:3000/api/haptic-pad/patient/telemetry", "http://localhost:3000/api/haptic-pad/patient/telemetry"]
+      : ["http://127.0.0.1:3000/api/haptic-pad/patient/telemetry", "http://localhost:3000/api/haptic-pad/patient/telemetry", "/api/haptic-pad/patient/telemetry"];
+
+    for (const base of baseUrls) {
+      try {
+        const url = `${base}?${queryParams.toString()}`;
+        const res = await fetch(url, { method: "GET" });
+        if (res && res.ok) {
+          return await res.json();
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return { authorized: false, routing_status: "NETWORK_ERROR", telemetry: null };
+  },
+
+  subscribeStream(options = {}, onData, onBlocked) {
+    const sessionId = options.sessionId || options.session_id || "";
+    const patientId = options.patientId || options.patient_id || currentAuthenticatedUser?.uid || "";
+    const patientName = options.patientName || options.patient_name || currentAuthenticatedUser?.name || "";
+
+    const queryParams = new URLSearchParams();
+    if (sessionId) queryParams.set("session_id", sessionId);
+    if (patientId) queryParams.set("patient_id", patientId);
+    if (patientName) queryParams.set("patient_name", patientName);
+
+    const baseUrl = (window.location.port === "3000") ? "" : "http://127.0.0.1:3000";
+    const streamUrl = `${baseUrl}/api/haptic-pad/patient/stream?${queryParams.toString()}`;
+
+    try {
+      const evtSource = new EventSource(streamUrl);
+      evtSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.authorized && data.telemetry) {
+            if (typeof onData === "function") onData(data);
+          } else {
+            if (typeof onBlocked === "function") onBlocked(data);
+          }
+        } catch (err) { }
+      };
+      evtSource.onerror = () => {
+        // EventSource auto-reconnects
+      };
+      return evtSource;
+    } catch (e) {
+      console.warn("[PatientHapticService] EventSource error:", e);
+      return null;
+    }
+  }
+};
+window.PatientHapticService = PatientHapticService;
+
+// Browser console verification helper
+window.verifyHapticSessionRouting = async function (patientId = "P-12345", sessionId = "S-001") {
+  console.log(`[HAPTIC VERIFICATION] Testing Haptic Pad routing for Patient ID: ${patientId}, Session ID: ${sessionId}...`);
+  const result = await PatientHapticService.getTelemetry({ patientId, sessionId });
+  console.log("[HAPTIC VERIFICATION] Result:", result);
+  return result;
+};
 
 // ============================================================
 // HAPTIC PAD CONNECTION STATE ENGINE & SERVICE ABSTRACTION
@@ -7641,7 +7820,68 @@ document.addEventListener("DOMContentLoaded", async () => {
         ddashPopover.style.display = "none";
       }
     });
+
+    // Dashboard Avatar Popover Logout Button (Doctor / Patient)
+    const ddashLogoutBtn = document.getElementById("docDashLogoutBtn");
+    if (ddashLogoutBtn) {
+      ddashLogoutBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handlePortalLogout();
+      });
+    }
   }
+
+  // Universal Portal Logout Handler for Doctor and Patient
+  function handlePortalLogout() {
+    const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+      (roleInput && roleInput.value === "doctor") ||
+      Boolean(window.currentActiveConsultationSessionId);
+
+    // Close any open popovers, sidebars, or modals
+    const ddashPopover = document.getElementById("docDashProfilePopover");
+    if (ddashPopover) ddashPopover.style.display = "none";
+    const headerProfilePopover = document.getElementById("headerProfilePopover");
+    if (headerProfilePopover) headerProfilePopover.style.display = "none";
+    const docPortalDash = document.getElementById("doctor-portal-dashboard");
+    if (docPortalDash) docPortalDash.classList.remove("sidebar-open");
+
+    // Clear session state
+    currentAuthenticatedUser = null;
+    currentAuthenticatedRole = null;
+    if (roleInput) roleInput.value = "";
+    if (uidInput) uidInput.value = "";
+
+    const hBadge = document.getElementById("header-user-badge");
+    if (hBadge) hBadge.style.display = "none";
+    const hDev = document.getElementById("header-device-badge");
+    if (hDev) hDev.style.display = "none";
+
+    if (isDoc) {
+      // Clear Doctor session and navigate to Doctor Secure Login
+      try {
+        sessionStorage.removeItem("authenticated_doctor");
+        localStorage.removeItem("authenticated_doctor");
+        sessionStorage.removeItem("authenticated_user");
+        localStorage.removeItem("authenticated_user");
+      } catch (e) { }
+
+      torusScreenHistory = ["role-selection-screen"];
+      showTorusScreen("doctor-login-screen");
+    } else {
+      // Clear Patient session and navigate to Patient Secure Login
+      try {
+        sessionStorage.removeItem("authenticated_patient");
+        localStorage.removeItem("authenticated_patient");
+        sessionStorage.removeItem("authenticated_user");
+        localStorage.removeItem("authenticated_user");
+      } catch (e) { }
+
+      torusScreenHistory = ["role-selection-screen"];
+      showTorusScreen("patient-login-screen");
+    }
+  }
+  window.handlePortalLogout = handlePortalLogout;
 
   // ============================================================
   // Live Consultation Header — User Profile Popover (profileBtn)
@@ -7678,14 +7918,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const hppLogoutBtn = document.getElementById("headerProfileLogoutBtn");
     if (hppLogoutBtn) {
       hppLogoutBtn.addEventListener("click", () => {
-        headerProfilePopover.style.display = "none";
-        hppPinned = false;
-        // Return to role selection
-        showTorusScreen("role-selection-screen");
-        const hBadge = document.getElementById("header-user-badge");
-        if (hBadge) hBadge.style.display = "none";
-        const hDev = document.getElementById("header-device-badge");
-        if (hDev) hDev.style.display = "none";
+        handlePortalLogout();
       });
     }
   }
@@ -11213,12 +11446,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
           if (view === "logout") {
             toggleSidebar(false);
-            const logoutBtn = document.getElementById("docDashLogoutBtn");
-            if (logoutBtn) {
-              logoutBtn.click();
-            } else {
-              location.reload();
-            }
+            handlePortalLogout();
             return;
           }
 

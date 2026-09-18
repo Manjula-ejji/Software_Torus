@@ -39,12 +39,14 @@ AXIS_MAP = {
 IMU_TCP_PORT = 505
 HOME_CMD_PORT = 506
 
-# ── Serial Auto-Detection Config (From doctor_launcher.py) ─────────────────────
-ST_VID = "0483"
+# ── Serial Auto-Detection Config ───────────────────────────────────────────────
+ST_VID_HEX = "0483"
+ST_VID_INT = 1155
 ST_DESCRIPTIONS = (
-    "stmicroelectronics virtual com port",
-    "stm32 virtual com port",
-    "stm virtual com port",
+    "stmicroelectronics",
+    "stlink",
+    "stm32",
+    "virtual com port",
     "doctor station",
     "usb serial device",
 )
@@ -58,13 +60,20 @@ def log(msg: str):
 
 
 def find_haptic_port() -> str | None:
-    for p in serial.tools.list_ports.comports():
-        hwid = (p.hwid or "").lower()
-        desc = (p.description or "").lower()
-        if ST_VID in hwid:
-            return p.device
-        if any(d in desc for d in ST_DESCRIPTIONS):
-            return p.device
+    try:
+        # First priority: STMicroelectronics / ST-Link / STM32
+        for p in serial.tools.list_ports.comports():
+            hwid = (p.hwid or "").lower()
+            desc = (p.description or "").lower()
+            vid = p.vid
+            if (vid == ST_VID_INT) or (ST_VID_HEX in hwid) or any(d in desc for d in ST_DESCRIPTIONS):
+                return p.device
+        # Second priority: any available COM port
+        for p in serial.tools.list_ports.comports():
+            if p.device:
+                return p.device
+    except Exception:
+        pass
     return None
 
 

@@ -73,11 +73,15 @@ def api_remote_input():
         return Response(status=204)
     return jsonify({"status": "success", "executed": True})
 
-# -------------------- HAPTIC PAD HARDWARE LINK API --------------------
+# -------------------- HAPTIC PAD HARDWARE LINK & AUTO-DETECTION --------------------
+import serial
+import serial.tools.list_ports
+import threading
 import time
 
 HAPTIC_AGENT_SECRET = os.environ.get("HAPTIC_AGENT_SECRET", "torus_haptic_sec_2026")
-HAPTIC_HEARTBEAT_TIMEOUT = 3.0  # seconds
+HAPTIC_HEARTBEAT_TIMEOUT = 4.0  # seconds
+HAPTIC_BAUD_RATE = 115200
 
 haptic_device_state = {
     "connected": False,
@@ -89,6 +93,175 @@ haptic_device_state = {
     "last_heartbeat": 0.0,
     "telemetry": {}
 }
+haptic_state_lock = threading.Lock()
+
+ST_VID_HEX = "0483"
+ST_VID_INT = 1155
+ST_DESCRIPTIONS = (
+    "stmicroelectronics",
+    "stlink",
+    "stm32",
+    "virtual com port",
+    "doctor station",
+    "usb serial device",
+)
+SKIP_TOKENS = ("===", "BOOT", "LOOP", "ERROR", "OK:", "HX711", "BNO")
+
+def parse_haptic_packet(line: str) -> dict | None:
+    line = line.strip()
+    if not line or any(t in line for t in SKIP_TOKENS):
+        return None
+    data = {}
+    try:
+        for field in line.split("|"):
+            if ":" not in field:
+                continue
+            key, _, value = field.partition(":")
+            key, value = key.strip(), value.strip()
+
+            if key in ("JX", "JY", "JZ"):
+                data[key] = int(value)
+            elif key == "SW":
+                try:
+                    sw_val = int(value)
+                    data["SW_M"] = "ON" if (sw_val & 1) else "OFF"
+                    data["SW_L"] = "ON" if (sw_val & 2) else "OFF"
+                except ValueError:
+                    data["SW"] = value
+            elif key == "SWM":
+                data["SW_M"] = value
+            elif key == "SWL":
+                data["SW_L"] = value
+            elif key in ("IMU1", "I1"):
+                data["I1"] = "1.0,0.0,0.0,0.0" if value == "ERR" else value
+            elif key in ("IMU2", "I2"):
+                data["I2"] = "1.0,0.0,0.0,0.0" if value == "ERR" else value
+            elif key == "HX":
+                data["HX"] = "NOT READY" if value == "NOT_READY" else value
+            else:
+                data[key] = value
+
+        if not {"JX", "JY", "JZ"}.issubset(data):
+            return None
+        return data
+    except Exception:
+        return None
+
+def find_candidate_ports() -> list[str]:
+    ports = []
+    try:
+        for p in serial.tools.list_ports.comports():
+            hwid = (p.hwid or "").lower()
+            desc = (p.description or "").lower()
+            vid = p.vid
+            if (vid == ST_VID_INT) or (ST_VID_HEX in hwid) or any(d in desc for d in ST_DESCRIPTIONS):
+                ports.append(p.device)
+        for p in serial.tools.list_ports.comports():
+            if p.device not in ports:
+                ports.append(p.device)
+    except Exception:
+        pass
+    return ports
+
+class LocalHapticPadMonitor(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True, name="HapticPadHardwareMonitor")
+        self.running = True
+        self.ser: serial.Serial | None = None
+        self.active_port: str | None = None
+
+    def run(self):
+        print("[HAPTIC HARDWARE] Real USB Haptic Pad background monitor service active.", flush=True)
+        while self.running:
+            candidate_ports = find_candidate_ports()
+            found_port = None
+            
+            for port_name in candidate_ports:
+                try:
+                    ser = serial.Serial(port_name, HAPTIC_BAUD_RATE, timeout=0.3)
+                    t_end = time.time() + 1.2
+                    has_haptic_data = False
+                    first_packet = None
+                    while time.time() < t_end:
+                        raw = ser.readline().decode("utf-8", errors="ignore").strip()
+                        if raw and ("JX:" in raw or "JY:" in raw or "JZ:" in raw):
+                            pkt = parse_haptic_packet(raw)
+                            if pkt:
+                                has_haptic_data = True
+                                first_packet = pkt
+                                break
+                    if has_haptic_data:
+                        found_port = port_name
+                        self.ser = ser
+                        self.active_port = port_name
+                        with haptic_state_lock:
+                            haptic_device_state["connected"] = True
+                            haptic_device_state["status"] = "CONNECTED"
+                            haptic_device_state["port"] = port_name
+                            haptic_device_state["device"] = "STM32 Haptic Pad"
+                            haptic_device_state["last_heartbeat"] = time.time()
+                            haptic_device_state["last_packet_time"] = time.time()
+                            haptic_device_state["packets_rx"] += 1
+                            if first_packet:
+                                haptic_device_state["telemetry"] = first_packet
+                        print(f"[HAPTIC HARDWARE] Real STM32 Haptic Pad online & synchronized on {port_name}", flush=True)
+                        break
+                    else:
+                        ser.close()
+                except Exception:
+                    continue
+
+            if not found_port:
+                time.sleep(1.0)
+                continue
+
+            # Active packet reading loop
+            while self.running and self.ser and self.ser.is_open:
+                try:
+                    raw = self.ser.readline().decode("utf-8", errors="ignore").strip()
+                    if not raw:
+                        continue
+
+                    pkt = parse_haptic_packet(raw)
+                    now = time.time()
+                    if pkt:
+                        with haptic_state_lock:
+                            haptic_device_state["connected"] = True
+                            haptic_device_state["status"] = "CONNECTED"
+                            haptic_device_state["port"] = self.active_port
+                            haptic_device_state["device"] = "STM32 Haptic Pad"
+                            haptic_device_state["last_heartbeat"] = now
+                            haptic_device_state["last_packet_time"] = now
+                            haptic_device_state["packets_rx"] += 1
+                            haptic_device_state["telemetry"] = pkt
+                    else:
+                        with haptic_state_lock:
+                            haptic_device_state["last_heartbeat"] = now
+                except (serial.SerialException, OSError) as err:
+                    print(f"[HAPTIC HARDWARE] USB Disconnect / I/O error on {self.active_port}: {err}", flush=True)
+                    break
+                except Exception as ex:
+                    print(f"[HAPTIC HARDWARE] Packet parsing error on {self.active_port}: {ex}", flush=True)
+                    break
+
+            # Handle disconnection cleanly
+            with haptic_state_lock:
+                haptic_device_state["connected"] = False
+                haptic_device_state["status"] = "NOT_CONNECTED"
+                haptic_device_state["device"] = None
+            if self.ser:
+                try:
+                    self.ser.close()
+                except Exception:
+                    pass
+                self.ser = None
+            self.active_port = None
+            print("[HAPTIC HARDWARE] Haptic Pad disconnected. Retrying scan for reconnect...", flush=True)
+            time.sleep(1.0)
+
+# Start background real hardware monitor automatically with server
+_haptic_monitor = LocalHapticPadMonitor()
+_haptic_monitor.start()
 
 def verify_agent_auth():
     secret_header = request.headers.get("X-Haptic-Agent-Secret", "")
@@ -98,13 +271,13 @@ def verify_agent_auth():
 
 def get_verified_haptic_status():
     now = time.time()
-    # Watchdog: if agent stops sending heartbeats, mark disconnected
-    if haptic_device_state["connected"]:
-        if (now - haptic_device_state["last_heartbeat"]) > HAPTIC_HEARTBEAT_TIMEOUT:
-            haptic_device_state["connected"] = False
-            haptic_device_state["status"] = "NOT_CONNECTED"
-            haptic_device_state["device"] = None
-    return haptic_device_state
+    with haptic_state_lock:
+        if haptic_device_state["connected"]:
+            if (now - haptic_device_state["last_heartbeat"]) > HAPTIC_HEARTBEAT_TIMEOUT:
+                haptic_device_state["connected"] = False
+                haptic_device_state["status"] = "NOT_CONNECTED"
+                haptic_device_state["device"] = None
+        return dict(haptic_device_state)
 
 @app.route("/api/haptic-pad/report", methods=["POST", "OPTIONS"])
 def api_haptic_pad_report():
@@ -117,16 +290,17 @@ def api_haptic_pad_report():
     is_connected = bool(data.get("connected", False))
     now = time.time()
 
-    haptic_device_state["connected"] = is_connected
-    haptic_device_state["status"] = "CONNECTED" if is_connected else "NOT_CONNECTED"
-    haptic_device_state["port"] = data.get("port")
-    haptic_device_state["device"] = data.get("device", "STM32 Haptic Pad") if is_connected else None
-    haptic_device_state["packets_rx"] = int(data.get("packets_rx", 0))
-    haptic_device_state["last_heartbeat"] = now
-    if is_connected:
-        haptic_device_state["last_packet_time"] = now
-    if "telemetry" in data and isinstance(data["telemetry"], dict):
-        haptic_device_state["telemetry"] = data["telemetry"]
+    with haptic_state_lock:
+        haptic_device_state["connected"] = is_connected
+        haptic_device_state["status"] = "CONNECTED" if is_connected else "NOT_CONNECTED"
+        haptic_device_state["port"] = data.get("port")
+        haptic_device_state["device"] = data.get("device", "STM32 Haptic Pad") if is_connected else None
+        haptic_device_state["packets_rx"] = int(data.get("packets_rx", 0))
+        haptic_device_state["last_heartbeat"] = now
+        if is_connected:
+            haptic_device_state["last_packet_time"] = now
+        if "telemetry" in data and isinstance(data["telemetry"], dict):
+            haptic_device_state["telemetry"] = data["telemetry"]
 
     return jsonify({"success": True, "status": haptic_device_state["status"]})
 
@@ -137,9 +311,10 @@ def api_haptic_pad_disconnect():
     if not verify_agent_auth():
         return jsonify({"success": False, "error": "Unauthorized agent link"}), 401
 
-    haptic_device_state["connected"] = False
-    haptic_device_state["status"] = "NOT_CONNECTED"
-    haptic_device_state["device"] = None
+    with haptic_state_lock:
+        haptic_device_state["connected"] = False
+        haptic_device_state["status"] = "NOT_CONNECTED"
+        haptic_device_state["device"] = None
     return jsonify({"success": True, "status": "NOT_CONNECTED"})
 
 @app.route("/api/haptic-pad/status", methods=["GET", "OPTIONS"])
@@ -161,6 +336,226 @@ def api_haptic_pad_status():
         "last_seen_seconds_ago": last_seen,
         "message": f"Real STM32 Haptic Pad online on {state['port']}" if state["connected"] else "Haptic Pad device not detected. Please verify hardware link.",
         "telemetry": state["telemetry"]
+    })
+
+# -------------------- HAPTIC PAD SESSION-BASED ROUTING ENGINE --------------------
+# Active Consultation Session Routing mapping:
+# Maps Doctor Physical Haptic Pad -> Active Consultation Session ID -> Authorized Patient ONLY
+active_haptic_routing = {
+    "session_id": None,
+    "session_code": None,
+    "doctor_id": None,
+    "doctor_name": None,
+    "patient_id": None,
+    "patient_name": None,
+    "device_id": None,
+    "status": "UNBOUND",  # "ACTIVE" | "UNBOUND"
+    "bound_at": 0.0,
+    "updated_at": 0.0
+}
+haptic_routing_lock = threading.Lock()
+
+@app.route("/api/haptic-pad/session/bind", methods=["POST", "OPTIONS"])
+def api_haptic_pad_session_bind():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip()
+    session_code = str(data.get("session_code") or data.get("sessionCode") or "").strip()
+    doctor_id = str(data.get("doctor_id") or data.get("doctorId") or "").strip()
+    doctor_name = str(data.get("doctor_name") or data.get("doctorName") or "").strip()
+    patient_id = str(data.get("patient_id") or data.get("patientId") or "").strip()
+    patient_name = str(data.get("patient_name") or data.get("patientName") or "").strip()
+    device_id = str(data.get("device_id") or data.get("deviceId") or "").strip()
+
+    if not session_id and not patient_id:
+        return jsonify({"success": False, "error": "session_id and/or patient_id are required to bind consultation."}), 400
+
+    now = time.time()
+    with haptic_routing_lock:
+        active_haptic_routing["session_id"] = session_id
+        active_haptic_routing["session_code"] = session_code or f"TORUS-CLI-{patient_id}"
+        active_haptic_routing["doctor_id"] = doctor_id
+        active_haptic_routing["doctor_name"] = doctor_name
+        active_haptic_routing["patient_id"] = patient_id
+        active_haptic_routing["patient_name"] = patient_name
+        active_haptic_routing["device_id"] = device_id
+        active_haptic_routing["status"] = "ACTIVE"
+        active_haptic_routing["bound_at"] = now
+        active_haptic_routing["updated_at"] = now
+
+    print(f"[HAPTIC ROUTING] Bound Haptic Pad signals exclusively to Session '{session_id}' -> Patient '{patient_name}' (ID: {patient_id})", flush=True)
+    return jsonify({
+        "success": True,
+        "message": f"Haptic Pad telemetry routing active for {patient_name or patient_id}",
+        "routing": dict(active_haptic_routing)
+    })
+
+@app.route("/api/haptic-pad/session/unbind", methods=["POST", "OPTIONS"])
+def api_haptic_pad_session_unbind():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip()
+
+    with haptic_routing_lock:
+        prev_session = active_haptic_routing.get("session_id")
+        prev_patient = active_haptic_routing.get("patient_name") or active_haptic_routing.get("patient_id")
+        # If session_id provided, only unbind if matching or if unbind all
+        if not session_id or session_id == prev_session:
+            active_haptic_routing["session_id"] = None
+            active_haptic_routing["session_code"] = None
+            active_haptic_routing["patient_id"] = None
+            active_haptic_routing["patient_name"] = None
+            active_haptic_routing["device_id"] = None
+            active_haptic_routing["status"] = "UNBOUND"
+            active_haptic_routing["updated_at"] = time.time()
+            print(f"[HAPTIC ROUTING] Unbound Haptic Pad from previous session '{prev_session}' ({prev_patient}). Signals stopped.", flush=True)
+
+    return jsonify({"success": True, "status": "UNBOUND"})
+
+@app.route("/api/haptic-pad/session/active", methods=["GET", "OPTIONS"])
+def api_haptic_pad_session_active():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    with haptic_routing_lock:
+        routing = dict(active_haptic_routing)
+    hw_state = get_verified_haptic_status()
+    return jsonify({
+        "success": True,
+        "active": routing["status"] == "ACTIVE" and bool(routing.get("session_id")),
+        "routing": routing,
+        "haptic_connected": hw_state["connected"]
+    })
+
+@app.route("/api/haptic-pad/patient/telemetry", methods=["GET", "OPTIONS"])
+def api_haptic_pad_patient_telemetry():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    
+    hw_state = get_verified_haptic_status()
+    with haptic_routing_lock:
+        routing = dict(active_haptic_routing)
+
+    # 1. Verify if an active consultation session is bound
+    if routing["status"] != "ACTIVE" or not routing.get("session_id"):
+        return jsonify({
+            "authorized": False,
+            "routing_status": "NO_ACTIVE_CONSULTATION",
+            "error": "No consultation session is currently active with the doctor.",
+            "haptic_connected": hw_state["connected"],
+            "telemetry": None
+        })
+
+    # 2. Strict Session & Patient Validation
+    req_patient_id = (request.args.get("patient_id") or request.args.get("patientId") or "").strip().lower()
+    req_session_id = (request.args.get("session_id") or request.args.get("sessionId") or "").strip().lower()
+    req_patient_name = (request.args.get("patient_name") or request.args.get("patientName") or "").strip().lower()
+
+    bound_patient_id = str(routing.get("patient_id") or "").strip().lower()
+    bound_session_id = str(routing.get("session_id") or "").strip().lower()
+    bound_patient_name = str(routing.get("patient_name") or "").strip().lower()
+
+    is_authorized = False
+    if req_session_id and req_session_id == bound_session_id:
+        is_authorized = True
+    elif req_patient_id and req_patient_id == bound_patient_id:
+        is_authorized = True
+    elif req_patient_name and req_patient_name == bound_patient_name:
+        is_authorized = True
+
+    if not is_authorized:
+        return jsonify({
+            "authorized": False,
+            "routing_status": "BLOCKED_UNAUTHORIZED_PATIENT",
+            "error": "Access denied: Haptic signals are strictly routed to the doctor's currently active consultation session.",
+            "active_session_id": routing.get("session_id"),
+            "haptic_connected": hw_state["connected"],
+            "telemetry": None
+        })
+
+    # Authorized: Deliver real STM32 Haptic Pad telemetry
+    return jsonify({
+        "authorized": True,
+        "routing_status": "ROUTED_ACTIVE_SESSION",
+        "session_id": routing.get("session_id"),
+        "session_code": routing.get("session_code"),
+        "patient_id": routing.get("patient_id"),
+        "patient_name": routing.get("patient_name"),
+        "device_id": routing.get("device_id"),
+        "haptic_connected": hw_state["connected"],
+        "packets_rx": hw_state["packets_rx"],
+        "telemetry": hw_state["telemetry"],
+        "timestamp": time.time()
+    })
+
+@app.route("/api/haptic-pad/patient/stream", methods=["GET", "OPTIONS"])
+def api_haptic_pad_patient_stream():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    req_patient_id = (request.args.get("patient_id") or request.args.get("patientId") or "").strip().lower()
+    req_session_id = (request.args.get("session_id") or request.args.get("sessionId") or "").strip().lower()
+    req_patient_name = (request.args.get("patient_name") or request.args.get("patientName") or "").strip().lower()
+
+    import json
+
+    def generate_patient_events():
+        while True:
+            hw_state = get_verified_haptic_status()
+            with haptic_routing_lock:
+                routing = dict(active_haptic_routing)
+
+            bound_patient_id = str(routing.get("patient_id") or "").strip().lower()
+            bound_session_id = str(routing.get("session_id") or "").strip().lower()
+            bound_patient_name = str(routing.get("patient_name") or "").strip().lower()
+
+            is_active = (routing["status"] == "ACTIVE" and bool(routing.get("session_id")))
+            is_auth = False
+            if is_active:
+                if req_session_id and req_session_id == bound_session_id:
+                    is_auth = True
+                elif req_patient_id and req_patient_id == bound_patient_id:
+                    is_auth = True
+                elif req_patient_name and req_patient_name == bound_patient_name:
+                    is_auth = True
+
+            if not is_active:
+                payload = {
+                    "authorized": False,
+                    "routing_status": "NO_ACTIVE_CONSULTATION",
+                    "telemetry": None,
+                    "haptic_connected": hw_state["connected"]
+                }
+            elif not is_auth:
+                payload = {
+                    "authorized": False,
+                    "routing_status": "BLOCKED_UNAUTHORIZED_PATIENT",
+                    "active_session_id": routing.get("session_id"),
+                    "telemetry": None,
+                    "haptic_connected": hw_state["connected"]
+                }
+            else:
+                payload = {
+                    "authorized": True,
+                    "routing_status": "ROUTED_ACTIVE_SESSION",
+                    "session_id": routing.get("session_id"),
+                    "patient_id": routing.get("patient_id"),
+                    "patient_name": routing.get("patient_name"),
+                    "device_id": routing.get("device_id"),
+                    "haptic_connected": hw_state["connected"],
+                    "packets_rx": hw_state["packets_rx"],
+                    "telemetry": hw_state["telemetry"],
+                    "timestamp": time.time()
+                }
+
+            yield f"data: {json.dumps(payload)}\n\n"
+            time.sleep(0.05)  # 20Hz update rate
+
+    return Response(generate_patient_events(), mimetype="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Access-Control-Allow-Origin": "*"
     })
 
 # -------------------- DOCTOR AUTHENTICATION API --------------------
