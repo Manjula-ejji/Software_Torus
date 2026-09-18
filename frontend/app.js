@@ -1502,6 +1502,12 @@ async function leaveCall() {
     stopSelfViewMirror();
   }
 
+  // Release Haptic Pad routing from active consultation session
+  if (typeof unbindHapticSessionAPI === "function") {
+    unbindHapticSessionAPI(window.currentActiveConsultationSessionId);
+  }
+  window.currentActiveConsultationSessionId = null;
+
   try {
     if (localTracks.audioTrack) {
       localTracks.audioTrack.stop();
@@ -2304,6 +2310,9 @@ function showTorusScreen(targetId, recordHistory = true) {
   } else if (targetId === "app-dashboard") {
     if (typeof triggerHeaderBootSequence === "function") {
       triggerHeaderBootSequence();
+    }
+    if (typeof updateLiveConsultationHapticBadge === "function") {
+      updateLiveConsultationHapticBadge();
     }
   } else if (targetId === "role-selection-screen") {
     const badgeEl = document.getElementById("header-user-badge");
@@ -5943,7 +5952,13 @@ function renderDoctorDashboard() {
                 ${session.duration}
               </span>
             </div>
-            <div><span class="ddash-status-tag in-progress">● In Progress</span></div>
+            <div>
+              <span class="ddash-status-tag in-progress">● Consultation Active</span>
+              <span class="ddash-haptic-active-status" style="display:inline-flex; align-items:center; gap:4px; margin-top:4px; font-size:11px; font-weight:600; color:#10b981;">
+                <span style="width:6px; height:6px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+                Haptic Control Active
+              </span>
+            </div>
             <div class="ddash-action-cell">
               <button class="ddash-join-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
@@ -6345,37 +6360,111 @@ window.HapticPadService = HapticPadService;
 
 /**
  * Updates the existing Haptic Pad status indicator in the top-right header
- * based on current HAPTIC_STATE.
+ * based on current HAPTIC_STATE and active user role.
  */
 function setHapticPadStatus(state, details = {}) {
   const chip = document.getElementById("docDashHapticChip");
+  const label = chip ? chip.querySelector(".ddash-haptic-label") : null;
   const text = document.getElementById("docDashHapticChipText");
   const alertIcon = chip ? chip.querySelector(".ddash-haptic-alert") : null;
   if (!chip) return;
 
+  const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+                (roleInput && roleInput.value === "doctor");
+
   chip.classList.remove("haptic-chip--connected", "haptic-chip--connecting", "haptic-chip--disconnected");
 
-  if (state === HAPTIC_STATE.CONNECTED || state === "connected") {
-    currentHapticState = HAPTIC_STATE.CONNECTED;
-    chip.classList.add("haptic-chip--connected");
-    if (text) text.textContent = "Connected";
-    if (alertIcon) alertIcon.style.display = "none";
-    chip.title = `Haptic Pad • Connected (${details.port || "USB"}) (Click to test/reconnect)`;
-  } else if (state === HAPTIC_STATE.CONNECTING || state === "connecting") {
-    currentHapticState = HAPTIC_STATE.CONNECTING;
-    chip.classList.add("haptic-chip--connecting");
-    if (text) text.textContent = "Connecting...";
-    if (alertIcon) alertIcon.style.display = "none";
-    chip.title = "Attempting to connect the haptic pad device...";
+  if (isDoc) {
+    if (label) label.textContent = "Haptic Pad";
+    if (state === HAPTIC_STATE.CONNECTED || state === "connected") {
+      currentHapticState = HAPTIC_STATE.CONNECTED;
+      chip.classList.add("haptic-chip--connected");
+      if (text) text.textContent = "Connected";
+      if (alertIcon) alertIcon.style.display = "none";
+      chip.title = `Haptic Pad • Connected (${details.port || "USB"}) (Click to test/reconnect)`;
+    } else if (state === HAPTIC_STATE.CONNECTING || state === "connecting") {
+      currentHapticState = HAPTIC_STATE.CONNECTING;
+      chip.classList.add("haptic-chip--connecting");
+      if (text) text.textContent = "Connecting...";
+      if (alertIcon) alertIcon.style.display = "none";
+      chip.title = "Attempting to connect the haptic pad device...";
+    } else {
+      currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
+      chip.classList.add("haptic-chip--disconnected");
+      if (text) text.textContent = "Not Connected";
+      if (alertIcon) alertIcon.style.display = "inline";
+      chip.title = "Haptic Pad • Not Connected (Click to retry connection)";
+    }
   } else {
-    currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
-    chip.classList.add("haptic-chip--disconnected");
-    if (text) text.textContent = "Not Connected";
-    if (alertIcon) alertIcon.style.display = "inline";
-    chip.title = "Haptic Pad • Not Connected (Click to retry connection)";
+    // Patient Portal view: Isolated from Doctor's direct USB chip
+    if (label) label.textContent = "Remote Haptic Control";
+    const isPatientBound = Boolean(details.patientAuthorized || (window.currentActiveConsultationSessionId && (state === HAPTIC_STATE.CONNECTED || state === "connected")));
+    if (isPatientBound) {
+      chip.classList.add("haptic-chip--connected");
+      if (text) text.textContent = "Connected";
+      if (alertIcon) alertIcon.style.display = "none";
+      chip.title = "Remote Haptic Control • Connected";
+    } else {
+      chip.classList.add("haptic-chip--disconnected");
+      if (text) text.textContent = "Inactive";
+      if (alertIcon) alertIcon.style.display = "none";
+      chip.title = "Remote Haptic Control • Inactive (No active consultation with doctor)";
+    }
   }
 }
 window.setHapticPadStatus = setHapticPadStatus;
+
+/**
+ * Updates the Live Consultation status badge on #app-dashboard
+ */
+async function updateLiveConsultationHapticBadge() {
+  const badge = document.getElementById("liveConsultationHapticBadge");
+  const text = document.getElementById("liveConsultationHapticText");
+  if (!badge || !text) return;
+
+  const appDashboard = document.getElementById("app-dashboard");
+  if (!appDashboard || appDashboard.style.display === "none") {
+    badge.style.display = "none";
+    return;
+  }
+
+  const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+                (roleInput && roleInput.value === "doctor");
+
+  if (isDoc) {
+    const hw = await HapticPadService.getStatus({ timeoutMs: 1200 });
+    badge.style.display = "inline-flex";
+    if (hw.connected) {
+      badge.className = "live-haptic-badge haptic-badge--connected";
+      text.textContent = "Haptic Control Active";
+    } else {
+      badge.className = "live-haptic-badge haptic-badge--inactive";
+      text.textContent = "Haptic Pad • Disconnected";
+    }
+  } else {
+    // Patient side in live consultation
+    const activeSession = window.currentActiveConsultationSessionId || "S-001";
+    const patientId = currentAuthenticatedUser?.uid || "P-12345";
+    const patStatus = await PatientHapticService.getTelemetry({
+      sessionId: activeSession,
+      patientId: patientId,
+      patientName: currentAuthenticatedUser?.name || "Patient A"
+    });
+
+    badge.style.display = "inline-flex";
+    if (patStatus.authorized && patStatus.haptic_connected) {
+      badge.className = "live-haptic-badge haptic-badge--connected";
+      text.textContent = "Remote Haptic Control • Connected";
+    } else if (patStatus.authorized && !patStatus.haptic_connected) {
+      badge.className = "live-haptic-badge haptic-badge--inactive";
+      text.textContent = "Remote Haptic Control • Device Offline";
+    } else {
+      badge.className = "live-haptic-badge haptic-badge--inactive";
+      text.textContent = "Remote Haptic Control • Inactive";
+    }
+  }
+}
+window.updateLiveConsultationHapticBadge = updateLiveConsultationHapticBadge;
 
 let previousHapticState = null;
 let hapticLiveDisconnectTimer = null;
@@ -6470,51 +6559,72 @@ window.closeHapticModals = closeHapticModals;
 let hapticLiveMonitorInterval = null;
 
 /**
- * Continuous background monitor for live disconnect/reconnect detection.
+ * Continuous background monitor for live disconnect/reconnect and session routing detection.
  */
 function startHapticLiveMonitoring() {
   if (hapticLiveMonitorInterval) clearInterval(hapticLiveMonitorInterval);
 
   hapticLiveMonitorInterval = setInterval(async () => {
-    // Only monitor if dashboard is currently visible and not during active manual modal connection
     const docPortalDash = document.getElementById("doctor-portal-dashboard");
+    const appDash = document.getElementById("app-dashboard");
+
+    // If on Live Consultation screen, keep live haptic indicator updated
+    if (appDash && appDash.style.display !== "none") {
+      updateLiveConsultationHapticBadge();
+      return;
+    }
+
     if (!docPortalDash || docPortalDash.style.display === "none") return;
     if (isHapticConnectionInProgress) return;
 
-    const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
-    const wasConnected = currentHapticState === HAPTIC_STATE.CONNECTED;
+    const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+                  (roleInput && roleInput.value === "doctor");
 
-    if (res.connected) {
-      if (currentHapticState !== HAPTIC_STATE.CONNECTED) {
-        console.log(`[HAPTIC] Device detected & verified on ${res.port}. Setting CONNECTED.`);
-        previousHapticState = currentHapticState;
-        currentHapticState = HAPTIC_STATE.CONNECTED;
-        setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: res.port });
-        closeHapticModals();
+    if (isDoc) {
+      const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
+      const wasConnected = currentHapticState === HAPTIC_STATE.CONNECTED;
 
-        if (typeof logDoctorActivity === "function") {
-          logDoctorActivity("hardware", "Haptic Pad Connected", `Haptic controller hardware detected and synchronized on ${res.port || "USB"}.`, "Connected", "TORUS-H01");
+      if (res.connected) {
+        if (currentHapticState !== HAPTIC_STATE.CONNECTED) {
+          console.log(`[HAPTIC] Device detected & verified on ${res.port}. Setting CONNECTED.`);
+          previousHapticState = currentHapticState;
+          currentHapticState = HAPTIC_STATE.CONNECTED;
+          setHapticPadStatus(HAPTIC_STATE.CONNECTED, { port: res.port });
+          closeHapticModals();
+
+          if (typeof logDoctorActivity === "function") {
+            logDoctorActivity("hardware", "Haptic Pad Connected", `Haptic controller hardware detected and synchronized on ${res.port || "USB"}.`, "Connected", "TORUS-H01");
+          }
+        }
+      } else {
+        if (wasConnected) {
+          console.warn("[HAPTIC] Live disconnect detected! Transition: CONNECTED -> NOT_CONNECTED");
+          previousHapticState = HAPTIC_STATE.CONNECTED;
+          currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
+          setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
+          showHapticLiveDisconnectAlert();
+
+          if (typeof logDoctorActivity === "function") {
+            logDoctorActivity("hardware", "Haptic Pad Disconnected", "Haptic telemetry controller disconnected from local serial bus.", "Disconnected", "TORUS-H01");
+          }
+        } else {
+          if (currentHapticState !== HAPTIC_STATE.NOT_CONNECTED) {
+            previousHapticState = currentHapticState;
+            currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
+            setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
+          }
         }
       }
     } else {
-      if (wasConnected) {
-        console.warn("[HAPTIC] Live disconnect detected! Transition: CONNECTED -> NOT_CONNECTED");
-        previousHapticState = HAPTIC_STATE.CONNECTED;
-        currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
-        setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
-        showHapticLiveDisconnectAlert();
-
-        if (typeof logDoctorActivity === "function") {
-          logDoctorActivity("hardware", "Haptic Pad Disconnected", "Haptic telemetry controller disconnected from local serial bus.", "Disconnected", "TORUS-H01");
-        }
-      } else {
-        // Device remains disconnected; maintain state without showing duplicate popups
-        if (currentHapticState !== HAPTIC_STATE.NOT_CONNECTED) {
-          previousHapticState = currentHapticState;
-          currentHapticState = HAPTIC_STATE.NOT_CONNECTED;
-          setHapticPadStatus(HAPTIC_STATE.NOT_CONNECTED);
-        }
-      }
+      // Patient Portal: ensure unauthorized patients (Patient B, Patient C) are shown inactive
+      const patStatus = await PatientHapticService.getTelemetry({
+        sessionId: window.currentActiveConsultationSessionId || "",
+        patientId: currentAuthenticatedUser?.uid || ""
+      });
+      setHapticPadStatus(
+        patStatus.authorized && patStatus.haptic_connected ? HAPTIC_STATE.CONNECTED : HAPTIC_STATE.NOT_CONNECTED,
+        { patientAuthorized: patStatus.authorized && patStatus.haptic_connected }
+      );
     }
   }, 1000);
 }
@@ -7845,6 +7955,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (headerProfilePopover) headerProfilePopover.style.display = "none";
     const docPortalDash = document.getElementById("doctor-portal-dashboard");
     if (docPortalDash) docPortalDash.classList.remove("sidebar-open");
+
+    // Release Haptic Pad session binding on logout
+    if (typeof unbindHapticSessionAPI === "function") {
+      unbindHapticSessionAPI(window.currentActiveConsultationSessionId);
+    }
+    window.currentActiveConsultationSessionId = null;
 
     // Clear session state
     currentAuthenticatedUser = null;

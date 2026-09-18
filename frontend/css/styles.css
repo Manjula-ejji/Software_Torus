@@ -617,6 +617,52 @@ body::after {
   }
 }
 
+/* Live Consultation Remote Haptic Status Badge */
+.live-haptic-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.live-haptic-badge .live-haptic-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.live-haptic-badge.haptic-badge--connected {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.08);
+}
+
+.live-haptic-badge.haptic-badge--connected .live-haptic-dot {
+  background: #10b981;
+  box-shadow: 0 0 10px #10b981;
+  animation: pulse-green 2s infinite ease-in-out;
+}
+
+.live-haptic-badge.haptic-badge--inactive {
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+}
+
+.live-haptic-badge.haptic-badge--inactive .live-haptic-dot {
+  background: #64748b;
+  box-shadow: none;
+}
+
 /* Video Grid Layout */
 .videos-grid {
   display: grid;
