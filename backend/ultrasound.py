@@ -64,10 +64,36 @@ if MISSING_MODULES:
   )
 
 # -------------------- USER CONFIG --------------------
-APP_ID = "f320d3475b6d4b70ba512b06d09849d7"
-TOKEN = "007eJxTYBA3PffTs+xm/1eT01c+tS6o5zDMTfc21jR+6ugo+9zyXoYCg7mlSaJFiqmRgamBhYmZSaJlUqKxuXmyMVDALNXYNDXHY15WQyAjw52G/0yMDBAI4rMylOQXlRYzMAAAU48fsw=="
-CHANNEL = "torus"
-UID = 5001
+def _load_ultrasound_env():
+  base = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+  candidates = [
+    base.parent / ".env",
+    base / ".env",
+    Path.cwd() / ".env",
+  ]
+  for p in candidates:
+    if p.is_file():
+      try:
+        with open(p, "r", encoding="utf-8") as f:
+          for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+              continue
+            if "=" in line:
+              k, v = line.split("=", 1)
+              k = k.strip()
+              v = v.strip().strip("'\"")
+              if k and k not in os.environ:
+                os.environ[k] = v
+      except Exception:
+        pass
+
+_load_ultrasound_env()
+
+APP_ID = os.environ.get("AGORA_APP_ID", "f320d3475b6d4b70ba512b06d09849d7")
+TOKEN = os.environ.get("AGORA_TOKEN", "")
+CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
+UID = int(os.environ.get("AGORA_UID", "5001"))
 
 # Choose which ultrasound script to launch.
 ULTRASOUND_SCRIPT = "curv_proper_code.py"

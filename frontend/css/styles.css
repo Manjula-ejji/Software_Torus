@@ -293,7 +293,8 @@ body::after {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .header-buttons {
@@ -310,17 +311,21 @@ body::after {
   font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 10px 18px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
   border-radius: 99px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 7px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   outline: none;
   position: relative;
   overflow: hidden;
+  white-space: nowrap;
 }
 
 .header-btn::before {
@@ -506,13 +511,15 @@ body::after {
 .status-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 6px 16px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
   border-radius: 99px;
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
@@ -521,6 +528,7 @@ body::after {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
 }
 
 .status-indicator {
@@ -528,25 +536,28 @@ body::after {
   height: 7px;
   border-radius: 50%;
   display: inline-block;
+  flex-shrink: 0;
 }
 
-/* Status: Disconnected */
+/* Status: Idle / Standby (Neutral Subtle) */
+.status-pill.idle,
 .status-pill.disconnected {
-  background: rgba(239, 68, 68, 0.05);
-  border-color: rgba(239, 68, 68, 0.22);
-  color: #fca5a5;
-  box-shadow: 0 0 15px rgba(239, 68, 68, 0.05);
+  background: rgba(148, 163, 184, 0.06);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  box-shadow: none;
 }
 
+.status-pill.idle .status-indicator,
 .status-pill.disconnected .status-indicator {
-  background: #ef4444;
-  box-shadow: 0 0 10px #ef4444, 0 0 2px #ef4444;
+  background: #64748b;
+  box-shadow: none;
 }
 
 /* Status: Connecting */
 .status-pill.connecting {
-  background: rgba(245, 158, 11, 0.05);
-  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
   color: #fde047;
   box-shadow: 0 0 15px rgba(245, 158, 11, 0.05);
 }
@@ -557,12 +568,12 @@ body::after {
   animation: pulse-yellow 1.5s infinite ease-in-out;
 }
 
-/* Status: Connected */
+/* Status: Connected (Live) */
 .status-pill.connected {
-  background: rgba(16, 185, 129, 0.05);
-  border-color: rgba(16, 185, 129, 0.22);
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
   color: #a7f3d0;
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.05);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.08);
 }
 
 .status-pill.connected .status-indicator {
@@ -573,9 +584,10 @@ body::after {
 
 /* Status: Error */
 .status-pill.error {
-  background: rgba(239, 68, 68, 0.05);
+  background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.3);
   color: #fca5a5;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.08);
 }
 
 .status-pill.error .status-indicator {
@@ -621,8 +633,11 @@ body::after {
 .live-haptic-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  padding: 5px 14px;
+  height: 36px;
+  padding: 0 14px;
+  box-sizing: border-box;
   border-radius: 99px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -630,6 +645,7 @@ body::after {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
 }
 
 .live-haptic-badge .live-haptic-dot {
@@ -637,6 +653,7 @@ body::after {
   height: 7px;
   border-radius: 50%;
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .live-haptic-badge.haptic-badge--connected {
@@ -661,6 +678,20 @@ body::after {
 .live-haptic-badge.haptic-badge--inactive .live-haptic-dot {
   background: #64748b;
   box-shadow: none;
+  animation: none;
+}
+
+.live-haptic-badge.haptic-badge--disconnected {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.08);
+}
+
+.live-haptic-badge.haptic-badge--disconnected .live-haptic-dot {
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: ddash-pulse-red 1.8s ease-in-out infinite;
 }
 
 /* Video Grid Layout */
@@ -6087,6 +6118,23 @@ body[data-role="viewer"] #settings-uid-wrapper {
   50% {
     opacity: 0.5;
   }
+}
+
+/* Inactive State (Neutral / Dim) for Patient Portal */
+.ddash-haptic-chip.haptic-chip--inactive {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.06);
+  color: #94a3b8;
+}
+
+.ddash-haptic-chip.haptic-chip--inactive .ddash-haptic-dot {
+  background: #64748b;
+  box-shadow: none;
+  animation: none;
+}
+
+.ddash-haptic-chip.haptic-chip--inactive .ddash-haptic-alert {
+  display: none;
 }
 
 /* ============================================================ */

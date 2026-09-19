@@ -159,7 +159,44 @@ roleInput.addEventListener("change", () => {
   updateSettingsSessionCodeVisibility();
 });
 
-const OFFICIAL_TOKEN_VALUE = "007eJxTYBA3PffTs+xm/1eT01c+tS6o5zDMTfc21jR+6ugo+9zyXoYCg7mlSaJFiqmRgamBhYmZSaJlUqKxuXmyMVDALNXYNDXHY15WQyAjw52G/0yMDBAI4rMylOQXlRYzMAAAU48fsw==";
+let OFFICIAL_TOKEN_VALUE = "";
+
+// Dynamically fetch Agora configuration from the backend environment
+async function fetchAgoraConfiguration() {
+  const isPort3000 = window.location.port === "3000";
+  const endpoints = isPort3000
+    ? ["/api/agora/config", "http://127.0.0.1:3000/api/agora/config", "http://localhost:3000/api/agora/config"]
+    : ["http://127.0.0.1:3000/api/agora/config", "http://localhost:3000/api/agora/config", "/api/agora/config"];
+
+  for (const url of endpoints) {
+    try {
+      const resp = await fetch(url, { method: "GET" });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.token) {
+          OFFICIAL_TOKEN_VALUE = data.token;
+          const tokenInputEl = document.getElementById("token");
+          if (tokenInputEl && !tokenInputEl.value.trim()) {
+            tokenInputEl.value = data.token;
+          }
+        }
+        if (data.appId && typeof appIdInput !== "undefined" && appIdInput && !appIdInput.value.trim()) {
+          appIdInput.value = data.appId;
+        }
+        if (data.channel && typeof channelInput !== "undefined" && channelInput && !channelInput.value.trim()) {
+          channelInput.value = data.channel;
+        }
+        return data;
+      }
+    } catch (e) {
+      // Continue next endpoint
+    }
+  }
+  return null;
+}
+
+// Automatically fetch Agora config from environment on startup
+fetchAgoraConfiguration();
 
 // Ensure Token field exists with plain text display and exact official value
 function ensureTokenFieldExists() {
@@ -183,7 +220,7 @@ function ensureTokenFieldExists() {
       tokenInputEl.placeholder = "Enter Agora Token";
       tokenInputEl.spellcheck = false;
       tokenInputEl.autocomplete = "off";
-      if (!tokenInputEl.value) {
+      if (!tokenInputEl.value && OFFICIAL_TOKEN_VALUE) {
         tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
       }
       tokenWrapper.appendChild(tokenInputEl);
@@ -192,7 +229,9 @@ function ensureTokenFieldExists() {
       tokenInputEl.id = "token";
       tokenInputEl.type = "text";
       tokenInputEl.placeholder = "Enter Agora Token";
-      tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
+      if (OFFICIAL_TOKEN_VALUE) {
+        tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
+      }
       tokenInputEl.spellcheck = false;
       tokenInputEl.autocomplete = "off";
       tokenWrapper.appendChild(tokenInputEl);
@@ -212,12 +251,16 @@ function ensureTokenFieldExists() {
   } else {
     if (tokenInputEl) {
       if (tokenInputEl.type === "hidden") tokenInputEl.type = "text";
-      if (!tokenInputEl.value) tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
+      if (!tokenInputEl.value && OFFICIAL_TOKEN_VALUE) tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
       tokenInputEl.placeholder = "Enter Agora Token";
       tokenInputEl.spellcheck = false;
     }
     const span = tokenWrapper.querySelector("span");
     if (span) span.textContent = "Token";
+  }
+
+  if (!OFFICIAL_TOKEN_VALUE) {
+    fetchAgoraConfiguration();
   }
 }
 
@@ -483,23 +526,34 @@ function resetFloatingSelfViewPosition() {
 
 
 function setStatus(message) {
-  const statusText = statusEl.querySelector(".status-text");
-  if (statusText) {
-    statusText.textContent = message;
-  } else {
-    statusEl.textContent = message;
+  const statusText = statusEl ? statusEl.querySelector(".status-text") : null;
+  const msgLower = (message || "").toLowerCase();
+
+  let displayText = message || "Video Call: Standby";
+  let stateClass = "idle";
+
+  if (msgLower.includes("connected to") || msgLower === "connected" || msgLower.includes("live")) {
+    displayText = "Video Call • Live";
+    stateClass = "connected";
+  } else if (msgLower.includes("connecting") || msgLower.includes("joining")) {
+    displayText = "Connecting Video...";
+    stateClass = "connecting";
+  } else if (msgLower.includes("failed") || msgLower.includes("error") || msgLower.includes("enter")) {
+    displayText = "Video Call • Error";
+    stateClass = "error";
+  } else if (msgLower.includes("leave") || msgLower.includes("disconnect") || msgLower.includes("not connected") || msgLower === "") {
+    displayText = "Video Call: Standby";
+    stateClass = "idle";
   }
 
-  statusEl.className = "status-pill";
-  const msgLower = message.toLowerCase();
-  if (msgLower.includes("connected to")) {
-    statusEl.classList.add("connected");
-  } else if (msgLower.includes("connecting") || msgLower.includes("joining")) {
-    statusEl.classList.add("connecting");
-  } else if (msgLower.includes("failed") || msgLower.includes("error") || msgLower.includes("enter")) {
-    statusEl.classList.add("error");
-  } else {
-    statusEl.classList.add("disconnected");
+  if (statusText) {
+    statusText.textContent = displayText;
+  } else if (statusEl) {
+    statusEl.textContent = displayText;
+  }
+
+  if (statusEl) {
+    statusEl.className = `status-pill ${stateClass}`;
   }
 }
 
@@ -1142,9 +1196,29 @@ async function acquireLocalTracks(role, feedType) {
 
 async function joinCall() {
   const startMuted = muteBtn.classList.contains("muted");
-  const appId = appIdInput.value.trim();
-  const channel = channelInput.value.trim();
-  const tokenText = tokenInput.value.trim();
+  let appId = appIdInput.value.trim();
+  let channel = channelInput.value.trim();
+  let tokenText = tokenInput.value.trim();
+
+  if (!tokenText && OFFICIAL_TOKEN_VALUE) {
+    tokenText = OFFICIAL_TOKEN_VALUE;
+    tokenInput.value = OFFICIAL_TOKEN_VALUE;
+  }
+  if (!tokenText) {
+    const config = await fetchAgoraConfiguration();
+    if (config && config.token) {
+      tokenText = config.token;
+      tokenInput.value = config.token;
+    }
+    if (config && config.appId && !appId) {
+      appId = config.appId;
+      appIdInput.value = config.appId;
+    }
+    if (config && config.channel && !channel) {
+      channel = config.channel;
+      channelInput.value = config.channel;
+    }
+  }
   const token = tokenText || null;
   const role = roleInput.value;
   const feedType = feedTypeInput.value;
@@ -4768,7 +4842,21 @@ function updateSharedPortalHeader(user, role = "doctor") {
 
   // Ensure Header Top Controls (Haptic Pad status & Adhoc Scan) are properly displayed per role
   if (adhocBtn) adhocBtn.style.display = isPatient ? "none" : "inline-flex";
-  if (hapticChip) hapticChip.style.display = "inline-flex";
+  if (hapticChip) {
+    hapticChip.style.display = "inline-flex";
+    if (isPatient) {
+      if (typeof updatePatientHapticSessionStatus === "function") {
+        updatePatientHapticSessionStatus(user || currentAuthenticatedUser);
+      }
+      if (typeof startHapticLiveMonitoring === "function") {
+        startHapticLiveMonitoring();
+      }
+    } else {
+      if (typeof setHapticPadStatus === "function") {
+        setHapticPadStatus(currentHapticState || HAPTIC_STATE.NOT_CONNECTED);
+      }
+    }
+  }
 
   // Re-render sidebar items to guarantee exact role navigation
   renderPortalSidebar(isPatient ? "patient" : "doctor");
@@ -5931,6 +6019,10 @@ function renderDoctorDashboard() {
         if (session.scanType === "Cardiac") scanColor = "cyan";
         else if (session.scanType === "Pelvic") scanColor = "emerald";
 
+        const isSessionActive = (window.currentActiveConsultationSessionId === session.sessionId) ||
+                                (!window.currentActiveConsultationSessionId && session === activeList[0]);
+        const isHapticBound = isSessionActive && (currentHapticState === HAPTIC_STATE.CONNECTED || currentHapticState === "connected");
+
         return `
           <div class="ddash-row-active">
             <div class="ddash-patient-block">
@@ -5953,11 +6045,13 @@ function renderDoctorDashboard() {
               </span>
             </div>
             <div>
-              <span class="ddash-status-tag in-progress">● Consultation Active</span>
-              <span class="ddash-haptic-active-status" style="display:inline-flex; align-items:center; gap:4px; margin-top:4px; font-size:11px; font-weight:600; color:#10b981;">
-                <span style="width:6px; height:6px; border-radius:50%; background:#10b981; display:inline-block;"></span>
-                Haptic Control Active
-              </span>
+              <span class="ddash-status-tag ${isSessionActive ? "in-progress" : "waiting"}">● ${isSessionActive ? "Consultation Active" : "In Progress"}</span>
+              ${isHapticBound ? `
+                <span class="ddash-haptic-active-status" style="display:inline-flex; align-items:center; gap:4px; margin-top:4px; font-size:11px; font-weight:600; color:#10b981;">
+                  <span style="width:6px; height:6px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+                  Haptic Control Active
+                </span>
+              ` : ""}
             </div>
             <div class="ddash-action-cell">
               <button class="ddash-join-btn" type="button" data-session-id="${session.sessionId}" data-device-id="${session.deviceId}">
@@ -6242,9 +6336,142 @@ const PatientHapticService = {
       console.warn("[PatientHapticService] EventSource error:", e);
       return null;
     }
+  },
+
+  async getActiveSession() {
+    const isDirectBackend = window.location.port === "3000";
+    const baseUrls = isDirectBackend
+      ? ["/api/haptic-pad/session/active", "http://127.0.0.1:3000/api/haptic-pad/session/active", "http://localhost:3000/api/haptic-pad/session/active"]
+      : ["http://127.0.0.1:3000/api/haptic-pad/session/active", "http://localhost:3000/api/haptic-pad/session/active", "/api/haptic-pad/session/active"];
+
+    for (const base of baseUrls) {
+      try {
+        const res = await fetch(base, { method: "GET" });
+        if (res && res.ok) {
+          return await res.json();
+        }
+      } catch (e) { }
+    }
+    return { success: false, active: false, routing: null, haptic_connected: false };
   }
 };
 window.PatientHapticService = PatientHapticService;
+
+/**
+ * Resolves session and patient credentials for remote Haptic Pad session routing.
+ * Ensures Patient A, Patient B, Patient C, and custom patients are cleanly isolated.
+ */
+function getPatientSessionIdentifiers(patient = null) {
+  const u = patient || currentAuthenticatedUser || {};
+  const uid = (u.uid || u.id || "").toString().trim();
+  const name = (u.name || "").trim();
+  const email = (u.email || "").trim().toLowerCase();
+  const lowerUid = uid.toLowerCase();
+  const lowerName = name.toLowerCase();
+
+  // 1. Patient A: Default patient in TORUS, UID 4001, PAT-4001, P-12345, or "Patient A" / "Patient User"
+  const isPatientA = lowerUid === "p-12345" ||
+                     lowerUid === "4001" ||
+                     lowerUid === "pat-4001" ||
+                     lowerName === "patient a" ||
+                     lowerName === "patient user" ||
+                     email === "patient@gmail.com" ||
+                     email === "patient_a@gmail.com" ||
+                     (!lowerUid && !lowerName);
+
+  // 2. Patient B: UID P-8821, or "Patient B" / "John Doe" / "John Smith"
+  const isPatientB = lowerUid === "p-8821" ||
+                     lowerName === "patient b" ||
+                     lowerName === "john doe" ||
+                     lowerName === "john smith" ||
+                     email === "patient_b@gmail.com" ||
+                     email === "john.smith@gmail.com";
+
+  // 3. Patient C: UID P-9104, or "Patient C" / "Jane Smith"
+  const isPatientC = lowerUid === "p-9104" ||
+                     lowerName === "patient c" ||
+                     lowerName === "jane smith" ||
+                     email === "patient_c@gmail.com" ||
+                     email === "jane.smith@gmail.com";
+
+  if (isPatientA) {
+    return {
+      sessionId: "S-001",
+      patientId: "P-12345",
+      patientName: "Patient A",
+      displayLabel: "Patient A"
+    };
+  }
+
+  if (isPatientB) {
+    return {
+      sessionId: "S-002",
+      patientId: "P-8821",
+      patientName: "Patient B",
+      displayLabel: "Patient B"
+    };
+  }
+
+  if (isPatientC) {
+    return {
+      sessionId: "S-003",
+      patientId: "P-9104",
+      patientName: "Patient C",
+      displayLabel: "Patient C"
+    };
+  }
+
+  // Any custom registered patient
+  return {
+    sessionId: u.sessionId || u.session_id || window.currentActiveConsultationSessionId || "",
+    patientId: uid || "P-12345",
+    patientName: name || "Patient A",
+    displayLabel: name || uid || "Patient"
+  };
+}
+window.getPatientSessionIdentifiers = getPatientSessionIdentifiers;
+
+/**
+ * Dynamically queries the backend Haptic session routing API
+ * and updates the Patient Portal header status pill ("Remote Haptic Control • Active" / "Inactive").
+ */
+async function updatePatientHapticSessionStatus(patient = null) {
+  const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+                (roleInput && roleInput.value === "doctor");
+  if (isDoc) return null;
+
+  const ident = getPatientSessionIdentifiers(patient || currentAuthenticatedUser);
+  const patStatus = await PatientHapticService.getTelemetry({
+    sessionId: ident.sessionId,
+    patientId: ident.patientId,
+    patientName: ident.patientName
+  });
+
+  const isAuthorized = Boolean(patStatus && patStatus.authorized && patStatus.haptic_connected);
+
+  // 1. Update the Patient Portal header chip (#docDashHapticChip)
+  setHapticPadStatus(
+    isAuthorized ? HAPTIC_STATE.CONNECTED : HAPTIC_STATE.NOT_CONNECTED,
+    { patientAuthorized: isAuthorized }
+  );
+
+  // 2. Also keep the Live Video Consultation badge updated if present
+  const sessionBadge = document.getElementById("liveConsultationHapticBadge");
+  const sessionText = document.getElementById("liveConsultationHapticText");
+  if (sessionBadge && sessionText) {
+    sessionBadge.style.display = "inline-flex";
+    if (isAuthorized) {
+      sessionBadge.className = "live-haptic-badge haptic-badge--connected";
+      sessionText.textContent = "Remote Haptic Control • Active";
+    } else {
+      sessionBadge.className = "live-haptic-badge haptic-badge--inactive";
+      sessionText.textContent = "Remote Haptic Control • Inactive";
+    }
+  }
+
+  return patStatus;
+}
+window.updatePatientHapticSessionStatus = updatePatientHapticSessionStatus;
 
 // Browser console verification helper
 window.verifyHapticSessionRouting = async function (patientId = "P-12345", sessionId = "S-001") {
@@ -6372,9 +6599,10 @@ function setHapticPadStatus(state, details = {}) {
   const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
                 (roleInput && roleInput.value === "doctor");
 
-  chip.classList.remove("haptic-chip--connected", "haptic-chip--connecting", "haptic-chip--disconnected");
+  chip.classList.remove("haptic-chip--connected", "haptic-chip--connecting", "haptic-chip--disconnected", "haptic-chip--inactive");
 
   if (isDoc) {
+    // 1. DOCTOR SIDE: LOCAL PHYSICAL HARDWARE STATUS ONLY
     if (label) label.textContent = "Haptic Pad";
     if (state === HAPTIC_STATE.CONNECTED || state === "connected") {
       currentHapticState = HAPTIC_STATE.CONNECTED;
@@ -6396,35 +6624,36 @@ function setHapticPadStatus(state, details = {}) {
       chip.title = "Haptic Pad • Not Connected (Click to retry connection)";
     }
   } else {
-    // Patient Portal view: Isolated from Doctor's direct USB chip
+    // 2. PATIENT SIDE: REMOTE HAPTIC CONTROL STATUS ONLY
     if (label) label.textContent = "Remote Haptic Control";
-    const isPatientBound = Boolean(details.patientAuthorized || (window.currentActiveConsultationSessionId && (state === HAPTIC_STATE.CONNECTED || state === "connected")));
-    if (isPatientBound) {
+    if (alertIcon) alertIcon.style.display = "none";
+    const isPatientAuthorized = Boolean(details.patientAuthorized);
+    if (isPatientAuthorized) {
       chip.classList.add("haptic-chip--connected");
-      if (text) text.textContent = "Connected";
-      if (alertIcon) alertIcon.style.display = "none";
-      chip.title = "Remote Haptic Control • Connected";
+      if (text) text.textContent = "Active";
+      chip.title = "Remote Haptic Control • Active (Authorized consultation session)";
     } else {
-      chip.classList.add("haptic-chip--disconnected");
+      chip.classList.add("haptic-chip--inactive");
       if (text) text.textContent = "Inactive";
-      if (alertIcon) alertIcon.style.display = "none";
-      chip.title = "Remote Haptic Control • Inactive (No active consultation with doctor)";
+      chip.title = "Remote Haptic Control • Inactive";
     }
   }
 }
 window.setHapticPadStatus = setHapticPadStatus;
 
 /**
- * Updates the Live Consultation status badge on #app-dashboard
+ * Updates the Live Consultation status badges on #app-dashboard
  */
 async function updateLiveConsultationHapticBadge() {
-  const badge = document.getElementById("liveConsultationHapticBadge");
-  const text = document.getElementById("liveConsultationHapticText");
-  if (!badge || !text) return;
+  const doctorHwBadge = document.getElementById("liveDoctorHapticHwBadge");
+  const doctorHwText = document.getElementById("liveDoctorHapticHwText");
+  const sessionBadge = document.getElementById("liveConsultationHapticBadge");
+  const sessionText = document.getElementById("liveConsultationHapticText");
 
   const appDashboard = document.getElementById("app-dashboard");
   if (!appDashboard || appDashboard.style.display === "none") {
-    badge.style.display = "none";
+    if (doctorHwBadge) doctorHwBadge.style.display = "none";
+    if (sessionBadge) sessionBadge.style.display = "none";
     return;
   }
 
@@ -6432,35 +6661,53 @@ async function updateLiveConsultationHapticBadge() {
                 (roleInput && roleInput.value === "doctor");
 
   if (isDoc) {
+    // DOCTOR CONSULTATION PAGE:
+    // 1. Show physical local hardware status separately
     const hw = await HapticPadService.getStatus({ timeoutMs: 1200 });
-    badge.style.display = "inline-flex";
-    if (hw.connected) {
-      badge.className = "live-haptic-badge haptic-badge--connected";
-      text.textContent = "Haptic Control Active";
-    } else {
-      badge.className = "live-haptic-badge haptic-badge--inactive";
-      text.textContent = "Haptic Pad • Disconnected";
+    if (doctorHwBadge && doctorHwText) {
+      doctorHwBadge.style.display = "inline-flex";
+      if (hw.connected) {
+        doctorHwBadge.className = "live-haptic-badge haptic-badge--connected";
+        doctorHwText.textContent = "Haptic Pad • Connected";
+      } else {
+        doctorHwBadge.className = "live-haptic-badge haptic-badge--disconnected";
+        doctorHwText.textContent = "Haptic Pad • Not Connected";
+      }
+    }
+
+    // 2. When active consultation session is bound, show Remote Control Active
+    if (sessionBadge && sessionText) {
+      const isSessionActive = Boolean(window.currentActiveConsultationSessionId);
+      if (isSessionActive && hw.connected) {
+        sessionBadge.style.display = "inline-flex";
+        sessionBadge.className = "live-haptic-badge haptic-badge--connected";
+        sessionText.textContent = "Remote Control • Active";
+      } else {
+        sessionBadge.style.display = "none";
+      }
     }
   } else {
-    // Patient side in live consultation
-    const activeSession = window.currentActiveConsultationSessionId || "S-001";
-    const patientId = currentAuthenticatedUser?.uid || "P-12345";
-    const patStatus = await PatientHapticService.getTelemetry({
-      sessionId: activeSession,
-      patientId: patientId,
-      patientName: currentAuthenticatedUser?.name || "Patient A"
-    });
+    // PATIENT CONSULTATION PAGE:
+    // Do NOT show local physical hardware status on Patient side
+    if (doctorHwBadge) doctorHwBadge.style.display = "none";
 
-    badge.style.display = "inline-flex";
-    if (patStatus.authorized && patStatus.haptic_connected) {
-      badge.className = "live-haptic-badge haptic-badge--connected";
-      text.textContent = "Remote Haptic Control • Connected";
-    } else if (patStatus.authorized && !patStatus.haptic_connected) {
-      badge.className = "live-haptic-badge haptic-badge--inactive";
-      text.textContent = "Remote Haptic Control • Device Offline";
-    } else {
-      badge.className = "live-haptic-badge haptic-badge--inactive";
-      text.textContent = "Remote Haptic Control • Inactive";
+    // Show Remote Haptic Control status ONLY
+    if (sessionBadge && sessionText) {
+      sessionBadge.style.display = "inline-flex";
+      const patIdent = getPatientSessionIdentifiers(currentAuthenticatedUser);
+      const patStatus = await PatientHapticService.getTelemetry({
+        sessionId: patIdent.sessionId,
+        patientId: patIdent.patientId,
+        patientName: patIdent.patientName
+      });
+
+      if (patStatus.authorized && patStatus.haptic_connected) {
+        sessionBadge.className = "live-haptic-badge haptic-badge--connected";
+        sessionText.textContent = "Remote Haptic Control • Active";
+      } else {
+        sessionBadge.className = "live-haptic-badge haptic-badge--inactive";
+        sessionText.textContent = "Remote Haptic Control • Inactive";
+      }
     }
   }
 }
@@ -6616,15 +6863,8 @@ function startHapticLiveMonitoring() {
         }
       }
     } else {
-      // Patient Portal: ensure unauthorized patients (Patient B, Patient C) are shown inactive
-      const patStatus = await PatientHapticService.getTelemetry({
-        sessionId: window.currentActiveConsultationSessionId || "",
-        patientId: currentAuthenticatedUser?.uid || ""
-      });
-      setHapticPadStatus(
-        patStatus.authorized && patStatus.haptic_connected ? HAPTIC_STATE.CONNECTED : HAPTIC_STATE.NOT_CONNECTED,
-        { patientAuthorized: patStatus.authorized && patStatus.haptic_connected }
-      );
+      // Patient Portal: dynamically query backend session-routing API and update status
+      await updatePatientHapticSessionStatus();
     }
   }, 1000);
 }
@@ -6650,6 +6890,17 @@ function stopHapticLiveMonitoring() {
  */
 async function initiateHapticPadConnection(options = {}) {
   if (isHapticConnectionInProgress) return;
+
+  const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+                (roleInput && roleInput.value === "doctor");
+
+  if (!isDoc) {
+    // Patient: check remote session binding dynamically and start monitoring
+    await updatePatientHapticSessionStatus();
+    startHapticLiveMonitoring();
+    return;
+  }
+
   isHapticConnectionInProgress = true;
 
   // Set CONNECTING state & show modal
@@ -6706,8 +6957,15 @@ function setupHapticPadListeners() {
 
   if (chip) {
     chip.addEventListener("click", () => {
-      console.log("[HAPTIC] Header status clicked, retrying connection...");
-      initiateHapticPadConnection({ userTriggered: true });
+      const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+                    (roleInput && roleInput.value === "doctor");
+      if (isDoc) {
+        console.log("[HAPTIC] Header status clicked, retrying connection...");
+        initiateHapticPadConnection({ userTriggered: true });
+      } else {
+        console.log("[HAPTIC] Patient header status clicked, refreshing remote haptic control status...");
+        updatePatientHapticSessionStatus();
+      }
     });
   }
 }
@@ -7581,6 +7839,10 @@ async function resetPatientPasswordWithToken(identifier, resetToken, newPassword
 function setAuthenticatedPatientSession(patient) {
   currentAuthenticatedUser = { ...patient, role: "patient" };
   currentAuthenticatedRole = "patient";
+  try {
+    sessionStorage.setItem("authenticated_patient", JSON.stringify(currentAuthenticatedUser));
+    localStorage.setItem("authenticated_patient", JSON.stringify(currentAuthenticatedUser));
+  } catch (e) { }
 
   // Bind values to settings inputs
   if (roleInput) {
@@ -7627,12 +7889,15 @@ function setAuthenticatedPatientSession(patient) {
   // Render Patient Dashboard interactive handlers
   renderPatientDashboard(patient);
 
-  // Setup Haptic Pad event listeners & trigger initial connection attempt (Matching Doctor Portal)
+  // Setup Haptic Pad event listeners & trigger dynamic remote session check
   if (typeof setupHapticPadListeners === "function") {
     setupHapticPadListeners();
   }
-  if (typeof initiateHapticPadConnection === "function") {
-    initiateHapticPadConnection();
+  if (typeof updatePatientHapticSessionStatus === "function") {
+    updatePatientHapticSessionStatus(patient);
+  }
+  if (typeof startHapticLiveMonitoring === "function") {
+    startHapticLiveMonitoring();
   }
 }
 

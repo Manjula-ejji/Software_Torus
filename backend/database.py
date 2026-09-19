@@ -467,6 +467,24 @@ def init_db():
         conn.commit()
         print(f"[Database] Default Patient created (UID: {pat_uid}, email: patient@gmail.com).")
 
+    # Seed Patient A (P-12345), Patient B (P-8821), Patient C (P-9104) for Haptic session routing tests
+    patient_pass = hash_password("patient123")
+    seed_patients = [
+        ("P-12345", "Patient A", "patient_a@gmail.com", "+91 98765 12345"),
+        ("P-8821", "Patient B", "patient_b@gmail.com", "+91 98765 23456"),
+        ("P-9104", "Patient C", "patient_c@gmail.com", "+91 98765 34567")
+    ]
+    for p_uid, p_name, p_email, p_mobile in seed_patients:
+        cursor.execute("SELECT * FROM patients WHERE LOWER(uid) = ? OR LOWER(email) = ?", (p_uid.lower(), p_email.lower()))
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO patients (uid, name, email, password_hash, role, mobile)
+                VALUES (?, ?, ?, ?, 'patient', ?)
+            """, (p_uid, p_name, p_email, patient_pass, p_mobile))
+            conn.commit()
+            print(f"[Database] Seeded patient {p_name} (UID: {p_uid}, email: {p_email}).")
+
+
     # Seed default Viewer: user@gmail.com / user123 (role: viewer, UID: 6001)
     cursor.execute("SELECT * FROM viewers WHERE LOWER(email) = 'user@gmail.com'")
     if not cursor.fetchone():

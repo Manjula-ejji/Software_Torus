@@ -73,6 +73,20 @@ def api_remote_input():
         return Response(status=204)
     return jsonify({"status": "success", "executed": True})
 
+@app.route("/api/agora/config", methods=["GET", "OPTIONS"])
+def api_agora_config():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    database.load_env_file()
+    token = os.environ.get("AGORA_TOKEN", "").strip()
+    app_id = os.environ.get("AGORA_APP_ID", "f320d3475b6d4b70ba512b06d09849d7").strip()
+    channel = os.environ.get("AGORA_CHANNEL", "torus").strip()
+    return jsonify({
+        "appId": app_id,
+        "token": token,
+        "channel": channel
+    })
+
 # -------------------- HAPTIC PAD HARDWARE LINK & AUTO-DETECTION --------------------
 import serial
 import serial.tools.list_ports
