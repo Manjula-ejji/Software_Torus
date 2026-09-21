@@ -6313,7 +6313,7 @@ const PatientHapticService = {
     if (patientId) queryParams.set("patient_id", patientId);
     if (patientName) queryParams.set("patient_name", patientName);
 
-    const baseUrl = (window.location.port === "3000") ? "" : "http://127.0.0.1:3000";
+    const baseUrl = (window.location.port === "3000" || window.location.port === "") ? "" : "http://127.0.0.1:3000";
     const streamUrl = `${baseUrl}/api/haptic-pad/patient/stream?${queryParams.toString()}`;
 
     try {

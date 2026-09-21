@@ -1243,7 +1243,7 @@ def serve_static_files(path):
 
 def main():
     host = os.environ.get("SERVER_HOST", "0.0.0.0")
-    port = int(os.environ.get("SERVER_PORT", "3000"))
+    port = int(os.environ.get("PORT", os.environ.get("SERVER_PORT", "3000")))
     print(f"[TORUS Backend] Server starting on http://127.0.0.1:{port} ...")
     app.run(host=host, port=port, threaded=True)
 
