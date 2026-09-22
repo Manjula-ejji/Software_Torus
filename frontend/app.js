@@ -6014,7 +6014,7 @@ function renderDoctorDashboard() {
         else if (session.scanType === "Pelvic") scanColor = "emerald";
 
         const isSessionActive = (window.currentActiveConsultationSessionId === session.sessionId) ||
-                                (!window.currentActiveConsultationSessionId && session === activeList[0]);
+          (!window.currentActiveConsultationSessionId && session === activeList[0]);
         const isHapticBound = isSessionActive && (currentHapticState === HAPTIC_STATE.CONNECTED || currentHapticState === "connected");
 
         return `
@@ -6365,28 +6365,28 @@ function getPatientSessionIdentifiers(patient = null) {
 
   // 1. Patient A: Default patient in TORUS, UID 4001, PAT-4001, P-12345, or "Patient A" / "Patient User"
   const isPatientA = lowerUid === "p-12345" ||
-                     lowerUid === "4001" ||
-                     lowerUid === "pat-4001" ||
-                     lowerName === "patient a" ||
-                     lowerName === "patient user" ||
-                     email === "patient@gmail.com" ||
-                     email === "patient_a@gmail.com" ||
-                     (!lowerUid && !lowerName);
+    lowerUid === "4001" ||
+    lowerUid === "pat-4001" ||
+    lowerName === "patient a" ||
+    lowerName === "patient user" ||
+    email === "patient@gmail.com" ||
+    email === "patient_a@gmail.com" ||
+    (!lowerUid && !lowerName);
 
   // 2. Patient B: UID P-8821, or "Patient B" / "John Doe" / "John Smith"
   const isPatientB = lowerUid === "p-8821" ||
-                     lowerName === "patient b" ||
-                     lowerName === "john doe" ||
-                     lowerName === "john smith" ||
-                     email === "patient_b@gmail.com" ||
-                     email === "john.smith@gmail.com";
+    lowerName === "patient b" ||
+    lowerName === "john doe" ||
+    lowerName === "john smith" ||
+    email === "patient_b@gmail.com" ||
+    email === "john.smith@gmail.com";
 
   // 3. Patient C: UID P-9104, or "Patient C" / "Jane Smith"
   const isPatientC = lowerUid === "p-9104" ||
-                     lowerName === "patient c" ||
-                     lowerName === "jane smith" ||
-                     email === "patient_c@gmail.com" ||
-                     email === "jane.smith@gmail.com";
+    lowerName === "patient c" ||
+    lowerName === "jane smith" ||
+    email === "patient_c@gmail.com" ||
+    email === "jane.smith@gmail.com";
 
   if (isPatientA) {
     return {
@@ -6751,7 +6751,7 @@ function startHapticLiveMonitoring() {
     if (isHapticConnectionInProgress) return;
 
     const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
-                  (roleInput && roleInput.value === "doctor");
+      (roleInput && roleInput.value === "doctor");
 
     const res = await HapticPadService.getStatus({ timeoutMs: 1500 });
     const wasConnected = currentHapticState === HAPTIC_STATE.CONNECTED;
@@ -6828,7 +6828,7 @@ async function initiateHapticPadConnection(options = {}) {
   isHapticConnectionInProgress = false;
 
   const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
-                (roleInput && roleInput.value === "doctor");
+    (roleInput && roleInput.value === "doctor");
 
   if (result && result.connected) {
     // 2. SUCCESS FLOW: Close connecting modal, update header to green connected
