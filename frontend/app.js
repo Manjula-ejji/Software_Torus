@@ -57,19 +57,35 @@ function connectDoctorMQTT(appId, channel) {
 }
 
 function sendControlCommand(name, value) {
-  if (roleInput.value !== "doctor") return;
-
   const payload = JSON.stringify({ control: name, value: value });
 
-  if (!doctorMqttClient || !doctorMqttClient.connected) {
-    console.log(`[Doctor MQTT] Not connected yet. Initiating connection and queuing: ${name} = ${value}`);
-    pendingMqttPayloads.push(payload);
-    connectDoctorMQTT();
-    return;
-  }
+  // 1. Direct HTTP control bridge (works across all network topologies & local dev)
+  try {
+    const isDirectBackend = window.location.port === "3000";
+    const remoteInputUrls = isDirectBackend
+      ? ["/api/remote-input", "http://127.0.0.1:3000/api/remote-input", "http://localhost:3000/api/remote-input"]
+      : ["http://127.0.0.1:3000/api/remote-input", "http://localhost:3000/api/remote-input", "/api/remote-input"];
+    for (const url of remoteInputUrls) {
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload
+      }).catch(() => {});
+    }
+  } catch (_) {}
 
-  doctorMqttClient.publish(doctorControlTopic, payload);
-  console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
+  // 2. Doctor MQTT control bridge
+  if (roleInput && roleInput.value === "doctor") {
+    if (!doctorMqttClient || !doctorMqttClient.connected) {
+      console.log(`[Doctor MQTT] Not connected yet. Initiating connection and queuing: ${name} = ${value}`);
+      pendingMqttPayloads.push(payload);
+      connectDoctorMQTT();
+      return;
+    }
+
+    doctorMqttClient.publish(doctorControlTopic, payload);
+    console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
+  }
 }
 
 const appIdInput = document.getElementById("appId");
@@ -1964,22 +1980,7 @@ async function syncDoctorControlsFromPatientState() {
     }
 
     if (data.status) {
-      isRunningState = (data.status === "RUNNING");
-      if (isRunningState) {
-        controlStartBtn.classList.add("active", "running-stop-btn");
-        controlFreezeBtn.classList.remove("active");
-        controlStatusLabel.textContent = "RUNNING";
-        controlStatusLabel.className = "status-val running";
-        if (startBtnText) startBtnText.textContent = "Stop";
-        if (startBtnIcon) startBtnIcon.innerHTML = `<rect x="6" y="6" width="12" height="12" fill="currentColor"/>`;
-      } else {
-        controlStartBtn.classList.remove("running-stop-btn");
-        controlStartBtn.classList.add("active");
-        controlStatusLabel.textContent = "STOPPED";
-        controlStatusLabel.className = "status-val stopped";
-        if (startBtnText) startBtnText.textContent = "Start";
-        if (startBtnIcon) startBtnIcon.innerHTML = `<path d="M8 5v14l11-7z" fill="currentColor"/>`;
-      }
+      updateUltrasoundScanUI(data.status === "RUNNING");
     }
   } catch (err) {
     console.warn("[Doctor UI] Sync state info:", err);
@@ -1993,42 +1994,88 @@ document.addEventListener("DOMContentLoaded", () => {
 
 let isRunningState = false;
 
-if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
-  controlStartBtn.addEventListener("click", () => {
-    isRunningState = !isRunningState;
+function updateUltrasoundScanUI(running) {
+  isRunningState = Boolean(running);
+
+  // 1. Update Start Scan / Stop Scan button next to Join Call
+  const startScanBtn = document.getElementById("startScanBtn");
+  if (startScanBtn) {
+    if (isRunningState) {
+      startScanBtn.textContent = "Stop Scan";
+      startScanBtn.classList.add("scanning");
+      startScanBtn.title = "Stop Ultrasound Scanning";
+    } else {
+      startScanBtn.textContent = "Start Scan";
+      startScanBtn.classList.remove("scanning");
+      startScanBtn.title = "Start Ultrasound Scanning";
+    }
+  }
+
+  // 2. Update Modal Acquisition Start/Stop button
+  if (controlStartBtn) {
     if (isRunningState) {
       controlStartBtn.classList.add("active", "running-stop-btn");
-      controlFreezeBtn.classList.remove("active");
-      controlStatusLabel.textContent = "RUNNING";
-      controlStatusLabel.className = "status-val running";
       if (startBtnText) startBtnText.textContent = "Stop";
       if (startBtnIcon) {
         startBtnIcon.innerHTML = `<rect x="6" y="6" width="12" height="12" fill="currentColor"/>`;
       }
-      sendControlCommand("start", true);
     } else {
       controlStartBtn.classList.remove("running-stop-btn");
       controlStartBtn.classList.add("active");
-      controlStatusLabel.textContent = "STOPPED";
-      controlStatusLabel.className = "status-val stopped";
       if (startBtnText) startBtnText.textContent = "Start";
       if (startBtnIcon) {
         startBtnIcon.innerHTML = `<path d="M8 5v14l11-7z" fill="currentColor"/>`;
       }
-      sendControlCommand("start", false);
     }
+  }
+
+  // 3. Update Freeze button state
+  if (controlFreezeBtn) {
+    if (isRunningState) {
+      controlFreezeBtn.classList.remove("active");
+    }
+  }
+
+  // 4. Update status labels
+  if (controlStatusLabel) {
+    controlStatusLabel.textContent = isRunningState ? "RUNNING" : "STOPPED";
+    controlStatusLabel.className = isRunningState ? "status-val running" : "status-val stopped";
+  }
+}
+window.updateUltrasoundScanUI = updateUltrasoundScanUI;
+
+function toggleUltrasoundScan(forceState = null) {
+  const nextState = (forceState !== null) ? Boolean(forceState) : !isRunningState;
+  updateUltrasoundScanUI(nextState);
+
+  // Trigger the actual hardware / backend ultrasound scanning commands
+  if (nextState) {
+    sendControlCommand("start", true);
+    console.log("[Ultrasound Scan] Scanning started. State set to RUNNING.");
+  } else {
+    sendControlCommand("start", false);
+    sendControlCommand("freeze", true);
+    console.log("[Ultrasound Scan] Scanning stopped. State set to STOPPED.");
+  }
+}
+window.toggleUltrasoundScan = toggleUltrasoundScan;
+
+// Bind Start Scan button in the bottom floating controller bar next to Join Call
+const startScanBtn = document.getElementById("startScanBtn");
+if (startScanBtn) {
+  startScanBtn.addEventListener("click", () => {
+    toggleUltrasoundScan();
+  });
+}
+
+if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
+  controlStartBtn.addEventListener("click", () => {
+    toggleUltrasoundScan();
   });
 
   controlFreezeBtn.addEventListener("click", () => {
     controlFreezeBtn.classList.add("active");
-    controlStartBtn.classList.remove("active", "running-stop-btn");
-    controlStatusLabel.textContent = "STOPPED";
-    controlStatusLabel.className = "status-val stopped";
-    isRunningState = false;
-    if (startBtnText) startBtnText.textContent = "Start";
-    if (startBtnIcon) {
-      startBtnIcon.innerHTML = `<path d="M8 5v14l11-7z" fill="currentColor"/>`;
-    }
+    updateUltrasoundScanUI(false);
     sendControlCommand("freeze", true);
   });
 }

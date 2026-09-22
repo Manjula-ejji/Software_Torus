@@ -404,6 +404,43 @@ body::after {
   gap: 10px;
 }
 
+#startScanBtn {
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 12px 28px;
+  border-radius: 99px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+#startScanBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  transform: translateY(-2.5px) scale(1.04);
+  box-shadow:
+    0 8px 24px rgba(16, 185, 129, 0.5),
+    0 0 20px rgba(52, 211, 153, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+#startScanBtn.scanning {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 18px rgba(239, 68, 68, 0.35);
+}
+
+#startScanBtn.scanning:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+  box-shadow:
+    0 8px 24px rgba(239, 68, 68, 0.5),
+    0 0 20px rgba(248, 113, 113, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
 #joinBtn {
   font-size: 0.95rem;
   padding: 12px 28px;
