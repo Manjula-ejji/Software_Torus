@@ -4048,15 +4048,21 @@ async function callBackendAPI(endpoint, payload, method = "POST") {
   const uniqueUrls = Array.from(new Set(candidateUrls));
   const reqMethod = (method || "POST").toUpperCase();
 
-  for (const url of uniqueUrls) {
+  for (let url of uniqueUrls) {
     try {
+      if (reqMethod === "GET" || reqMethod === "HEAD") {
+        const sep = url.includes("?") ? "&" : "?";
+        url = `${url}${sep}_t=${Date.now()}`;
+      }
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
       const fetchOptions = {
         method: reqMethod,
         headers: { "Content-Type": "application/json" },
-        signal: controller.signal
+        signal: controller.signal,
+        cache: "no-store"
       };
       if (reqMethod !== "GET" && reqMethod !== "HEAD" && payload !== undefined) {
         fetchOptions.body = JSON.stringify(payload);
@@ -4942,11 +4948,26 @@ function getPatientSessionData(patient) {
 
   // Match completed examinations & reports
   let completedList = allCompleted.filter(s =>
-    (s.patientId && s.patientId.toLowerCase() === currentUid) ||
+    (s.patientId && (s.patientId.toLowerCase() === currentUid || s.patientId.toLowerCase() === `pat-${currentUid}` || (currentUid === "4001" && s.patientId.toLowerCase() === "p-12345"))) ||
     (s.patientName && s.patientName.toLowerCase() === currentName)
   );
+
+  // If default demonstration patient or no specific patient match, provide comprehensive clinical examination history
   if (completedList.length === 0 && allCompleted.length > 0) {
-    completedList = [allCompleted[0]];
+    if (currentUid === "4001" || currentName.includes("patient")) {
+      const defaultIds = ["S-101", "S-103", "S-104", "S-106"];
+      const matched = allCompleted.filter(s => defaultIds.includes(s.sessionId));
+      completedList = matched.length > 0 ? matched : [allCompleted[0]];
+    } else {
+      completedList = [allCompleted[0]];
+    }
+  } else if (completedList.length === 1 && (currentUid === "4001" || currentName.includes("patient"))) {
+    // If only S-101 matched for the default patient, enrich with the standard clinical historical record series
+    const defaultIds = ["S-101", "S-103", "S-104", "S-106"];
+    const matched = allCompleted.filter(s => defaultIds.includes(s.sessionId));
+    if (matched.length > 1) {
+      completedList = matched;
+    }
   }
 
   return { activeSession, upcomingList, completedList };
@@ -5102,10 +5123,50 @@ function renderPatientAppointments(patient, query = "", typeFilter = "all") {
 }
 window.renderPatientAppointments = renderPatientAppointments;
 
-// Render Patient Diagnostic Reports View
+// Render Patient Diagnostic Reports View with Real Backend Sync
+window.patientBackendDiagnosticReports = null;
+
+async function loadPatientBackendReports(patient) {
+  try {
+    const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
+    const pid = current.uid || current.patient_id || current.id || "";
+    const endpoint = pid ? `/api/reports?patient_id=${encodeURIComponent(pid)}` : "/api/reports";
+    const res = await callBackendAPI(endpoint, null, "GET");
+    if (res && res.success && Array.isArray(res.reports)) {
+      window.patientBackendDiagnosticReports = res.reports;
+      return { success: true, reports: res.reports, total: res.total !== undefined ? res.total : res.reports.length };
+    }
+  } catch (e) {
+    // Keep fallback
+  }
+  return { success: false };
+}
+window.loadPatientBackendReports = loadPatientBackendReports;
+
 function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all") {
   const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
-  const { completedList } = getPatientSessionData(current);
+  
+  let reportsSource = [];
+  if (Array.isArray(window.patientBackendDiagnosticReports) && window.patientBackendDiagnosticReports.length > 0) {
+    reportsSource = window.patientBackendDiagnosticReports.map(item => ({
+      reportId: item.report_id || item.reportId,
+      sessionId: item.session_id || item.sessionId,
+      patientId: item.patient_id || item.patientId,
+      patientName: item.patient_name || item.patientName,
+      scanType: item.scan_type || item.scanType || "General",
+      sessionDate: item.exam_date || item.examDate || item.sessionDate || "2026-09-25",
+      sessionTime: item.exam_time || item.examTime || item.sessionTime || "10:00 AM",
+      doctorName: item.doctor_name || item.doctorName || "Dr. Admin Doctor",
+      diagnosticCenter: item.diagnostic_center || item.diagnosticCenter || "Apex Diagnostic Center",
+      reportStatus: (item.report_status || item.status || "ready").toLowerCase(),
+      clinicalSummary: item.clinical_summary || item.clinicalSummary || "",
+      ultrasoundFindings: item.ultrasound_findings || item.ultrasoundFindings || "",
+      diagnosisImpression: item.diagnosis_impression || item.diagnosisImpression || ""
+    }));
+  } else {
+    const { completedList } = getPatientSessionData(current);
+    reportsSource = completedList;
+  }
 
   const listEl = document.getElementById("patRepList");
   const emptyEl = document.getElementById("patRepEmptyState");
@@ -5113,13 +5174,14 @@ function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all")
   const finalizedCountEl = document.getElementById("patRepFinalizedCount");
 
   const q = (query || "").trim().toLowerCase();
-  const filtered = completedList.filter(item => {
+  const filtered = reportsSource.filter(item => {
     if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
     if (q) {
       const match = (item.reportId && item.reportId.toLowerCase().includes(q)) ||
         (item.scanType && item.scanType.toLowerCase().includes(q)) ||
         (item.doctorName && item.doctorName.toLowerCase().includes(q)) ||
-        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q));
+        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q)) ||
+        (item.patientName && item.patientName.toLowerCase().includes(q));
       if (!match) return false;
     }
     return true;
@@ -5142,8 +5204,11 @@ function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all")
     let scanClass = "purple";
     if (item.scanType === "Cardiac") scanClass = "cyan";
     else if (item.scanType === "Pelvic") scanClass = "emerald";
+    else if (item.scanType === "Vascular") scanClass = "amber";
 
     const repId = item.reportId || "REP-2026-001";
+    const statusText = item.reportStatus === "ready" ? "Finalized" : "Pending Review";
+    const statusBadgeClass = item.reportStatus === "ready" ? "drep-badge-ready" : "drep-badge-pending";
 
     return `
       <div class="drep-row">
@@ -5151,22 +5216,22 @@ function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all")
           <div class="drep-patient-avatar ${scanClass}">DR</div>
           <div>
             <p class="drep-patient-name">${repId}</p>
-            <p class="drep-patient-id">Official Clinical Record</p>
+            <p class="drep-patient-id">${item.scanType} Clinical Record</p>
           </div>
         </div>
         <div>
           <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
         </div>
         <div class="drep-date-cell">
-          <span class="drep-date-main">${item.sessionDate || "2026-09-14"}</span>
-          <span class="drep-date-time">${item.sessionTime || "09:15 AM"}</span>
+          <span class="drep-date-main">${item.sessionDate}</span>
+          <span class="drep-date-time">${item.sessionTime}</span>
         </div>
         <div class="drep-doc-cell">
-          <span class="drep-doc-name">${item.doctorName || "Dr. Admin Doctor"}</span>
-          <span class="drep-doc-session">${item.diagnosticCenter || "Apex Diagnostic Center"}</span>
+          <span class="drep-doc-name">${item.doctorName}</span>
+          <span class="drep-doc-session">${item.diagnosticCenter}</span>
         </div>
         <div>
-          <span class="drep-badge-ready">Finalized</span>
+          <span class="${statusBadgeClass}">${statusText}</span>
         </div>
         <div class="drep-actions-cell">
           <button type="button" class="drep-btn-view" onclick="openPatientReportViewModal('${repId}')">
@@ -5184,6 +5249,32 @@ function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all")
 }
 window.renderPatientDiagnosticReports = renderPatientDiagnosticReports;
 
+function calculateTotalDuration(items) {
+  if (!items || items.length === 0) return "00:00";
+  let totalSecs = 0;
+  for (const it of items) {
+    const dur = (it.duration || "").toString().trim();
+    if (dur.includes(":")) {
+      const parts = dur.split(":");
+      const mins = parseInt(parts[0], 10) || 0;
+      const secs = parseInt(parts[1], 10) || 0;
+      totalSecs += (mins * 60) + secs;
+    } else if (dur.includes("m")) {
+      const mins = parseInt(dur, 10) || 0;
+      totalSecs += mins * 60;
+    }
+  }
+  const totalM = Math.floor(totalSecs / 60);
+  const remS = totalSecs % 60;
+  if (totalM >= 60) {
+    const h = Math.floor(totalM / 60);
+    const m = totalM % 60;
+    return `${h}h ${m}m`;
+  }
+  return `${String(totalM).padStart(2, "0")}:${String(remS).padStart(2, "0")}`;
+}
+window.calculateTotalDuration = calculateTotalDuration;
+
 // Render Patient Examination History View
 function renderPatientHistory(patient, query = "", typeFilter = "all") {
   const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
@@ -5193,6 +5284,8 @@ function renderPatientHistory(patient, query = "", typeFilter = "all") {
   const emptyEl = document.getElementById("patHistEmptyState");
   const totalCountEl = document.getElementById("patHistTotalCount");
   const durationTotalEl = document.getElementById("patHistDurationTotal");
+  const recordsCountEl = document.getElementById("patHistRecordsCount");
+  const tableFooterEl = document.getElementById("patHistTableFooter");
 
   const q = (query || "").trim().toLowerCase();
   const filtered = completedList.filter(item => {
@@ -5200,62 +5293,100 @@ function renderPatientHistory(patient, query = "", typeFilter = "all") {
     if (q) {
       const match = (item.scanType && item.scanType.toLowerCase().includes(q)) ||
         (item.doctorName && item.doctorName.toLowerCase().includes(q)) ||
-        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q));
+        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q)) ||
+        (item.sessionId && item.sessionId.toLowerCase().includes(q)) ||
+        (item.reportId && item.reportId.toLowerCase().includes(q));
       if (!match) return false;
     }
     return true;
   });
 
   if (totalCountEl) totalCountEl.textContent = String(filtered.length);
-  if (durationTotalEl) durationTotalEl.textContent = filtered.length > 0 ? (filtered[0].duration || "22m") : "0m";
+  if (durationTotalEl) durationTotalEl.textContent = calculateTotalDuration(filtered);
+  if (recordsCountEl) {
+    recordsCountEl.textContent = filtered.length === 1 
+      ? "Showing 1 of 1 examination record" 
+      : `Showing ${filtered.length} of ${completedList.length} examination records`;
+  }
 
   if (!listEl) return;
 
   if (filtered.length === 0) {
     listEl.innerHTML = "";
     if (emptyEl) emptyEl.style.display = "flex";
+    if (tableFooterEl) tableFooterEl.style.display = "none";
     return;
   }
 
   if (emptyEl) emptyEl.style.display = "none";
+  if (tableFooterEl) tableFooterEl.style.display = "flex";
 
-  listEl.innerHTML = filtered.map(item => {
+  const rowsHtml = filtered.map(item => {
     let scanClass = "purple";
-    if (item.scanType === "Cardiac") scanClass = "cyan";
-    else if (item.scanType === "Pelvic") scanClass = "emerald";
+    const st = (item.scanType || "").toLowerCase();
+    if (st === "cardiac") scanClass = "cyan";
+    else if (st === "pelvic") scanClass = "emerald";
+    else if (st === "vascular") scanClass = "amber";
+    else if (st === "thyroid") scanClass = "indigo";
 
-    const repId = item.reportId || "REP-2026-001";
+    const repId = item.reportId || `REP-2026-${(item.sessionId || '001').replace(/\D/g, '')}`;
+    const sessId = item.sessionId || "S-101";
+    const patId = item.patientId || current.uid || "P-12345";
+    const duration = item.duration || "22:15";
 
     return `
-      <div class="dhist-row">
-        <div class="dhist-date-cell" style="flex: 1.2;">
-          <span class="dhist-date-main">${item.sessionDate || "2026-09-14"}</span>
-          <span class="dhist-date-time">${item.sessionTime || "09:15 AM"}</span>
+      <div class="pathist-grid-row pathist-data-row" data-session-id="${sessId}" data-report-id="${repId}">
+        <div class="pathist-col pathist-col-date">
+          <div class="dhist-date-main-wrap">
+            <span class="dhist-date-main">${item.sessionDate || item.examDate || "2026-09-14"}</span>
+            <span class="dhist-session-pill" title="Clinical Session Reference ID">#${sessId}</span>
+          </div>
+          <span class="dhist-date-time">${item.sessionTime || item.examTime || "09:15 AM"}</span>
         </div>
-        <div>
+        <div class="pathist-col pathist-col-scan">
           <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
         </div>
-        <div class="dhist-patient-cell" style="flex: 1.2;">
-          <div>
-            <p class="dhist-patient-name">${item.doctorName || "Dr. Admin Doctor"}</p>
-            <p class="dhist-patient-id">${item.diagnosticCenter || "Apex Diagnostic Center"}</p>
-          </div>
+        <div class="pathist-col pathist-col-physician">
+          <p class="dhist-patient-name">${item.doctorName || "Dr. Admin Doctor"}</p>
+          <p class="dhist-patient-id">${item.diagnosticCenter || "Apex Diagnostic Center"}</p>
         </div>
-        <div>
-          <span class="dhist-duration-pill">${item.duration || "22:15"}</span>
+        <div class="pathist-col pathist-col-duration">
+          <span class="dhist-duration-pill">${duration}</span>
         </div>
-        <div>
-          <span class="drep-badge-ready">Report Available</span>
+        <div class="pathist-col pathist-col-status">
+          <span class="drep-badge-ready">
+            <span class="dhist-pulse-dot"></span>
+            Report Available
+          </span>
         </div>
-        <div class="dhist-actions-cell">
-          <button type="button" class="dhist-btn-view" onclick="openPatientReportViewModal('${repId}')">
+        <div class="pathist-col pathist-col-actions">
+          <button type="button" class="dhist-btn-view" onclick="openPatientReportViewModal('${repId}')" title="View Detailed Diagnostic Report">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             <span>View Report</span>
+          </button>
+          <button type="button" class="dhist-btn-download" onclick="downloadPatientReport('${repId}', '${patId}')" title="Download Official Medical Report PDF">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download</span>
           </button>
         </div>
       </div>
     `;
   }).join("");
+
+  const singleNoteHtml = filtered.length === 1 ? `
+    <div class="pathist-single-record-note">
+      <div class="pathist-note-content">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>Telemetry kinematics and cine loops for this session are securely archived in the TORUS clinical vault.</span>
+      </div>
+    </div>
+  ` : "";
+
+  listEl.innerHTML = rowsHtml + singleNoteHtml;
 }
 window.renderPatientHistory = renderPatientHistory;
 
@@ -5414,9 +5545,9 @@ function openPatientReportViewModal(reportId) {
 }
 window.openPatientReportViewModal = openPatientReportViewModal;
 
-function downloadPatientReport(reportId) {
+function downloadPatientReport(reportId, patientId = "") {
   if (typeof downloadDoctorReport === "function") {
-    downloadDoctorReport(reportId);
+    downloadDoctorReport(reportId, patientId);
   }
 }
 window.downloadPatientReport = downloadPatientReport;
@@ -5480,9 +5611,21 @@ function initPatientControls() {
     };
   }
   if (repRefresh) {
-    repRefresh.onclick = () => {
-      renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch?.value || "", repFilter?.value || "all");
-      if (typeof showToastAlert === "function") showToastAlert("Diagnostic reports list updated.", "info");
+    repRefresh.onclick = async () => {
+      repRefresh.classList.add("dact-refreshing");
+      try {
+        const res = await loadPatientBackendReports(currentAuthenticatedUser);
+        renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch?.value || "", repFilter?.value || "all");
+        if (res && res.success) {
+          if (typeof showToastAlert === "function") showToastAlert(`Refreshed ${res.total || 0} diagnostic reports from clinical database.`, "info");
+        } else {
+          if (typeof showToastAlert === "function") showToastAlert("Diagnostic reports updated from records.", "info");
+        }
+      } catch (e) {
+        if (typeof showToastAlert === "function") showToastAlert("Failed to refresh diagnostic reports.", "error");
+      } finally {
+        setTimeout(() => repRefresh.classList.remove("dact-refreshing"), 600);
+      }
     };
   }
 
@@ -11107,7 +11250,58 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // ── TORUS Doctor Patient Reports Logic ──
+  window.torusDiagnosticReports = null;
+
+  async function loadBackendReports(query = "", status = "all", scanType = "all") {
+    try {
+      let endpoint = "/api/reports/refresh";
+      const params = [];
+      if (query && query.trim()) params.push(`q=${encodeURIComponent(query.trim())}`);
+      if (status && status !== "all") params.push(`status=${encodeURIComponent(status)}`);
+      if (scanType && scanType !== "all") params.push(`scan_type=${encodeURIComponent(scanType)}`);
+      if (params.length > 0) {
+        endpoint += `?${params.join("&")}`;
+      }
+
+      let res = await callBackendAPI(endpoint, null, "GET");
+      if (!res || !res.success) {
+        const fallbackEndpoint = "/api/reports" + (params.length > 0 ? `?${params.join("&")}` : "");
+        res = await callBackendAPI(fallbackEndpoint, null, "GET");
+      }
+
+      if (res && res.success && Array.isArray(res.reports)) {
+        window.torusDiagnosticReports = res.reports;
+        return { success: true, reports: res.reports, total: res.total !== undefined ? res.total : res.reports.length };
+      }
+      return { success: false, error: res?.error || "Invalid response format from clinical database." };
+    } catch (e) {
+      return { success: false, error: e.message || "Network connection failure" };
+    }
+  }
+  window.loadBackendReports = loadBackendReports;
+
   function getDoctorReportsList() {
+    if (Array.isArray(window.torusDiagnosticReports)) {
+      return window.torusDiagnosticReports.map(c => ({
+        reportId: c.report_id || c.reportId,
+        sessionId: c.session_id || c.sessionId,
+        patientId: c.patient_id || c.patientId,
+        patientName: c.patient_name || c.patientName,
+        scanType: c.scan_type || c.scanType,
+        deviceId: c.device_id || c.deviceId,
+        examDate: c.exam_date || c.examDate || c.sessionDate,
+        examTime: c.exam_time || c.examTime || c.sessionTime,
+        doctorName: c.doctor_name || c.doctorName || "Dr. Admin Doctor",
+        status: (c.report_status || c.status || "ready").toLowerCase(),
+        diagnosticCenter: c.diagnostic_center || c.diagnosticCenter,
+        clinicalSummary: c.clinical_summary || c.clinicalSummary,
+        ultrasoundFindings: c.ultrasound_findings || c.ultrasoundFindings,
+        diagnosisImpression: c.diagnosis_impression || c.diagnosisImpression,
+        duration: c.duration || "20:00",
+        telemetry: c.telemetry || { maxForce: "2.6 N", avgForce: "1.9 N", latency: "16 ms", frames: 4800 }
+      }));
+    }
+
     loadTorusSessions();
     const completedList = window.torusSessions?.completed || [];
 
@@ -11121,19 +11315,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       examDate: c.sessionDate,
       examTime: c.sessionTime,
       doctorName: c.doctorName || "Dr. Admin Doctor",
-      status: c.reportStatus || "ready",
+      status: (c.reportStatus || "ready").toLowerCase(),
       diagnosticCenter: c.diagnosticCenter,
       clinicalSummary: c.clinicalSummary,
+      duration: c.duration || "20:00",
       telemetry: c.telemetry || { maxForce: "2.6 N", avgForce: "1.9 N", latency: "16 ms", frames: 4800 }
     }));
   }
 
-  function renderDoctorReports(query = "", statusFilter = "all", typeFilter = "all") {
+  function renderDoctorReports(query, statusFilter, typeFilter) {
     const listContainer = document.getElementById("drepList");
     const emptyState = document.getElementById("drepEmptyState");
     const totalCountEl = document.getElementById("drepTotalCount");
     const finalizedCountEl = document.getElementById("drepFinalizedCount");
     const pendingCountEl = document.getElementById("drepPendingCount");
+
+    const searchInput = document.getElementById("drepSearchInput");
+    const activeTab = document.querySelector(".drep-toolbar .dact-tab.active");
+    const typeSelect = document.getElementById("drepScanTypeFilter");
+
+    const q = (query !== undefined ? query : (searchInput ? searchInput.value : "")).trim().toLowerCase();
+    const sFilter = (statusFilter !== undefined ? statusFilter : (activeTab ? (activeTab.getAttribute("data-filter") || "all") : "all")).toLowerCase();
+    const tFilter = (typeFilter !== undefined ? typeFilter : (typeSelect ? (typeSelect.value || "all") : "all")).toLowerCase();
 
     const allReports = getDoctorReportsList();
     const readyCount = allReports.filter(r => r.status === "ready").length;
@@ -11143,17 +11346,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (finalizedCountEl) finalizedCountEl.textContent = String(readyCount);
     if (pendingCountEl) pendingCountEl.textContent = String(pendingCount);
 
-    const q = (query || "").trim().toLowerCase();
     const filtered = allReports.filter(r => {
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
-      if (typeFilter !== "all" && r.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
+      if (sFilter !== "all" && r.status !== sFilter) return false;
+      if (tFilter !== "all" && r.scanType.toLowerCase() !== tFilter) return false;
       if (q) {
-        const match = r.patientName.toLowerCase().includes(q) ||
-          r.patientId.toLowerCase().includes(q) ||
-          r.reportId.toLowerCase().includes(q) ||
-          r.scanType.toLowerCase().includes(q) ||
-          r.deviceId.toLowerCase().includes(q) ||
-          r.doctorName.toLowerCase().includes(q);
+        const match = (r.patientName && r.patientName.toLowerCase().includes(q)) ||
+          (r.patientId && r.patientId.toLowerCase().includes(q)) ||
+          (r.reportId && r.reportId.toLowerCase().includes(q)) ||
+          (r.scanType && r.scanType.toLowerCase().includes(q)) ||
+          (r.deviceId && r.deviceId.toLowerCase().includes(q)) ||
+          (r.doctorName && r.doctorName.toLowerCase().includes(q)) ||
+          (r.diagnosticCenter && r.diagnosticCenter.toLowerCase().includes(q));
         if (!match) return false;
       }
       return true;
@@ -11175,7 +11378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       else if (item.scanType === "Pelvic") scanTagClass = "emerald";
       else if (item.scanType === "Vascular") scanTagClass = "amber";
 
-      const initials = item.patientName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+      const initials = (item.patientName || "PT").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
       const statusBadge = item.status === "ready"
         ? `<span class="drep-badge-ready">Finalized</span>`
         : `<span class="drep-badge-pending">Pending Review</span>`;
@@ -11217,6 +11420,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       `;
     }).join("");
   }
+  window.renderDoctorReports = renderDoctorReports;
 
   function initDoctorReportsControls() {
     const searchInput = document.getElementById("drepSearchInput");
@@ -11225,11 +11429,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const typeSelect = document.getElementById("drepScanTypeFilter");
     const refreshBtn = document.getElementById("drepRefreshBtn");
 
-    let currentStatus = "all";
-    let currentType = "all";
+    function getActiveFilters() {
+      const q = searchInput ? searchInput.value.trim() : "";
+      const activeTab = document.querySelector(".drep-toolbar .dact-tab.active");
+      const currentStatus = activeTab ? (activeTab.getAttribute("data-filter") || "all") : "all";
+      const currentType = typeSelect ? (typeSelect.value || "all") : "all";
+      return { q, currentStatus, currentType };
+    }
 
     function update() {
-      const q = searchInput ? searchInput.value : "";
+      const { q, currentStatus, currentType } = getActiveFilters();
       if (clearBtn) clearBtn.style.display = q ? "block" : "none";
       renderDoctorReports(q, currentStatus, currentType);
     }
@@ -11246,26 +11455,53 @@ document.addEventListener("DOMContentLoaded", async () => {
       tab.addEventListener("click", () => {
         tabs.forEach(t => t.classList.remove("active"));
         tab.classList.add("active");
-        currentStatus = tab.getAttribute("data-filter") || "all";
         update();
       });
     });
 
     if (typeSelect) {
       typeSelect.addEventListener("change", () => {
-        currentType = typeSelect.value;
         update();
       });
     }
 
-    if (refreshBtn) {
-      refreshBtn.onclick = () => {
-        update();
-        if (typeof showToastAlert === "function") {
-          showToastAlert("Patient reports refreshed.", "info");
+    async function executeDoctorReportsRefresh(isManual = false) {
+      if (refreshBtn) {
+        refreshBtn.classList.add("dact-refreshing");
+      }
+      try {
+        const res = await loadBackendReports();
+        if (res && res.success) {
+          update();
+          if (isManual && typeof showToastAlert === "function") {
+            const count = Array.isArray(res.reports) ? res.reports.length : 0;
+            showToastAlert(`Refreshed ${count} diagnostic reports from clinical database.`, "info");
+          }
+        } else {
+          if (isManual && typeof showToastAlert === "function") {
+            showToastAlert("Failed to refresh reports: " + (res?.error || "Database server unreachable"), "error");
+          }
         }
-      };
+      } catch (err) {
+        if (isManual && typeof showToastAlert === "function") {
+          showToastAlert("Network error while connecting to reports database.", "error");
+        }
+      } finally {
+        if (refreshBtn) {
+          setTimeout(() => refreshBtn.classList.remove("dact-refreshing"), 600);
+        }
+      }
     }
+
+    if (refreshBtn) {
+      refreshBtn.onclick = () => executeDoctorReportsRefresh(true);
+    }
+    window.refreshDoctorReports = (isManual = false) => executeDoctorReportsRefresh(isManual);
+
+    // Initial load from backend database
+    loadBackendReports().then(res => {
+      if (res && res.success && res.reports) update();
+    });
   }
 
   // ── TORUS Doctor Scan History Logic ──
@@ -11424,110 +11660,275 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // ── Modal Handlers for Reports & History ──
-  function openDoctorReportModal(reportId) {
-    const reports = getDoctorReportsList();
-    const report = reports.find(r => r.reportId === reportId) || reports[0];
-    if (!report) return;
+  // ── Universal Diagnostic Report API Client & PDF Downloader ──
+  async function downloadReportPdfFile(reportId, patientId = "") {
+    const isDirectBackend = window.location.port === "3000";
+    const endpoint = `/api/reports/${encodeURIComponent(reportId)}/download`;
+    const candidateUrls = isDirectBackend
+      ? [endpoint, `http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`]
+      : [`http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`, endpoint];
 
+    const uniqueUrls = Array.from(new Set(candidateUrls));
+    let downloaded = false;
+
+    for (const url of uniqueUrls) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+
+        const blob = await resp.blob();
+        const cleanPid = (patientId || "Patient").replace(/[^a-zA-Z0-9_-]/g, "");
+        const cleanRid = reportId.replace(/[^a-zA-Z0-9_-]/g, "");
+        const filename = `${cleanPid}-${cleanRid}.pdf`;
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (a.parentNode) a.parentNode.removeChild(a);
+          window.URL.revokeObjectURL(blobUrl);
+        }, 300);
+        downloaded = true;
+        break;
+      } catch (e) {
+        // try next endpoint candidate
+      }
+    }
+
+    return downloaded;
+  }
+  window.downloadReportPdfFile = downloadReportPdfFile;
+
+  async function fetchDiagnosticReportDetails(reportId) {
+    const res = await callBackendAPI(`/api/reports/${encodeURIComponent(reportId)}`, null, "GET");
+    if (res && res.success && res.report) {
+      return res.report;
+    }
+    // Fallback to local completed list if API backend is starting up or temporarily offline
+    const localList = getDoctorReportsList();
+    return localList.find(r => r.reportId === reportId) || null;
+  }
+  window.fetchDiagnosticReportDetails = fetchDiagnosticReportDetails;
+
+  // ── Modal Handlers for Reports & History ──
+  async function openDoctorReportModal(reportId) {
     const modal = document.getElementById("doctorReportPreviewModal");
     const body = document.getElementById("drepModalBody");
     const title = document.getElementById("drepModalReportTitle");
     const badge = document.getElementById("drepModalStatusBadge");
+    const downloadPdfBtn = document.getElementById("drepModalDownloadPdfBtn");
 
-    if (title) title.textContent = `Diagnostic Ultrasound Report • ${report.reportId}`;
+    if (!modal) return;
+
+    // Open modal immediately with active state
+    modal.style.display = "flex";
+    modal.classList.add("active");
+
+    if (title) title.textContent = `Diagnostic Ultrasound Report • ${reportId}`;
     if (badge) {
-      badge.textContent = report.status === "ready" ? "Finalized" : "Pending Review";
-      badge.className = report.status === "ready" ? "drep-badge-ready" : "drep-badge-pending";
+      badge.textContent = "Loading Record...";
+      badge.className = "drep-badge-pending";
     }
 
     if (body) {
       body.innerHTML = `
-        <div class="drep-doc-sheet">
-          <div class="drep-doc-header">
-            <div>
-              <div class="drep-doc-org">TORUS ROBOTIC TELE-ULTRASOUND SYSTEM</div>
-              <div class="drep-doc-sub">${report.diagnosticCenter} • Tele-Sonography Unit</div>
-            </div>
-            <div class="drep-doc-meta">
-              <div><strong>Exam Date:</strong> ${report.examDate} ${report.examTime}</div>
-              <div><strong>Report ID:</strong> ${report.reportId}</div>
-            </div>
-          </div>
-
-          <div class="drep-doc-grid-2col">
-            <div class="drep-doc-item">
-              <span class="drep-doc-label">Patient Name</span>
-              <span class="drep-doc-value"><strong>${report.patientName}</strong></span>
-            </div>
-            <div class="drep-doc-item">
-              <span class="drep-doc-label">Patient Identification</span>
-              <span class="drep-doc-value">${report.patientId}</span>
-            </div>
-            <div class="drep-doc-item">
-              <span class="drep-doc-label">Exam / Scan Type</span>
-              <span class="drep-doc-value"><strong class="highlight-cyan">${report.scanType} Ultrasound</strong></span>
-            </div>
-            <div class="drep-doc-item">
-              <span class="drep-doc-label">Hardware Device</span>
-              <span class="drep-doc-value">${report.deviceId} (Dual 6-DOF Robotic Manipulator)</span>
-            </div>
-          </div>
-
-          <div class="drep-doc-section">
-            <div class="drep-doc-section-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-              <span>TELE-ROBOTIC SENSOR TELEMETRY & SCAN QUALITY</span>
-            </div>
-            <div class="drep-doc-grid-2col">
-              <div>• Max Contact Force: <strong>${report.telemetry?.maxForce || "2.6 N"}</strong></div>
-              <div>• Mean Contact Force: <strong>${report.telemetry?.avgForce || "1.9 N"}</strong></div>
-              <div>• WebRTC Robotic Latency: <strong>${report.telemetry?.latency || "16 ms"}</strong></div>
-              <div>• Total Captured Cine Frames: <strong>${report.telemetry?.frames || 4800} frames</strong></div>
-            </div>
-          </div>
-
-          <div class="drep-doc-section">
-            <div class="drep-doc-section-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-              <span>CLINICAL FINDINGS & OBSERVATIONS</span>
-            </div>
-            <p class="drep-doc-findings-text">${report.clinicalSummary}</p>
-          </div>
-
-          <div class="drep-doc-signature-row">
-            <div class="drep-signature-block">
-              <span class="drep-sign-name">${report.doctorName}</span>
-              <span class="drep-sign-title">Chief Tele-Ultrasound Specialist • License TORUS-REG-3001</span>
-            </div>
-            <span class="drep-sign-stamp">✓ Digitally Signed & Encrypted</span>
-          </div>
+        <div style="padding: 48px 24px; text-align: center; color: #94a3b8;">
+          <div class="ddash-spinner" style="margin: 0 auto 16px auto; width: 36px; height: 36px; border-width: 3px; border-top-color: #8b5cf6;"></div>
+          <p style="font-size: 14px; font-weight: 500; color: #cbd5e1; margin-bottom: 4px;">Fetching official diagnostic report from clinical database...</p>
+          <p style="font-size: 12px; color: #64748b;">Report Code: <strong>${reportId}</strong></p>
         </div>
       `;
     }
 
-    if (modal) modal.style.display = "flex";
+    try {
+      const report = await fetchDiagnosticReportDetails(reportId);
+      if (!report) {
+        if (body) {
+          body.innerHTML = `
+            <div style="padding: 32px 20px; text-align: center; color: #ef4444;">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 12px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Report Record Not Found</h3>
+              <p style="font-size: 13px; color: #94a3b8;">The requested diagnostic report (${reportId}) was not found in the TORUS clinical database.</p>
+            </div>
+          `;
+        }
+        return;
+      }
 
-    if (typeof logDoctorActivity === "function") {
-      logDoctorActivity("system", "Medical Report Viewed", `Diagnostic ultrasound report previewed for ${report.patientName || "Patient"} (${report.patientId || ""}).`, "Viewed", report.reportId || reportId);
+      const isFinalized = (report.report_status === "ready" || report.status === "ready");
+      if (badge) {
+        badge.textContent = isFinalized ? "Finalized" : "Pending Review";
+        badge.className = isFinalized ? "drep-badge-ready" : "drep-badge-pending";
+      }
+
+      const examDate = report.exam_date || report.examDate || "2026-09-14";
+      const examTime = report.exam_time || report.examTime || "09:15 AM";
+      const duration = report.duration || "22:15";
+      const patName = report.patient_name || report.patientName || "Patient";
+      const patId = report.patient_id || report.patientId || "P-12345";
+      const repCode = report.report_id || report.reportId || reportId;
+      const scanType = report.scan_type || report.scanType || "Abdominal";
+      const devId = report.device_id || report.deviceId || "TORUS-A12";
+      const docName = report.doctor_name || report.doctorName || "Dr. Admin Doctor";
+      const docLicense = report.doctor_license || "TORUS-REG-3001";
+      const center = report.diagnostic_center || report.diagnosticCenter || "Apex Diagnostic Center";
+      const sessId = report.session_id || report.sessionId || "S-101";
+      const tele = report.telemetry || { maxForce: "2.6 N", avgForce: "1.9 N", latency: "16 ms", frames: 4800 };
+      const findings = report.ultrasound_findings || report.clinical_summary || report.clinicalSummary || "Satisfactory ultrasound evaluation.";
+      const summary = report.clinical_summary || report.clinicalSummary || "Clinical examination completed.";
+      const impression = report.diagnosis_impression || (isFinalized ? "Satisfactory examination with no acute pathological contraindications." : "Preliminary tele-examination pending attending countersignature.");
+
+      if (downloadPdfBtn) {
+        downloadPdfBtn.setAttribute("data-report-id", repCode);
+        downloadPdfBtn.setAttribute("data-patient-id", patId);
+      }
+
+      if (body) {
+        body.innerHTML = `
+          <div class="drep-doc-sheet">
+            <div class="drep-doc-header">
+              <div>
+                <div class="drep-doc-org">TORUS ROBOTIC TELE-ULTRASOUND SYSTEM</div>
+                <div class="drep-doc-sub">${center} • Tele-Sonography Unit</div>
+              </div>
+              <div class="drep-doc-meta">
+                <div><strong>Exam Date:</strong> ${examDate} ${examTime} (${duration})</div>
+                <div><strong>Report ID:</strong> ${repCode}</div>
+                <div><strong>Session ID:</strong> ${sessId}</div>
+              </div>
+            </div>
+
+            <div class="drep-doc-grid-2col">
+              <div class="drep-doc-item">
+                <span class="drep-doc-label">Patient Name</span>
+                <span class="drep-doc-value"><strong>${patName}</strong></span>
+              </div>
+              <div class="drep-doc-item">
+                <span class="drep-doc-label">Patient Identification</span>
+                <span class="drep-doc-value"><strong>${patId}</strong></span>
+              </div>
+              <div class="drep-doc-item">
+                <span class="drep-doc-label">Exam / Scan Type</span>
+                <span class="drep-doc-value"><strong class="highlight-cyan">${scanType} Ultrasound</strong></span>
+              </div>
+              <div class="drep-doc-item">
+                <span class="drep-doc-label">Hardware Device</span>
+                <span class="drep-doc-value">${devId} (Dual 6-DOF Robotic Manipulator)</span>
+              </div>
+            </div>
+
+            <div class="drep-doc-section">
+              <div class="drep-doc-section-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                <span>TELE-ROBOTIC SENSOR TELEMETRY & SCAN QUALITY</span>
+              </div>
+              <div class="drep-doc-grid-2col">
+                <div>• Max Contact Force: <strong>${tele.maxForce || "2.6 N"}</strong></div>
+                <div>• Mean Contact Force: <strong>${tele.avgForce || "1.9 N"}</strong></div>
+                <div>• WebRTC Robotic Latency: <strong>${tele.latency || "16 ms"}</strong></div>
+                <div>• Captured Cine Frames: <strong>${tele.frames || 4800} frames</strong></div>
+              </div>
+            </div>
+
+            <div class="drep-doc-section">
+              <div class="drep-doc-section-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <span>DETAILED ULTRASOUND ANATOMICAL FINDINGS</span>
+              </div>
+              <p class="drep-doc-findings-text">${findings}</p>
+            </div>
+
+            <div class="drep-doc-section">
+              <div class="drep-doc-section-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <span>CLINICAL SUMMARY & OBSERVATIONS</span>
+              </div>
+              <p class="drep-doc-findings-text">${summary}</p>
+            </div>
+
+            <div class="drep-doc-section" style="background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.3);">
+              <div class="drep-doc-section-title" style="color: #67e8f9;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>DIAGNOSIS & CLINICAL IMPRESSION</span>
+              </div>
+              <p class="drep-doc-findings-text" style="color: #e0f2fe; font-weight: 500;">${impression}</p>
+            </div>
+
+            <div class="drep-doc-signature-row">
+              <div class="drep-signature-block">
+                <span class="drep-sign-name">${docName}</span>
+                <span class="drep-sign-title">Chief Tele-Ultrasound Specialist • License ${docLicense}</span>
+              </div>
+              <span class="drep-sign-stamp">✓ Digitally Signed & Encrypted</span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (typeof logDoctorActivity === "function") {
+        logDoctorActivity("system", "Medical Report Viewed", `Diagnostic ultrasound report previewed for ${patName} (${patId}).`, "Viewed", repCode);
+      }
+    } catch (err) {
+      console.error("Error displaying report modal:", err);
+      if (body) {
+        body.innerHTML = `
+          <div style="padding: 24px; text-align: center; color: #ef4444;">
+            <p style="font-weight: 600;">Failed to load diagnostic report.</p>
+            <p style="font-size: 12px; color: #94a3b8; margin-top: 6px;">${err.message || "Network error"}</p>
+          </div>
+        `;
+      }
     }
   }
+  window.openDoctorReportModal = openDoctorReportModal;
+  window.openPatientReportViewModal = openDoctorReportModal;
 
   function closeDoctorReportModal() {
     const modal = document.getElementById("doctorReportPreviewModal");
-    if (modal) modal.style.display = "none";
+    if (modal) {
+      modal.classList.remove("active");
+      modal.style.display = "none";
+    }
   }
+  window.closeDoctorReportModal = closeDoctorReportModal;
 
-  function downloadDoctorReport(reportId) {
-    const reports = getDoctorReportsList();
-    const report = reports.find(r => r.reportId === reportId) || { reportId, patientName: "Patient" };
-    if (typeof showToastAlert === "function") {
-      showToastAlert(`Downloading official report ${report.reportId} for ${report.patientName} (PDF)...`, "success");
+  async function downloadDoctorReport(reportId, patientId) {
+    let pid = patientId;
+    if (!pid) {
+      const row = document.querySelector(`[data-report-id="${reportId}"]`);
+      if (row) {
+        const pidEl = row.querySelector(".drep-patient-id strong");
+        if (pidEl) pid = pidEl.textContent.trim();
+      }
     }
-    if (typeof logDoctorActivity === "function") {
-      logDoctorActivity("system", "Report Downloaded", `Downloaded medical report ${report.reportId} for ${report.patientName}.`, "Completed", report.reportId);
+    if (!pid) {
+      const local = getDoctorReportsList().find(r => r.reportId === reportId);
+      if (local) pid = local.patientId;
+    }
+    if (!pid) pid = "P-12345";
+
+    if (typeof showToastAlert === "function") {
+      showToastAlert(`Generating official report ${pid}-${reportId}.pdf...`, "info");
+    }
+
+    const success = await downloadReportPdfFile(reportId, pid);
+    if (success) {
+      if (typeof showToastAlert === "function") {
+        showToastAlert(`Downloaded official report ${pid}-${reportId}.pdf`, "success");
+      }
+      if (typeof logDoctorActivity === "function") {
+        logDoctorActivity("system", "Report Downloaded", `Downloaded medical report ${reportId} for patient ${pid}.`, "Completed", reportId);
+      }
+    } else {
+      if (typeof showToastAlert === "function") {
+        showToastAlert(`Failed to download report ${reportId}. Please verify backend server is running on port 3000.`, "error");
+      }
     }
   }
+  window.downloadDoctorReport = downloadDoctorReport;
+  window.downloadPatientReport = downloadDoctorReport;
 
   function openDoctorHistoryModal(sessionId) {
     loadTorusSessions();
@@ -11593,13 +11994,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       `;
     }
 
-    if (modal) modal.style.display = "flex";
+    if (modal) {
+      modal.style.display = "flex";
+      modal.classList.add("active");
+    }
   }
+  window.openDoctorHistoryModal = openDoctorHistoryModal;
 
   function closeDoctorHistoryModal() {
     const modal = document.getElementById("doctorSessionDetailModal");
-    if (modal) modal.style.display = "none";
+    if (modal) {
+      modal.classList.remove("active");
+      modal.style.display = "none";
+    }
   }
+  window.closeDoctorHistoryModal = closeDoctorHistoryModal;
 
   // Delegated clicks for reports and history lists and modals
   document.addEventListener("click", (e) => {
@@ -11615,7 +12024,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (downloadReportBtn) {
       e.preventDefault();
       const repId = downloadReportBtn.getAttribute("data-report-id");
-      downloadDoctorReport(repId);
+      const row = downloadReportBtn.closest(".drep-row");
+      const pidEl = row ? row.querySelector(".drep-patient-id strong") : null;
+      const pid = pidEl ? pidEl.textContent.trim() : "";
+      downloadDoctorReport(repId, pid);
       return;
     }
 
@@ -11632,16 +12044,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    if (e.target.closest("#drepModalDownloadPdfBtn")) {
-      const title = document.getElementById("drepModalReportTitle")?.textContent || "";
-      const repMatch = title.match(/REP-\d+-\d+/);
-      const repId = repMatch ? repMatch[0] : "REP-2026-001";
-      downloadDoctorReport(repId);
+    const modalDownloadBtn = e.target.closest("#drepModalDownloadPdfBtn");
+    if (modalDownloadBtn) {
+      e.preventDefault();
+      const repId = modalDownloadBtn.getAttribute("data-report-id") ||
+        (document.getElementById("drepModalReportTitle")?.textContent.match(/REP-\d+-\d+/)?.[0]) || "REP-2026-001";
+      const patId = modalDownloadBtn.getAttribute("data-patient-id") || "";
+      downloadDoctorReport(repId, patId);
+      return;
+    }
+
+    if (e.target.id === "doctorReportPreviewModal") {
       closeDoctorReportModal();
       return;
     }
 
-    if (e.target.closest("#dhistModalCloseBtn") || e.target.closest("#dhistModalDismissBtn")) {
+    if (e.target.closest("#dhistModalCloseBtn") || e.target.closest("#dhistModalDismissBtn") || e.target.id === "doctorSessionDetailModal") {
       closeDoctorHistoryModal();
       return;
     }
@@ -11827,7 +12245,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           } else if (view === "patient-reports") {
             const repContent = document.getElementById("doctorReportsContent");
             if (repContent) repContent.style.display = "flex";
-            renderDoctorReports();
+            if (typeof window.refreshDoctorReports === "function") {
+              window.refreshDoctorReports(false);
+            } else {
+              renderDoctorReports();
+            }
           } else if (view === "history") {
             const histContent = document.getElementById("doctorHistoryContent");
             if (histContent) histContent.style.display = "flex";
@@ -11849,7 +12271,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           } else if (view === "patient-diagnostic-reports") {
             const patRep = document.getElementById("patientDiagnosticReportsContent");
             if (patRep) patRep.style.display = "flex";
-            renderPatientDiagnosticReports(currentAuthenticatedUser);
+            if (typeof loadPatientBackendReports === "function") {
+              loadPatientBackendReports(currentAuthenticatedUser).then(() => {
+                renderPatientDiagnosticReports(currentAuthenticatedUser);
+              });
+            } else {
+              renderPatientDiagnosticReports(currentAuthenticatedUser);
+            }
           } else if (view === "patient-history") {
             const patHist = document.getElementById("patientHistoryContent");
             if (patHist) patHist.style.display = "flex";

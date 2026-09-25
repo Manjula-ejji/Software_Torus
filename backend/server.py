@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import sys
+import re
+import json
 from pathlib import Path
 from flask import Flask, request, jsonify, Response, send_from_directory
 
@@ -43,8 +45,8 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, X-Haptic-Agent-Secret"
-    if request.path.endswith((".html", ".js", ".css")) or request.path in ["/", "/index.html"]:
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    if request.path.startswith("/api/") or request.path.endswith((".html", ".js", ".css")) or request.path in ["/", "/index.html"]:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
     return response
@@ -863,6 +865,89 @@ def api_appointments_list():
         return Response(status=204)
     appts = database.get_scheduled_appointments()
     return jsonify({"success": True, "appointments": appts})
+
+
+# -------------------- PATIENT DIAGNOSTIC REPORTS API --------------------
+@app.route("/api/reports", methods=["GET", "POST", "OPTIONS"])
+def api_reports():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        res = database.create_diagnostic_report(data)
+        return jsonify(res), (201 if res.get("success") else 400)
+
+    query = request.args.get("q", request.args.get("query", "")).strip()
+    status = request.args.get("status", "all").strip()
+    scan_type = request.args.get("scan_type", "all").strip()
+    patient_id = request.args.get("patient_id", "").strip()
+
+    reports = database.get_diagnostic_reports(query=query, status=status, scan_type=scan_type, patient_id=patient_id)
+    return jsonify({
+        "success": True,
+        "reports": reports,
+        "total": len(reports),
+        "refreshed_at": request.args.get("_t", "")
+    })
+
+@app.route("/api/reports/refresh", methods=["GET", "POST", "OPTIONS"])
+def api_reports_refresh():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {} if request.method == "POST" else {}
+    query = request.args.get("q", data.get("query", request.args.get("query", ""))).strip()
+    status = request.args.get("status", data.get("status", "all")).strip()
+    scan_type = request.args.get("scan_type", data.get("scan_type", "all")).strip()
+    patient_id = request.args.get("patient_id", data.get("patient_id", "")).strip()
+
+    reports = database.get_diagnostic_reports(query=query, status=status, scan_type=scan_type, patient_id=patient_id)
+    return jsonify({
+        "success": True,
+        "reports": reports,
+        "total": len(reports),
+        "message": "Patient diagnostic reports refreshed successfully from clinical database."
+    })
+
+@app.route("/api/reports/<report_id>/update", methods=["POST", "PUT", "OPTIONS"])
+@app.route("/api/reports/<report_id>", methods=["GET", "PUT", "PATCH", "OPTIONS"])
+def api_report_detail(report_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    if request.method in ["PUT", "PATCH", "POST"]:
+        data = request.get_json(silent=True) or {}
+        res = database.update_diagnostic_report(report_id, data)
+        return jsonify(res), (200 if res.get("success") else 400)
+
+    report = database.get_diagnostic_report_by_id(report_id)
+    if not report:
+        return jsonify({"success": False, "error": f"Diagnostic report '{report_id}' was not found in the clinical records database."}), 404
+    return jsonify({"success": True, "report": report})
+
+@app.route("/api/reports/<report_id>/download", methods=["GET", "OPTIONS"])
+def api_download_report(report_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    report = database.get_diagnostic_report_by_id(report_id)
+    if not report:
+        return jsonify({"success": False, "error": f"Diagnostic report '{report_id}' was not found."}), 404
+
+    pdf_bytes, err = database.generate_report_pdf_bytes(report_id)
+    if not pdf_bytes:
+        return jsonify({"success": False, "error": f"Failed to generate report PDF: {err}"}), 500
+
+    pat_clean = re.sub(r'[^a-zA-Z0-9_-]', '', report.get("patient_id", "Patient"))
+    rep_clean = re.sub(r'[^a-zA-Z0-9_-]', '', report.get("report_id", report_id))
+    filename = f"{pat_clean}-{rep_clean}.pdf"
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+            "Cache-Control": "no-cache, no-store, must-revalidate"
+        }
+    )
 
 
 # -------------------- VIEWER AUTHENTICATION API --------------------

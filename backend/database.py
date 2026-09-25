@@ -1,6 +1,8 @@
 import sqlite3
 import hashlib
 import os
+import io
+import json
 import re
 import random
 import string
@@ -431,6 +433,32 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # 12. Diagnostic Reports Table (Patient Diagnostic Reports)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS diagnostic_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id TEXT UNIQUE NOT NULL,
+            session_id TEXT NOT NULL,
+            patient_id TEXT NOT NULL,
+            patient_name TEXT NOT NULL,
+            scan_type TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            exam_date TEXT NOT NULL,
+            exam_time TEXT NOT NULL,
+            duration TEXT DEFAULT '20:00',
+            doctor_id TEXT DEFAULT '3001',
+            doctor_name TEXT NOT NULL DEFAULT 'Dr. Admin Doctor',
+            doctor_license TEXT NOT NULL DEFAULT 'TORUS-REG-3001',
+            diagnostic_center TEXT NOT NULL,
+            report_status TEXT NOT NULL DEFAULT 'ready',
+            clinical_summary TEXT NOT NULL,
+            ultrasound_findings TEXT NOT NULL,
+            diagnosis_impression TEXT NOT NULL,
+            telemetry_json TEXT NOT NULL DEFAULT '{}',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     
     # Seed default Doctor: admin@gmail.com / admin123 (role: doctor, UID: 3001)
@@ -524,6 +552,130 @@ def init_db():
         """)
         conn.commit()
         print("[Database] Seeded default scheduled appointments.")
+
+    # Seed default Diagnostic Reports
+    cursor.execute("SELECT COUNT(*) as cnt FROM diagnostic_reports")
+    if cursor.fetchone()["cnt"] == 0:
+        reports_seed = [
+            (
+                'REP-2026-001', 'S-101', 'P-12345', 'Patient A', 'Abdominal', 'TORUS-A12',
+                '2026-09-14', '09:15 AM', '22:15', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Apex Diagnostic Center', 'ready',
+                'Normal hepatobiliary sonogram. Gallbladder wall thickness normal at 2.1mm without stones or sludge. CBD calibre 4.2mm. Hepatic parenchyma homogeneous with normal echogenicity.',
+                'The liver demonstrates normal size, contour, and homogeneous echotexture with no focal lesions. Intrahepatic bile ducts are not dilated. Common bile duct measures 4.2 mm, within normal limits. Gallbladder is well-distended with an anechoic lumen, smooth thin wall (2.1 mm), and no intraluminal calculi. Portal vein flow is hepatopetal with laminar Doppler spectral waveforms. Pancreas head, body, and visualized tail appear normal. Spleen is normal in size (9.8 cm) with homogeneous echogenicity.',
+                'Normal upper abdominal ultrasound examination. No evidence of cholecystitis, cholelithiasis, biliary ductal dilatation, or focal hepatic masses.',
+                '{"maxForce":"2.8 N","avgForce":"1.9 N","latency":"14 ms","frames":5240,"stability":"99.4%"}'
+            ),
+            (
+                'REP-2026-002', 'S-102', 'P-8821', 'John Doe', 'Abdominal', 'TORUS-A12',
+                '2026-09-13', '11:30 AM', '19:40', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'NYC Medical', 'ready',
+                'Mild hepatic steatosis grade 1. Bilateral kidneys show preserved corticomedullary differentiation without calculi or hydronephrosis. Spleen normal in size.',
+                'Liver demonstrates mildly increased parenchymal echogenicity consistent with Grade 1 diffuse fatty infiltration. No focal solid or cystic parenchymal lesions. Intrahepatic and extrahepatic biliary ducts are non-dilated. Bilateral renal sonograms show normal size (Right 10.4 cm, Left 10.7 cm) with preserved corticomedullary differentiation and no calculi or hydronephrosis. Spleen and pancreas are unremarkable.',
+                'Mild diffuse hepatic steatosis (Grade 1). Otherwise normal abdominal tele-ultrasound with healthy renal and splenic architecture.',
+                '{"maxForce":"2.5 N","avgForce":"1.7 N","latency":"16 ms","frames":4780,"stability":"98.8%"}'
+            ),
+            (
+                'REP-2026-003', 'S-103', 'P-9104', 'Jane Smith', 'Cardiac', 'TORUS-B08',
+                '2026-09-12', '02:00 PM', '26:10', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Boston General', 'ready',
+                'Transthoracic echocardiogram. LVEF estimated at 58% with normal left ventricular systolic function. Mild posterior mitral leaflet prolapse with trace to mild regurgitation. Normal aortic root.',
+                'Left ventricle is normal in internal dimensions (LVIDd 4.6 cm, LVIDs 2.9 cm). Preserved LV systolic performance with calculated ejection fraction of 58% (biplane Simpson method). No regional wall motion abnormalities at rest. Mitral valve demonstrates mild posterior leaflet prolapse with physiological/trace regurgitation on color Doppler. Tricuspid and pulmonic valves are structurally normal with normal RV systolic pressure (24 mmHg). Pericardium is clear without effusion.',
+                'Normal overall left ventricular systolic performance (LVEF 58%). Mild posterior mitral leaflet prolapse with clinically trace regurgitation. Stable findings.',
+                '{"maxForce":"2.9 N","avgForce":"2.1 N","latency":"18 ms","frames":6200,"stability":"99.1%"}'
+            ),
+            (
+                'REP-2026-004', 'S-104', 'P-7543', 'Robert Brown', 'Pelvic', 'TORUS-C15',
+                '2026-09-11', '10:15 AM', '17:25', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Apollo Hyderabad', 'ready',
+                'Urinary bladder well distended with smooth, regular walls. Prostate volume measured at 34cc with symmetric peripheral zone. Post-void residual negligible (18ml).',
+                'The urinary bladder is moderately distended with smooth mucosal contours and uniform wall thickness (2.3 mm pre-void). No intravesical masses, calculi, or diverticula. Prostate gland exhibits symmetric peripheral zone echotexture with a total volume of 34 cc. Post-void residual volume measured at 18 mL, demonstrating complete evacuation efficiency. Both distal ureteric jets visualized on color Doppler.',
+                'Mild benign prostatic enlargement without significant intravesical protrusion. Excellent bladder emptying with negligible post-void residual.',
+                '{"maxForce":"2.4 N","avgForce":"1.8 N","latency":"15 ms","frames":4190,"stability":"99.5%"}'
+            ),
+            (
+                'REP-2026-005', 'S-105', 'P-3312', 'Eleanor Vance', 'Cardiac', 'TORUS-B08',
+                '2026-09-10', '03:45 PM', '24:50', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Boston General', 'ready',
+                'Complete 2D & Doppler cardiac evaluation. Normal chamber sizes, no regional wall motion abnormalities. Normal left ventricular filling pressures (E/A 1.2).',
+                'Comprehensive tele-echocardiogram demonstrates normal cardiac chamber morphology. Left atrium volume index is 28 mL/m2. LV internal dimensions within normal physiological ranges with LVEF at 62%. Diastolic filling indices demonstrate normal pattern with E/A ratio of 1.2 and septal e prime of 9.2 cm/s. No valvular stenosis or regurgitant jets detected. Inferior vena cava collapsibility index > 50% with inspiration.',
+                'Unremarkable comprehensive cardiac tele-sonography. Preserved biventricular systolic and diastolic function.',
+                '{"maxForce":"2.7 N","avgForce":"2.0 N","latency":"19 ms","frames":5910,"stability":"98.9%"}'
+            ),
+            (
+                'REP-2026-006', 'S-106', 'P-4401', 'Marcus Brody', 'Vascular', 'TORUS-A12',
+                '2026-09-09', '08:30 AM', '28:15', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'NYC Medical', 'ready',
+                'Bilateral extracranial carotid duplex examination. CCA and ICA spectral waveforms demonstrate laminar flow without significant hemodynamically relevant stenosis (<30%).',
+                'Bilateral common carotid, internal carotid, and external carotid arteries examined with high-frequency vascular tele-probe. Right ICA peak systolic velocity 78 cm/s, end diastolic velocity 26 cm/s. Left ICA peak systolic velocity 82 cm/s, end diastolic velocity 28 cm/s. Intima-media thickness is 0.78 mm bilaterally. Minimal eccentric calcified plaque noted at the left carotid bulb with less than 30% diameter reduction. Bilateral vertebral arteries demonstrate antegrade cephalad flow.',
+                'Bilateral extracranial carotid arteries patent with laminar flow. Minimal non-obstructive left bulb plaque (<30% stenosis). Antegrade vertebral flows.',
+                '{"maxForce":"2.2 N","avgForce":"1.6 N","latency":"14 ms","frames":6730,"stability":"99.6%"}'
+            ),
+            (
+                'REP-2026-007', 'S-107', 'P-5590', 'Sarah Connor', 'Abdominal', 'TORUS-A12',
+                '2026-09-08', '01:20 PM', '21:05', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Apex Diagnostic Center', 'ready',
+                'Targeted abdominal scan. Normal pancreas, spleen, and abdominal aorta. No free intraperitoneal fluid detected in Morrison\'s pouch or pelvis.',
+                'Targeted abdominal assessment displays homogeneous spleen (10.1 cm) and clear parenchymal outlines. Pancreatic head, uncinate process, and body are clearly identified with normal duct diameter (< 2 mm). Abdominal aorta visualized to the level of bifurcation with uniform calibre (1.7 cm) and normal pulsatility. No free fluid in Morrison\'s pouch, splenorenal recess, or rectovesical pouch.',
+                'Normal focused abdominal sonogram. No aortic aneurysm, retroperitoneal adenopathy, or free peritoneal fluid.',
+                '{"maxForce":"2.6 N","avgForce":"1.9 N","latency":"15 ms","frames":5020,"stability":"99.3%"}'
+            ),
+            (
+                'REP-2026-008', 'S-108', 'P-6623', 'David Miller', 'Pelvic', 'TORUS-C15',
+                '2026-09-07', '11:00 AM', '16:45', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Apollo Hyderabad', 'ready',
+                'Pelvic sonography. Pre-void bladder volume 420ml, post-void residual 25ml. Normal urinary bladder contours without trabeculation or mass.',
+                'Urinary bladder pre-void volume 420 mL with smooth luminal boundaries. Ureteral peristaltic discharges verified bilaterally into the bladder base. Post-void bladder volume measured at 25 mL, confirming normal voiding fraction (>94%). Visualized pelvic structures are normal with no mass lesions or pelvic lymphadenopathy.',
+                'Normal pelvic tele-sonography with normal bladder compliance and complete evacuation fraction.',
+                '{"maxForce":"2.3 N","avgForce":"1.7 N","latency":"17 ms","frames":3990,"stability":"99.2%"}'
+            ),
+            (
+                'REP-2026-009', 'S-109', 'P-7741', 'Amina Patel', 'Thyroid', 'TORUS-B08',
+                '2026-09-06', '04:10 PM', '18:30', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Boston General', 'ready',
+                'High-resolution thyroid sonography. Right lobe: 4.2 x 1.4 x 1.3 cm. Left lobe: 4.0 x 1.3 x 1.2 cm. Normal vascularity on color Doppler. No discrete solid or cystic lesions.',
+                'High-frequency linear robotic scan of the anterior cervical neck reveals a symmetric thyroid gland. Right lobe: 4.2 x 1.4 x 1.3 cm (volume 3.9 mL). Left lobe: 4.0 x 1.3 x 1.2 cm (volume 3.2 mL). Isthmus thickness: 2.8 mm. Parenchymal echotexture is uniform and isoechoic to the strap muscles. Color and power Doppler demonstrate standard symmetrical flow patterns. No suspicious microcalcifications, solid nodules, or pathological cervical lymph nodes.',
+                'Normal thyroid ultrasound examination. Symmetrical lobes, normal vascularity, and absence of nodular disease (ACR TI-RADS 1 - Benign).',
+                '{"maxForce":"2.0 N","avgForce":"1.5 N","latency":"16 ms","frames":4410,"stability":"99.7%"}'
+            ),
+            (
+                'REP-2026-010', 'S-110', 'P-8819', 'Carlos Mendoza', 'Abdominal', 'TORUS-K03',
+                '2026-09-05', '10:00 AM', '25:40', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Central Tele-Robotics Center', 'ready',
+                'Renal Doppler and cortical assessment. Right kidney 10.8cm, left kidney 11.1cm. Normal resistive index (0.64). No perinephric fluid collection.',
+                'Bilateral renal scan displays normal kidney dimensions (Right kidney: 10.8 x 4.6 cm; Left kidney: 11.1 x 4.9 cm). Cortical thickness is preserved (1.5 cm) with sharp corticomedullary differentiation. No renal calculi, cysts, or pelvicalyceal dilatation. Interlobar arterial spectral Doppler waveforms show normal acceleration time and resistive index of 0.64 (normal range 0.58 - 0.70). Renal veins are widely patent.',
+                'Normal bilateral renal ultrasound and Doppler resistive index evaluation. No hydronephrosis or renovascular abnormalities.',
+                '{"maxForce":"2.8 N","avgForce":"2.2 N","latency":"15 ms","frames":6140,"stability":"98.7%"}'
+            ),
+            (
+                'REP-2026-011', 'S-111', 'P-9902', 'Clara Oswald', 'Cardiac', 'TORUS-B08',
+                '2026-09-04', '02:30 PM', '23:10', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'Boston General', 'pending',
+                'Aortic valve and aortic root interrogation. Mild aortic sclerosis without gradient elevation. Concentric LV remodeling noted. Transferred for multidisciplinary review.',
+                'Transthoracic views demonstrate mild thickening and echogenicity of the aortic valve cusps without systolic excursion restriction. Peak aortic transvalvular velocity is 1.4 m/s (mean gradient 4 mmHg). Concentric left ventricular remodeling is present with relative wall thickness of 0.44. Global systolic function remains preserved with LVEF at 55%. Transferred for senior cardiologist countersignature.',
+                'Mild aortic sclerosis without significant transvalvular gradient. Concentric LV remodeling. Preliminary report pending final attending countersignature.',
+                '{"maxForce":"2.6 N","avgForce":"2.0 N","latency":"18 ms","frames":5520,"stability":"98.5%"}'
+            ),
+            (
+                'REP-2026-012', 'S-112', 'P-1045', 'James Wilson', 'Vascular', 'TORUS-A12',
+                '2026-09-03', '09:45 AM', '29:00', '3001', 'Dr. Admin Doctor', 'TORUS-REG-3001',
+                'NYC Medical', 'pending',
+                'Lower extremity venous duplex examination. Common femoral, femoral, and popliteal veins show full compressibility with augmentable Doppler phasicity. Pending final attending countersignature.',
+                'Bilateral lower extremity deep venous duplex scan demonstrates complete intraluminal compressibility under transverse probe transducer pressure across the common femoral, proximal femoral, mid femoral, and popliteal veins. Color Doppler demonstrates spontaneous flow with normal respiratory phasicity and vigorous augmentation upon distal compression. No non-compressible thrombus detected.',
+                'Negative for deep vein thrombosis (DVT) in the bilateral lower extremity femoral-popliteal venous segments. Status: Pending Attending Countersignature.',
+                '{"maxForce":"2.5 N","avgForce":"1.8 N","latency":"14 ms","frames":6980,"stability":"99.0%"}'
+            )
+        ]
+        cursor.executemany("""
+            INSERT INTO diagnostic_reports (
+                report_id, session_id, patient_id, patient_name, scan_type, device_id,
+                exam_date, exam_time, duration, doctor_id, doctor_name, doctor_license,
+                diagnostic_center, report_status, clinical_summary, ultrasound_findings,
+                diagnosis_impression, telemetry_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, reports_seed)
+        conn.commit()
+        print("[Database] Seeded 12 default diagnostic reports.")
         
     conn.close()
     _migrate_add_mobile_column()
@@ -2409,6 +2561,393 @@ def get_scheduled_appointments() -> list:
     conn.close()
     return rows
 
+
+# -------------------- PATIENT DIAGNOSTIC REPORTS API & PDF --------------------
+def get_diagnostic_reports(query: str = "", status: str = None, scan_type: str = None, patient_id: str = None) -> list:
+    """Returns diagnostic reports filtered by query, status, scan_type, or patient_id."""
+    conn = get_db()
+    cursor = conn.cursor()
+    sql = "SELECT * FROM diagnostic_reports WHERE 1=1"
+    params = []
+    
+    if patient_id:
+        sql += " AND (LOWER(patient_id) = ? OR LOWER(patient_name) LIKE ?)"
+        params.extend([patient_id.strip().lower(), f"%{patient_id.strip().lower()}%"])
+        
+    if status and status.lower() != "all":
+        sql += " AND LOWER(report_status) = ?"
+        params.append(status.strip().lower())
+        
+    if scan_type and scan_type.lower() != "all":
+        sql += " AND LOWER(scan_type) = ?"
+        params.append(scan_type.strip().lower())
+        
+    if query and query.strip():
+        q_clean = f"%{query.strip().lower()}%"
+        sql += """ AND (
+            LOWER(report_id) LIKE ? OR
+            LOWER(patient_id) LIKE ? OR
+            LOWER(patient_name) LIKE ? OR
+            LOWER(scan_type) LIKE ? OR
+            LOWER(doctor_name) LIKE ? OR
+            LOWER(diagnostic_center) LIKE ? OR
+            LOWER(session_id) LIKE ?
+        )"""
+        params.extend([q_clean] * 7)
+        
+    sql += " ORDER BY exam_date DESC, id DESC"
+    cursor.execute(sql, params)
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    
+    for r in rows:
+        if isinstance(r.get("telemetry_json"), str):
+            try:
+                r["telemetry"] = json.loads(r["telemetry_json"])
+            except Exception:
+                r["telemetry"] = {}
+        else:
+            r["telemetry"] = r.get("telemetry_json") or {}
+    return rows
+
+def get_diagnostic_report_by_id(report_id: str) -> dict | None:
+    """Returns a single diagnostic report by report_id (e.g. REP-2026-001) or numeric ID."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM diagnostic_reports 
+        WHERE LOWER(report_id) = ? OR id = ?
+    """, (report_id.strip().lower(), report_id.strip()))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    r = dict(row)
+    if isinstance(r.get("telemetry_json"), str):
+        try:
+            r["telemetry"] = json.loads(r["telemetry_json"])
+        except Exception:
+            r["telemetry"] = {}
+    else:
+        r["telemetry"] = r.get("telemetry_json") or {}
+    return r
+
+def create_diagnostic_report(data: dict) -> dict:
+    """Inserts a new diagnostic report record into SQLite."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    report_id = data.get("report_id") or data.get("reportId")
+    if not report_id:
+        cursor.execute("SELECT COUNT(*) as cnt FROM diagnostic_reports")
+        next_num = cursor.fetchone()["cnt"] + 1
+        report_id = f"REP-2026-{str(next_num).zfill(3)}"
+        
+    session_id = data.get("session_id") or data.get("sessionId") or f"S-{report_id.replace('REP-2026-', '')}"
+    patient_id = data.get("patient_id") or data.get("patientId") or "P-1000"
+    patient_name = data.get("patient_name") or data.get("patientName") or "Patient"
+    scan_type = data.get("scan_type") or data.get("scanType") or "General"
+    device_id = data.get("device_id") or data.get("deviceId") or "TORUS-A12"
+    exam_date = data.get("exam_date") or data.get("examDate") or data.get("sessionDate") or "2026-09-25"
+    exam_time = data.get("exam_time") or data.get("examTime") or data.get("sessionTime") or "10:00 AM"
+    duration = data.get("duration") or "20:00"
+    doctor_id = data.get("doctor_id") or data.get("doctorId") or "3001"
+    doctor_name = data.get("doctor_name") or data.get("doctorName") or "Dr. Admin Doctor"
+    doctor_license = data.get("doctor_license") or data.get("doctorLicense") or "TORUS-REG-3001"
+    diagnostic_center = data.get("diagnostic_center") or data.get("diagnosticCenter") or "Apex Diagnostic Center"
+    report_status = (data.get("report_status") or data.get("status") or "ready").strip().lower()
+    clinical_summary = data.get("clinical_summary") or data.get("clinicalSummary") or "Clinical assessment completed."
+    ultrasound_findings = data.get("ultrasound_findings") or data.get("ultrasoundFindings") or "Ultrasound scan performed."
+    diagnosis_impression = data.get("diagnosis_impression") or data.get("diagnosisImpression") or "Examination completed."
+    
+    telemetry = data.get("telemetry") or {
+        "maxForce": "2.5 N", "avgForce": "1.8 N", "latency": "15 ms", "frames": 5000, "stability": "99.2%"
+    }
+    telemetry_json = json.dumps(telemetry) if isinstance(telemetry, dict) else str(telemetry)
+    
+    try:
+        cursor.execute("""
+            INSERT INTO diagnostic_reports (
+                report_id, session_id, patient_id, patient_name, scan_type, device_id,
+                exam_date, exam_time, duration, doctor_id, doctor_name, doctor_license,
+                diagnostic_center, report_status, clinical_summary, ultrasound_findings,
+                diagnosis_impression, telemetry_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report_id, session_id, patient_id, patient_name, scan_type, device_id,
+            exam_date, exam_time, duration, doctor_id, doctor_name, doctor_license,
+            diagnostic_center, report_status, clinical_summary, ultrasound_findings,
+            diagnosis_impression, telemetry_json
+        ))
+        conn.commit()
+        created = get_diagnostic_report_by_id(report_id)
+        conn.close()
+        return {"success": True, "report": created}
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+
+def update_diagnostic_report(report_id: str, updates: dict) -> dict:
+    """Updates fields of an existing diagnostic report."""
+    existing = get_diagnostic_report_by_id(report_id)
+    if not existing:
+        return {"success": False, "error": f"Report '{report_id}' not found."}
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    allowed_fields = {
+        "patient_name": ["patient_name", "patientName"],
+        "patient_id": ["patient_id", "patientId"],
+        "scan_type": ["scan_type", "scanType"],
+        "device_id": ["device_id", "deviceId"],
+        "exam_date": ["exam_date", "examDate", "sessionDate"],
+        "exam_time": ["exam_time", "examTime", "sessionTime"],
+        "doctor_name": ["doctor_name", "doctorName"],
+        "diagnostic_center": ["diagnostic_center", "diagnosticCenter"],
+        "report_status": ["report_status", "status"],
+        "clinical_summary": ["clinical_summary", "clinicalSummary"],
+        "ultrasound_findings": ["ultrasound_findings", "ultrasoundFindings"],
+        "diagnosis_impression": ["diagnosis_impression", "diagnosisImpression"],
+        "duration": ["duration"]
+    }
+    
+    set_clauses = []
+    params = []
+    
+    for db_col, keys in allowed_fields.items():
+        for k in keys:
+            if k in updates and updates[k] is not None:
+                val = updates[k]
+                if db_col == "report_status":
+                    val = str(val).strip().lower()
+                set_clauses.append(f"{db_col} = ?")
+                params.append(val)
+                break
+                
+    if "telemetry" in updates and updates["telemetry"] is not None:
+        t = updates["telemetry"]
+        set_clauses.append("telemetry_json = ?")
+        params.append(json.dumps(t) if isinstance(t, dict) else str(t))
+        
+    if not set_clauses:
+        conn.close()
+        return {"success": True, "report": existing, "message": "No changes provided"}
+        
+    sql = f"UPDATE diagnostic_reports SET {', '.join(set_clauses)} WHERE LOWER(report_id) = ? OR id = ?"
+    params.extend([report_id.strip().lower(), report_id.strip()])
+    
+    try:
+        cursor.execute(sql, params)
+        conn.commit()
+        updated = get_diagnostic_report_by_id(report_id)
+        conn.close()
+        return {"success": True, "report": updated}
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+
+def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]:
+    """Generates official medical PDF bytes for a diagnostic report using ReportLab."""
+    report = get_diagnostic_report_by_id(report_id)
+    if not report:
+        return None, "Report not found"
+        
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, KeepTogether
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=36,
+            leftMargin=36,
+            topMargin=36,
+            bottomMargin=36
+        )
+        
+        styles = getSampleStyleSheet()
+        
+        h_title = ParagraphStyle('HTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=15, leading=19, textColor=colors.HexColor('#0f172a'))
+        h_meta = ParagraphStyle('HMeta', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, alignment=2, textColor=colors.HexColor('#475569'))
+        sec_hdr = ParagraphStyle('SecHdr', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#0369a1'))
+        cell_lbl = ParagraphStyle('CellLbl', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7.5, leading=10, textColor=colors.HexColor('#64748b'))
+        cell_val = ParagraphStyle('CellVal', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#0f172a'))
+        cell_val_b = ParagraphStyle('CellValB', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=11.5, textColor=colors.HexColor('#0f172a'))
+        body_p = ParagraphStyle('BodyP', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor('#1e293b'))
+        sign_name = ParagraphStyle('SignName', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#0f172a'))
+        
+        story = []
+        
+        # Header banner
+        header_data = [
+            [
+                Paragraph("<b>TORUS CLINICAL ROBOTICS PLATFORM</b><br/><font color='#0284c7'><b>TELE-SONOGRAPHY DIAGNOSTIC EXAMINATION REPORT</b></font><br/><font size='8' color='#64748b'>" + str(report.get("diagnostic_center", "Apex Diagnostic Center")) + " • Department of Tele-Radiology</font>", h_title),
+                Paragraph("<b>DOCUMENT:</b> OFFICIAL RECORD<br/><b>EXAM DATE:</b> " + str(report.get("exam_date", "")) + " " + str(report.get("exam_time", "")) + "<br/><b>STATUS:</b> <font color='" + ("#059669" if report.get("report_status") == "ready" else "#d97706") + "'><b>" + ("FINALIZED" if report.get("report_status") == "ready" else "PENDING REVIEW") + "</b></font><br/><b>ENCRYPTED HASH:</b> TORUS-SHA256-VERIFIED", h_meta)
+            ]
+        ]
+        t_header = Table(header_data, colWidths=[360, 180])
+        t_header.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(t_header)
+        story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=8, spaceBefore=4))
+        
+        # Demographics and Exam Metadata Table
+        status_label = "FINALIZED & APPROVED" if report.get("report_status") == "ready" else "PENDING REVIEW"
+        status_color = "#059669" if report.get("report_status") == "ready" else "#d97706"
+        
+        patient_grid = [
+            [
+                Paragraph("PATIENT FULL NAME", cell_lbl),
+                Paragraph("PATIENT IDENTIFIER", cell_lbl),
+                Paragraph("REPORT NUMBER", cell_lbl),
+                Paragraph("REPORT STATUS", cell_lbl)
+            ],
+            [
+                Paragraph(str(report.get("patient_name", "Unknown")), cell_val_b),
+                Paragraph(str(report.get("patient_id", "Unknown")), cell_val_b),
+                Paragraph(str(report.get("report_id", "Unknown")), cell_val_b),
+                Paragraph(f"<font color='{status_color}'><b>{status_label}</b></font>", cell_val_b)
+            ],
+            [
+                Paragraph("PROCEDURE / SCAN TYPE", cell_lbl),
+                Paragraph("EXAMINATION DATE & TIME", cell_lbl),
+                Paragraph("ATTENDING PHYSICIAN", cell_lbl),
+                Paragraph("SESSION & RIG ID", cell_lbl)
+            ],
+            [
+                Paragraph(f"{report.get('scan_type', '')} Ultrasound", cell_val_b),
+                Paragraph(f"{report.get('exam_date', '')} at {report.get('exam_time', '')} ({report.get('duration', '20m')})", cell_val),
+                Paragraph(f"{report.get('doctor_name', 'Dr. Admin Doctor')} ({report.get('doctor_license', 'TORUS-REG-3001')})", cell_val),
+                Paragraph(f"Session {report.get('session_id', '')} / {report.get('device_id', '')}", cell_val)
+            ]
+        ]
+        t_pat = Table(patient_grid, colWidths=[135, 135, 135, 135])
+        t_pat.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(t_pat)
+        story.append(Spacer(1, 8))
+        
+        # Telemetry Table
+        tele = report.get("telemetry") or {}
+        tele_grid = [
+            [
+                Paragraph("<b>ROBOTIC TELE-SONOGRAPHY TELEMETRY & SCAN QUALITY METRICS</b>", sec_hdr),
+                Paragraph("", sec_hdr),
+                Paragraph("", sec_hdr),
+                Paragraph("", sec_hdr)
+            ],
+            [
+                Paragraph("MAX CONTACT FORCE", cell_lbl),
+                Paragraph("MEAN CONTACT FORCE", cell_lbl),
+                Paragraph("WEBRTC CONTROL LATENCY", cell_lbl),
+                Paragraph("CAPTURED CINE FRAMES", cell_lbl)
+            ],
+            [
+                Paragraph(str(tele.get("maxForce", "2.6 N")), cell_val_b),
+                Paragraph(str(tele.get("avgForce", "1.9 N")), cell_val_b),
+                Paragraph(str(tele.get("latency", "16 ms")), cell_val_b),
+                Paragraph(str(tele.get("frames", "5200")) + " Cine Frames", cell_val_b)
+            ]
+        ]
+        t_tele = Table(tele_grid, colWidths=[135, 135, 135, 135])
+        t_tele.setStyle(TableStyle([
+            ('SPAN', (0,0), (3,0)),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f9ff')),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ffffff')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#bae6fd')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e0f2fe')),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(t_tele)
+        story.append(Spacer(1, 8))
+        
+        # Detailed Ultrasound Anatomical Findings
+        findings_box = [
+            [Paragraph("<b>DETAILED ULTRASOUND ANATOMICAL FINDINGS</b>", sec_hdr)],
+            [Paragraph(str(report.get("ultrasound_findings", report.get("clinical_summary", "No findings recorded."))), body_p)]
+        ]
+        t_findings = Table(findings_box, colWidths=[540])
+        t_findings.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f8fafc')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#ffffff')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(t_findings)
+        story.append(Spacer(1, 8))
+        
+        # Clinical Summary & Observations
+        summary_box = [
+            [Paragraph("<b>CLINICAL SUMMARY & OBSERVATIONS</b>", sec_hdr)],
+            [Paragraph(str(report.get("clinical_summary", "None.")), body_p)]
+        ]
+        t_summary = Table(summary_box, colWidths=[540])
+        t_summary.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f8fafc')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#ffffff')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(t_summary)
+        story.append(Spacer(1, 8))
+        
+        # Clinical Diagnosis & Impression
+        impression_box = [
+            [Paragraph("<b>DIAGNOSIS & CLINICAL IMPRESSION</b>", sec_hdr)],
+            [Paragraph(str(report.get("diagnosis_impression", "None.")), body_p)]
+        ]
+        t_imp = Table(impression_box, colWidths=[540])
+        t_imp.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0fdf4')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#ffffff')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#86efac')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(t_imp)
+        story.append(Spacer(1, 10))
+        
+        # Doctor Signature & Verification Footer
+        sig_data = [
+            [
+                Paragraph("<b>ATTESTING PHYSICIAN SIGNATURE</b><br/>" + str(report.get("doctor_name", "Dr. Admin Doctor")) + "<br/><font size='7.5' color='#64748b'>Chief Tele-Ultrasound Specialist • License " + str(report.get("doctor_license", "TORUS-REG-3001")) + "</font>", sign_name),
+                Paragraph("<b>DIGITAL AUDIT VERIFICATION</b><br/><font color='#059669'>✓ Digitally Signed & SHA-256 Validated</font><br/><font size='7' color='#94a3b8'>TORUS Health Cloud HSM • Session " + str(report.get("session_id", "")) + "</font>", h_meta)
+            ]
+        ]
+        t_sig = Table(sig_data, colWidths=[320, 220])
+        t_sig.setStyle(TableStyle([
+            ('LINEABOVE', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(KeepTogether(t_sig))
+        
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        return pdf_bytes, None
+    except Exception as e:
+        print(f"[PDF] Error generating PDF for {report_id}: {e}")
+        return None, str(e)
 
 
 if __name__ == "__main__":

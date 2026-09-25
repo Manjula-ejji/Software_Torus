@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=101" />
+  <link rel="stylesheet" href="css/styles.css?v=105" />
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
@@ -2273,8 +2273,8 @@
                   <span class="dact-stat-lbl">Completed</span>
                 </div>
                 <div class="dact-stat-pill">
-                  <span class="dact-stat-num purple" id="patHistDurationTotal">22m</span>
-                  <span class="dact-stat-lbl">Total Time</span>
+                  <span class="dact-stat-num purple" id="patHistDurationTotal">22:15</span>
+                  <span class="dact-stat-lbl">Total Examination Time</span>
                 </div>
               </div>
             </div>
@@ -2317,14 +2317,14 @@
             </div>
 
             <!-- History Table Container -->
-            <div class="dhist-table-container">
-              <div class="dhist-table-head">
-                <span class="dhist-col-date" style="flex: 1.2;">EXAMINATION DATE</span>
-                <span class="dhist-col-scan">SCAN TYPE</span>
-                <span class="dhist-col-patient" style="flex: 1.2;">PHYSICIAN / CENTER</span>
-                <span class="dhist-col-duration">DURATION</span>
-                <span class="dhist-col-status">REPORT STATUS</span>
-                <span class="dhist-col-actions">ACTION</span>
+            <div class="pathist-table-container">
+              <div class="pathist-grid-row pathist-table-header">
+                <div class="pathist-col pathist-col-date">EXAMINATION DATE</div>
+                <div class="pathist-col pathist-col-scan">SCAN TYPE</div>
+                <div class="pathist-col pathist-col-physician">PHYSICIAN / CENTER</div>
+                <div class="pathist-col pathist-col-duration">DURATION</div>
+                <div class="pathist-col pathist-col-status">REPORT STATUS</div>
+                <div class="pathist-col pathist-col-actions">ACTION</div>
               </div>
               <div class="dhist-list" id="patHistList">
                 <!-- Dynamically rendered patient history rows -->
@@ -2339,6 +2339,19 @@
                 </div>
                 <h3 class="dact-empty-title">No Examination History</h3>
                 <p class="dact-empty-subtitle">No historical examination logs match the search or category filters.</p>
+              </div>
+              <!-- Structured Medical Archive Table Footer -->
+              <div class="pathist-table-footer" id="patHistTableFooter">
+                <div class="pathist-footer-left">
+                  <span class="pathist-records-count" id="patHistRecordsCount">Showing 1 of 1 examination record</span>
+                  <span class="pathist-footer-badge">
+                    <span class="pathist-footer-dot"></span>
+                    Verified Clinical Archive
+                  </span>
+                </div>
+                <div class="pathist-footer-right">
+                  <span class="pathist-footer-meta">TORUS Robotic Sonography Records • DICOM & Telemetry Compliant</span>
+                </div>
               </div>
             </div>
           </div>
@@ -4207,7 +4220,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=101"></script>
+  <script src="app.js?v=105"></script>
 </body>
 
 </html>

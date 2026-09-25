@@ -8837,12 +8837,13 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .dact-stat-lbl {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-top: 2px;
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+  white-space: nowrap;
 }
 
 .dact-toolbar {
@@ -9155,8 +9156,13 @@ body[data-role="viewer"] #settings-uid-wrapper {
   }
 }
 
+.dact-btn-icon.dact-refreshing {
+  pointer-events: none;
+  opacity: 0.85;
+}
+
 .dact-btn-icon.dact-refreshing svg {
-  animation: dactSpin 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: dactSpin 0.75s linear infinite;
 }
 
 .dact-empty-state {
@@ -9846,6 +9852,300 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .drep-row:last-child,
 .dhist-row:last-child {
   border-bottom: none;
+}
+
+/* ── Patient Examination History Table Layout (Unified Shared 6-Column CSS Grid) ── */
+.pathist-table-container {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  overflow-x: auto;
+  background: rgba(11, 17, 38, 0.7);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 440px;
+}
+
+/* SHARED GRID: Header and every Data Row use this identical track definition */
+.pathist-grid-row {
+  display: grid !important;
+  grid-template-columns: minmax(170px, 1.6fr) minmax(110px, 1fr) minmax(230px, 2.3fr) minmax(90px, 0.8fr) minmax(145px, 1.3fr) minmax(200px, 1.8fr) !important;
+  column-gap: 20px !important;
+  padding: 14px 24px !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 945px !important;
+}
+
+/* Header-specific styling */
+.pathist-table-header {
+  background: rgba(16, 24, 52, 0.88) !important;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.18) !important;
+  border-top-left-radius: 16px !important;
+  border-top-right-radius: 16px !important;
+  user-select: none !important;
+}
+
+.pathist-table-header .pathist-col {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.8px !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+/* Row-specific styling */
+.pathist-data-row {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 18px 24px !important;
+  transition: background 0.18s ease, border-color 0.18s ease !important;
+}
+
+.pathist-data-row:hover {
+  background: rgba(139, 92, 246, 0.08) !important;
+}
+
+.pathist-data-row:last-child {
+  border-bottom: none !important;
+}
+
+/* Unified Column Alignment for both Header and Rows */
+.pathist-col {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+}
+
+/* Column 1: Date */
+.pathist-col-date {
+  white-space: nowrap !important;
+}
+
+.pathist-data-row .pathist-col-date {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 3px !important;
+}
+
+.dhist-date-main-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.dhist-date-main {
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+}
+
+.dhist-session-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 1px 6px !important;
+  border-radius: 4px !important;
+  background: rgba(6, 182, 212, 0.1) !important;
+  border: 1px solid rgba(6, 182, 212, 0.28) !important;
+  color: #38bdf8 !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  letter-spacing: 0.3px !important;
+}
+
+.dhist-date-time {
+  font-size: 11.5px !important;
+  color: #94a3b8 !important;
+}
+
+/* Column 2: Scan Type */
+.pathist-col-scan {
+  align-items: center !important;
+}
+
+/* Column 3: Physician / Center */
+.pathist-data-row .pathist-col-physician {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 3px !important;
+}
+
+.pathist-data-row .pathist-col-physician .dhist-patient-name {
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+
+.pathist-data-row .pathist-col-physician .dhist-patient-id {
+  font-size: 11.5px !important;
+  color: #94a3b8 !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+
+/* Column 4: Duration */
+.pathist-col-duration {
+  align-items: center !important;
+}
+
+.dhist-duration-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: #e2e8f0 !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* Column 5: Status */
+.pathist-col-status {
+  align-items: center !important;
+}
+
+.pathist-data-row .pathist-col-status .drep-badge-ready,
+.pathist-data-row .pathist-col-status .drep-badge-pending {
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.dhist-pulse-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  margin-right: 6px;
+  animation: dhistDotPulse 2s infinite ease-in-out;
+}
+
+@keyframes dhistDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+/* Column 6: Action */
+.pathist-col-actions {
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  justify-content: flex-start !important;
+}
+
+.pathist-data-row .pathist-col-actions .dhist-btn-view,
+.pathist-data-row .pathist-col-actions .dhist-btn-download {
+  margin: 0 !important;
+  flex-shrink: 0 !important;
+}
+
+/* ── Examination History Table Footer ── */
+.pathist-table-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 14px 24px !important;
+  background: rgba(13, 19, 42, 0.75) !important;
+  border-top: 1px solid rgba(139, 92, 246, 0.16) !important;
+  border-bottom-left-radius: 16px !important;
+  border-bottom-right-radius: 16px !important;
+  margin-top: auto !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 945px !important;
+}
+
+.pathist-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pathist-records-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.pathist-footer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.22);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  letter-spacing: 0.3px;
+}
+
+.pathist-footer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22d3ee;
+  box-shadow: 0 0 6px #22d3ee;
+}
+
+.pathist-footer-right {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* ── Single Record Assurance Strip ── */
+.pathist-single-record-note {
+  margin-top: auto;
+  padding: 20px 24px;
+  box-sizing: border-box;
+}
+
+.pathist-note-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px dashed rgba(139, 92, 246, 0.22);
+  border-radius: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.pathist-note-content svg {
+  color: #c084fc;
+  flex-shrink: 0;
 }
 
 /* ── Cells & Elements ── */
