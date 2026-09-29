@@ -404,6 +404,17 @@ body::after {
   gap: 10px;
 }
 
+@keyframes examBtnAppear {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 #startScanBtn {
   font-size: 0.95rem;
   font-weight: 600;
@@ -416,6 +427,7 @@ body::after {
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
+  animation: examBtnAppear 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 #startScanBtn:hover:not(:disabled) {
@@ -441,6 +453,71 @@ body::after {
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
+/* Generate Report Action Button (Primary Examination Tool) */
+#generateReportBtn {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: 99px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.22) 0%, rgba(59, 130, 246, 0.16) 100%);
+  color: #ede9fe;
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  box-shadow:
+    0 4px 18px rgba(139, 92, 246, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: examBtnAppear 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+#generateReportBtn .btn-report-icon {
+  width: 16px;
+  height: 16px;
+  stroke: #c4b5fd;
+  stroke-width: 2.2;
+  flex-shrink: 0;
+  transition: transform 0.3s ease, stroke 0.3s ease;
+}
+
+#generateReportBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.38) 0%, rgba(59, 130, 246, 0.3) 100%);
+  border-color: rgba(196, 181, 253, 0.75);
+  color: #ffffff;
+  transform: translateY(-2.5px) scale(1.04);
+  box-shadow:
+    0 8px 24px rgba(139, 92, 246, 0.42),
+    0 0 20px rgba(167, 139, 250, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+#generateReportBtn:hover:not(:disabled) .btn-report-icon {
+  transform: translateY(-1px) scale(1.1);
+  stroke: #ffffff;
+}
+
+#generateReportBtn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.92);
+}
+
+/* Subtle separator dividing Examination actions from Call controls */
+.controls-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 0 4px;
+  flex-shrink: 0;
+  animation: examBtnAppear 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 #joinBtn {
   font-size: 0.95rem;
   padding: 12px 28px;
@@ -449,6 +526,7 @@ body::after {
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: var(--shadow-button-glow);
+  animation: examBtnAppear 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 #joinBtn:hover:not(:disabled) {
@@ -478,6 +556,41 @@ body::after {
   box-shadow:
     0 8px 20px rgba(239, 68, 68, 0.25),
     0 0 15px rgba(239, 68, 68, 0.15);
+}
+
+@media (max-width: 992px) {
+  .controls {
+    bottom: 24px;
+    right: 24px;
+    padding: 10px 14px;
+  }
+  .button-row {
+    gap: 8px;
+  }
+  #startScanBtn,
+  #generateReportBtn,
+  #joinBtn {
+    padding: 10px 20px;
+    font-size: 0.88rem;
+  }
+}
+
+@media (max-width: 680px) {
+  .controls {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    border-radius: 24px;
+    padding: 12px;
+  }
+  .button-row {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .controls-divider {
+    display: none;
+  }
 }
 
 /* Premium Buttons Styling */
@@ -9420,6 +9533,36 @@ body[data-role="viewer"] #settings-uid-wrapper {
   overflow: hidden;
 }
 
+.dins-chart-card .dprof-card-header {
+  padding: 20px 24px 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.dins-chart-card .dprof-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dins-chart-card .dprof-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: 0.2px;
+  line-height: 1.3;
+}
+
+.dins-chart-card .dprof-card-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 3px 0 0 0;
+  line-height: 1.4;
+}
+
 .dins-chart-stat-badge {
   font-size: 12px;
   font-weight: 600;
@@ -10600,6 +10743,14 @@ body[data-role="viewer"] #settings-uid-wrapper {
 
   .drep-doc-grid-2col {
     grid-template-columns: 1fr;
+  }
+
+  .dins-chart-card .dprof-card-header {
+    padding: 16px 18px 14px 18px;
+  }
+
+  .dins-chart-card .dprof-card-title-group {
+    gap: 12px;
   }
 }
 

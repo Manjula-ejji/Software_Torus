@@ -2350,7 +2350,8 @@
                   </span>
                 </div>
                 <div class="pathist-footer-right">
-                  <span class="pathist-footer-meta">TORUS Robotic Sonography Records • DICOM & Telemetry Compliant</span>
+                  <span class="pathist-footer-meta">TORUS Robotic Sonography Records • DICOM & Telemetry
+                    Compliant</span>
                 </div>
               </div>
             </div>
@@ -3781,9 +3782,20 @@
       </div>
     </header>
 
-    <section class="controls">
+    <section class="controls" aria-label="Examination and Consultation Controls">
       <div class="button-row">
-        <button id="startScanBtn" class="btn btn-scan" type="button">Start Scan</button>
+        <button id="startScanBtn" class="btn btn-scan" type="button" style="display: none;">Start Scan</button>
+        <button id="generateReportBtn" class="btn btn-report" type="button" title="Generate Clinical Examination Report" style="display: none;">
+          <svg class="btn-report-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <line x1="10" y1="9" x2="8" y2="9"></line>
+          </svg>
+          <span>Generate Report</span>
+        </button>
+        <div id="controlsDivider" class="controls-divider" aria-hidden="true" style="display: none;"></div>
         <button id="joinBtn" class="btn btn-primary" type="button">Join Call</button>
         <button id="muteBtn" class="btn btn-mute" type="button">Mute Mic</button>
         <button id="leaveBtn" class="btn btn-secondary" type="button" disabled>Leave</button>
@@ -3847,7 +3859,7 @@
             <label id="settings-token-wrapper" class="full-width">
               <span>Token</span>
               <input id="token" type="text" placeholder="Enter Agora Token"
-                value="007eJxTYOBWmvvLQO7ftbemn6UKuQKOJZ/MtDj9e756Qn69fr2sqaACQ6KFoaGhWaKlYVpimkmKgWmiWaJZUpJxakpqspmlmanhm7mbsxoCGRnyOmKYGRkgEMRnZSjJLyotZmAAADdzH5w="
+                value="007eJxTYNh8qr7l01X7lMhzM9/ZTzCNqLzisz9u0/2rBtord37dsoRbgcE8ySw1JTk5zSTJPNkkOdXc0tLM3DLRKDkxOSkxNdnA8rvv7qyGQEaG4lP3GBkZIBDEZ2UoyS8qLWZgAACgISTC"
                 spellcheck="false" autocomplete="off" />
             </label>
 

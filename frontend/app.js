@@ -192,7 +192,7 @@ async function fetchAgoraConfiguration() {
         if (data.token) {
           OFFICIAL_TOKEN_VALUE = data.token;
           const tokenInputEl = document.getElementById("token");
-          if (tokenInputEl && !tokenInputEl.value.trim()) {
+          if (tokenInputEl) {
             tokenInputEl.value = data.token;
           }
         }
@@ -1546,7 +1546,9 @@ async function joinCall() {
     }
 
     setStatus(`Connected to ${channel} as ${role === "patient" ? "Patient" : (role === "doctor" ? "Doctor" : "Viewer")}`);
+    updateCallExaminationControls(true);
   } catch (error) {
+    updateCallExaminationControls(false);
     const rawMessage = error?.message || String(error);
 
     if (rawMessage.includes("dynamic use static key")) {
@@ -1704,8 +1706,34 @@ async function leaveCall() {
     localCameraBtn.disabled = true;
     localMicBtn.disabled = true;
     muteBtn.disabled = false;
+    updateCallExaminationControls(false);
   }
 }
+
+// Controls visibility of examination actions (Start Scan & Generate Report) based on active call connection
+function updateCallExaminationControls(isConnected) {
+  const startScanBtn = document.getElementById("startScanBtn");
+  const generateReportBtn = document.getElementById("generateReportBtn");
+  const controlsDivider = document.getElementById("controlsDivider") || document.querySelector(".controls-divider");
+  const joinBtn = document.getElementById("joinBtn");
+  const role = roleInput ? roleInput.value : "";
+
+  if (isConnected && role !== "viewer") {
+    if (startScanBtn) startScanBtn.style.display = "inline-flex";
+    if (generateReportBtn) generateReportBtn.style.display = "inline-flex";
+    if (controlsDivider) controlsDivider.style.display = "block";
+    if (joinBtn) joinBtn.style.display = "none";
+  } else {
+    if (startScanBtn) startScanBtn.style.display = "none";
+    if (generateReportBtn) generateReportBtn.style.display = "none";
+    if (controlsDivider) controlsDivider.style.display = "none";
+    if (joinBtn) joinBtn.style.display = "inline-flex";
+  }
+}
+window.updateCallExaminationControls = updateCallExaminationControls;
+
+// Initial state: hide examination tools until successfully joined
+updateCallExaminationControls(false);
 
 joinBtn.addEventListener("click", joinCall);
 leaveBtn.addEventListener("click", leaveCall);
@@ -8329,6 +8357,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     currentAuthenticatedRole = null;
     if (roleInput) roleInput.value = "";
     if (uidInput) uidInput.value = "";
+    updateCallExaminationControls(false);
 
     const hBadge = document.getElementById("header-user-badge");
     if (hBadge) hBadge.style.display = "none";
