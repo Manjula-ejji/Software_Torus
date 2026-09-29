@@ -2096,6 +2096,122 @@ if (startScanBtn) {
   });
 }
 
+// Function to navigate to Report Generation page with active clinical examination context
+function navigateToReportGeneration() {
+  // 1. Doctor Information
+  let doctorInfo = null;
+  if (currentAuthenticatedUser && (currentAuthenticatedUser.role === "doctor" || currentAuthenticatedRole === "doctor")) {
+    doctorInfo = currentAuthenticatedUser;
+  } else {
+    try {
+      const storedDoc = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
+      if (storedDoc) doctorInfo = JSON.parse(storedDoc);
+    } catch (_) {}
+  }
+  const doctorName = doctorInfo?.name 
+    ? (doctorInfo.name.startsWith("Dr.") ? doctorInfo.name : `Dr. ${doctorInfo.name}`)
+    : "Dr. Anderson";
+  const doctorLocation = doctorInfo?.location || "NYC Medical";
+
+  // 2. Active Session & Patient Information
+  let activeSession = null;
+  if (window.torusSessions && Array.isArray(window.torusSessions.active) && window.torusSessions.active.length > 0) {
+    activeSession = window.torusSessions.active[0];
+  } else {
+    try {
+      const savedSessions = sessionStorage.getItem("torus_doctor_sessions") || localStorage.getItem("torus_doctor_sessions");
+      if (savedSessions) {
+        const parsed = JSON.parse(savedSessions);
+        if (parsed?.active?.length > 0) activeSession = parsed.active[0];
+      }
+    } catch (_) {}
+  }
+
+  let patientUser = null;
+  try {
+    const storedPat = sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient");
+    if (storedPat) patientUser = JSON.parse(storedPat);
+  } catch (_) {}
+
+  const patientName = activeSession?.patientName || patientUser?.name || "Patient A";
+  const patientId = activeSession?.patientId || patientUser?.uid || patientUser?.id || "P-8821";
+  const rawScanType = activeSession?.scanType || "Abdominal";
+  const scanType = rawScanType.toLowerCase().includes("ultrasound") ? rawScanType : `${rawScanType} Ultrasound`;
+  const deviceName = activeSession?.deviceId || sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId") || "TORUS-A12";
+  const sessionCode = window.activeClinicalSessionCode 
+    || sessionStorage.getItem("active_clinical_session_code") 
+    || localStorage.getItem("active_clinical_session_code") 
+    || (activeSession?.sessionId || "S-001");
+  const reportId = activeSession?.reportId || `RPT-${String(sessionCode).replace(/[^0-9]/g, "") || "80517130"}`;
+
+  // 3. Format Exam Date (e.g., "March 23, 2026")
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const now = new Date();
+  const examDate = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  const examDuration = activeSession?.duration || "18:42";
+
+  // 4. Channel / Room identifier
+  const channel = (channelInput && channelInput.value.trim()) || "torus";
+  const roomParam = channel.toUpperCase();
+
+  // 5. Build context payload matching report-generation expectations
+  const reportContext = {
+    patientName: patientName,
+    patientId: patientId,
+    examDate: examDate,
+    scanType: scanType,
+    device: deviceName,
+    doctor: doctorName,
+    location: doctorLocation,
+    reportId: reportId,
+    examDuration: examDuration,
+    sessionId: sessionCode,
+    sessionCode: sessionCode,
+    room: channel
+  };
+
+  // 6. Persist context across storage keys recognized by report-generation.html
+  try {
+    localStorage.setItem("torus-report-meta", JSON.stringify(reportContext));
+    sessionStorage.setItem("torus-report-meta", JSON.stringify(reportContext));
+    localStorage.setItem("torus-report-context-" + roomParam, JSON.stringify(reportContext));
+    sessionStorage.setItem("torus-report-context-" + roomParam, JSON.stringify(reportContext));
+    localStorage.setItem("torus-report-context-DEFAULT", JSON.stringify(reportContext));
+    localStorage.setItem("torus-report-context-TORUS", JSON.stringify(reportContext));
+
+    localStorage.setItem("torus-report-id-" + roomParam, reportId);
+    localStorage.setItem("torus-report-id-DEFAULT", reportId);
+    sessionStorage.setItem("active_clinical_session_code", sessionCode);
+  } catch (err) {
+    console.warn("[Report Generation] Warning preserving report context:", err);
+  }
+
+  // 7. Check if captured images exist in storage; ensure clean array if empty
+  try {
+    const existingImgs = localStorage.getItem("capturedImages-" + roomParam) 
+      || sessionStorage.getItem("capturedImages-" + roomParam)
+      || localStorage.getItem("capturedImages-DEFAULT");
+    if (!existingImgs) {
+      localStorage.setItem("capturedImages-" + roomParam, "[]");
+      localStorage.setItem("capturedImages-DEFAULT", "[]");
+    }
+  } catch (_) {}
+
+  // 8. Direct navigation to existing Report Generation page
+  const targetUrl = `report-generation.html?room=${encodeURIComponent(channel)}&role=doctor`;
+  console.log("[Report Generation] Navigating to:", targetUrl, reportContext);
+  window.location.href = targetUrl;
+}
+window.navigateToReportGeneration = navigateToReportGeneration;
+
+// Bind Generate Report button in bottom floating controller bar
+const generateReportBtn = document.getElementById("generateReportBtn");
+if (generateReportBtn) {
+  generateReportBtn.addEventListener("click", () => {
+    navigateToReportGeneration();
+  });
+}
+
 if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
   controlStartBtn.addEventListener("click", () => {
     toggleUltrasoundScan();

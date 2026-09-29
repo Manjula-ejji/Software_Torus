@@ -1,0 +1,4790 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report Generation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest?v=20260521_01"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js?v=20260521_01"></script>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js?v=20260521_01"></script>
+  <script>
+    console.log('BUILD VERSION:', Date.now());
+    console.log('Capture Handler Loaded');
+
+    window.reportSocket = null;
+    try {
+      if (typeof io !== 'undefined') {
+        const room = new URLSearchParams(window.location.search).get('room') || 'DEFAULT_ROOM';
+        const API_BASE_URL = (window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5002';
+        window.reportSocket = io(API_BASE_URL, {
+          reconnectionDelayMax: 10000,
+          transports: ['websocket', 'polling']
+        });
+        window.reportSocket.on('connect', () => {
+          console.log('Report generator connected to signaling server');
+          window.reportSocket.emit('join-room', { room, roomId: room, role: 'doctor' });
+        });
+      } else {
+        console.warn('io is undefined, signaling disabled');
+      }
+    } catch (e) {
+      console.warn('Socket.io not available in report generator', e);
+    }
+  </script>
+  <style>
+    :root {
+      --bg-main: #0b0f18;
+      --bg-panel: #171b29;
+      --bg-panel-2: #131726;
+      --line: rgba(42, 173, 209, 0.24);
+      --line-soft: rgba(127, 55, 255, 0.24);
+      --text-main: #f7f8ff;
+      --text-muted: #9ca3b9;
+      --cyan: #18d8ff;
+      --cyan-2: #00bfe7;
+      --purple: #7c3aed;
+      --purple-2: #8b5cf6;
+      --green: #16f29c;
+      --red: #ff4545;
+      --shadow: 0 1.25em 3em rgba(0, 0, 0, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      background: radial-gradient(circle at top left, rgba(124, 58, 237, 0.08), transparent 32%), radial-gradient(circle at top right, rgba(24, 216, 255, 0.07), transparent 28%), var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+
+    body {
+      min-height: 100vh;
+      font-size: 67%;
+    }
+
+    button,
+    textarea,
+    input {
+      font: inherit;
+    }
+
+    .app-shell {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Branded TORUS Ambient Background & Medical Detail */
+    .torus-ambient-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+      contain: strict;
+    }
+
+    .torus-bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(to right, rgba(0, 215, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(124, 58, 237, 0.018) 1px, transparent 1px);
+      background-size: 36px 36px;
+      mask-image: radial-gradient(circle at 65% 35%, black 25%, transparent 85%);
+      -webkit-mask-image: radial-gradient(circle at 65% 35%, black 25%, transparent 85%);
+      opacity: 0.85;
+    }
+
+    .torus-bg-waveform {
+      position: absolute;
+      bottom: 5%;
+      left: 0;
+      width: 100%;
+      height: 140px;
+      color: rgba(0, 215, 255, 0.03);
+      opacity: 0.8;
+      filter: drop-shadow(0 0 6px rgba(0, 215, 255, 0.025));
+    }
+
+    .torus-bg-watermark {
+      position: absolute;
+      top: 10vh;
+      right: -2.5vw;
+      font-size: min(20vw, 220px);
+      font-weight: 900;
+      letter-spacing: 0.16em;
+      line-height: 0.85;
+      color: transparent;
+      -webkit-text-stroke: 1.5px rgba(0, 215, 255, 0.035);
+      text-transform: uppercase;
+      user-select: none;
+      transform: rotate(-3deg);
+      filter: drop-shadow(0 0 30px rgba(124, 58, 237, 0.025));
+    }
+
+    .torus-bg-watermark-sub {
+      position: absolute;
+      top: calc(10vh + min(20vw, 220px) * 0.82);
+      right: 2vw;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.45em;
+      color: rgba(163, 140, 255, 0.035);
+      user-select: none;
+      transform: rotate(-3deg);
+    }
+
+    .topbar {
+      height: 4.625em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25em;
+      border-bottom: 0.0625em solid rgba(97, 59, 196, 0.22);
+      background: linear-gradient(180deg, rgba(10, 14, 32, 0.96) 0%, rgba(6, 10, 24, 0.96) 100%);
+      flex-shrink: 0;
+    }
+
+    .topbar-left,
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+
+    .menu-icon-btn,
+    .icon-btn,
+    .back-btn,
+    .profile-pill,
+    .sign-btn,
+    .action-btn {
+      cursor: pointer;
+    }
+
+    .menu-icon-btn {
+      width: 4em;
+      height: 4em;
+      border-radius: 0.75em;
+      border: 0.0625em solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: #00e5ff;
+      display: grid;
+      place-items: center;
+      transition: all 0.22s ease;
+    }
+
+    .menu-icon-btn i {
+      width: 1.75em;
+      height: 1.75em;
+    }
+
+    .brand-inline {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+    }
+
+    .brand-inline .brand-logo-wrap {
+      width: 3.875em;
+      height: 3.875em;
+      border-radius: 0.75em;
+      border: 0.0625em solid rgba(106, 0, 255, 0.14);
+      display: grid;
+      place-items: center;
+    }
+
+    .brand-inline .brand-logo {
+      width: 2em;
+      height: 2em;
+      object-fit: contain;
+    }
+
+    .brand-wordmark {
+      font-size: 2.5em;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      line-height: 1;
+    }
+
+    .icon-btn,
+    .profile-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 3em;
+      border-radius: 0.75em;
+      border: 0.0625em solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: #dbe7ff;
+    }
+
+    .icon-btn {
+      width: 3em;
+      padding: 0;
+      color: #cbd5e1;
+    }
+
+    .icon-btn i {
+      width: 1.3125em;
+      height: 1.3125em;
+    }
+
+    .profile-pill {
+      width: 3.125em;
+      height: 3.125em;
+      border-radius: 50%;
+      border-color: rgba(106, 0, 255, 0.55);
+      color: #d8b4fe;
+      background: rgba(106, 0, 255, 0.12);
+      font-weight: 700;
+      text-transform: uppercase;
+      box-shadow: 0 0 1em rgba(106, 0, 255, 0.2);
+    }
+
+    .main {
+      flex: 1;
+      padding: 1.375em 1.5em 1.25em;
+      display: flex;
+      flex-direction: column;
+      gap: 1em;
+    }
+
+    .heading-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.25em;
+      flex-wrap: wrap;
+    }
+
+    .heading-left-cluster {
+      display: flex;
+      align-items: center;
+      gap: 1.25em;
+      flex-wrap: wrap;
+    }
+
+    .title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+    }
+
+    .title-icon {
+      width: 3.4em;
+      height: 3.4em;
+      border-radius: 0.85em;
+      background: rgba(0, 215, 255, 0.11);
+      border: 0.0625em solid rgba(0, 215, 255, 0.24);
+      display: grid;
+      place-items: center;
+      color: var(--cyan);
+      box-shadow: 0 0 1.2em rgba(0, 215, 255, 0.08);
+      flex-shrink: 0;
+    }
+
+    .title-icon i,
+    .title-icon svg {
+      width: 1.6em;
+      height: 1.6em;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: 3.45em;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      color: #ffffff;
+    }
+
+    .title-wrap p {
+      margin: 0.25em 0 0;
+      font-size: 1.08em;
+      line-height: 1.35;
+      color: #a38cff;
+      font-weight: 500;
+    }
+
+    .report-back-btn,
+    .back-btn {
+      height: 2.75em;
+      padding: 0 1.2em 0 0.95em;
+      border-radius: 0.75em;
+      border: 0.0625em solid rgba(24, 216, 255, 0.28);
+      background: linear-gradient(135deg, rgba(20, 24, 38, 0.9) 0%, rgba(12, 15, 26, 0.95) 100%);
+      color: #dbe4f0;
+      font-size: 1.05em;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55em;
+      box-shadow: 0 0.25em 0.8em rgba(0, 0, 0, 0.35), 0 0 0.75em rgba(24, 216, 255, 0.06);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+
+    .report-back-btn:hover,
+    .back-btn:hover {
+      background: linear-gradient(135deg, rgba(32, 38, 62, 0.95) 0%, rgba(20, 24, 42, 0.98) 100%);
+      border-color: rgba(0, 215, 255, 0.65);
+      color: #ffffff;
+      box-shadow: 0 0.3em 1.2em rgba(0, 0, 0, 0.45), 0 0 1.2em rgba(0, 215, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .report-back-btn:hover i,
+    .report-back-btn:hover svg,
+    .back-btn:hover i,
+    .back-btn:hover svg {
+      transform: translateX(-3px);
+      color: #7cedff;
+    }
+
+    .report-back-btn:active,
+    .back-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 0.1em 0.5em rgba(0, 0, 0, 0.4);
+    }
+
+    .report-back-btn i,
+    .report-back-btn svg,
+    .back-btn i,
+    .back-btn svg {
+      width: 1.25em;
+      height: 1.25em;
+      color: var(--cyan);
+      transition: transform 0.2s ease, color 0.2s ease;
+      stroke-width: 2.2;
+    }
+
+    .report-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 26.75em;
+      gap: 1em;
+      align-items: start;
+    }
+
+    .report-main,
+    .report-rail {
+      display: flex;
+      flex-direction: column;
+      gap: 1em;
+    }
+
+    .panel-card {
+      border-radius: 1em;
+      border: 0.0625em solid rgba(24, 216, 255, 0.22);
+      background: linear-gradient(180deg, rgba(22, 24, 36, 0.95), rgba(18, 21, 31, 0.95));
+      box-shadow: var(--shadow);
+      padding: 1.6em 1.6em 1.45em;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1em;
+      margin-bottom: 1.15em;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 2.15em;
+      font-weight: 750;
+      letter-spacing: -0.015em;
+      line-height: 1.2;
+      color: #ffffff;
+    }
+
+    .pill-count {
+      font-size: 1em;
+      color: #86e8ff;
+      border: 0.0625em solid rgba(24, 216, 255, 0.24);
+      background: rgba(24, 216, 255, 0.08);
+      padding: 0.45em 0.8em;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
+    .patient-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1.1em 1.6em;
+    }
+
+    .patient-item {
+      min-width: 0;
+    }
+
+    .patient-item .label {
+      font-size: 1.05em;
+      color: #aab2cf;
+      margin-bottom: 0.35em;
+      display: flex;
+      align-items: center;
+      gap: 0.35em;
+    }
+
+    .patient-item .label i {
+      width: 1.05em;
+      height: 1.05em;
+      color: var(--purple-2);
+    }
+
+    .patient-item .value {
+      font-size: 1.25em;
+      font-weight: 700;
+      color: #f6f7ff;
+      word-break: break-word;
+    }
+
+    .captured-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(14.25em, 1fr));
+      gap: 1em;
+    }
+
+    .image-card {
+      position: relative;
+      min-height: 15.6em;
+      border-radius: 1em;
+      border: 0.0625em solid rgba(127, 55, 255, 0.28);
+      background: linear-gradient(180deg, rgba(10, 12, 18, 0.98), rgba(17, 19, 29, 0.98));
+      overflow: hidden;
+      box-shadow: 0 0.9em 2em rgba(0, 0, 0, 0.18);
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .image-card:hover {
+      transform: translateY(-0.15em);
+      border-color: rgba(0, 215, 255, 0.42);
+      box-shadow: 0 1.1em 2.6em rgba(0, 0, 0, 0.24), 0 0 1.1em rgba(0, 215, 255, 0.09);
+    }
+
+    .image-card.is-selected {
+      border-color: rgba(24, 216, 255, 0.9);
+      box-shadow: 0 1.1em 2.6em rgba(0, 0, 0, 0.24), 0 0 1.2em rgba(24, 216, 255, 0.34);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 10.6em;
+      object-fit: cover;
+      display: block;
+      background: #000;
+    }
+
+    .image-card .image-meta {
+      padding: 0.8em 0.9em 0.9em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8em;
+    }
+
+    .image-card .timestamp {
+      font-size: 1em;
+      color: #b7bfd9;
+      font-weight: 600;
+    }
+
+    .image-check {
+      position: absolute;
+      top: 0.7em;
+      right: 0.7em;
+      width: 1.45em;
+      height: 1.45em;
+      border-radius: 0.28em;
+      border: 0.08em solid rgba(0, 215, 255, 0.5);
+      background: rgba(9, 14, 26, 0.9);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 0.7em rgba(0, 215, 255, 0.14);
+    }
+
+    .image-check input {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      cursor: pointer;
+      accent-color: #15d6ff;
+    }
+
+    .empty-state {
+      min-height: 15em;
+      display: grid;
+      place-items: center;
+      color: #8a93b1;
+      border: 0.0625em dashed rgba(24, 216, 255, 0.22);
+      border-radius: 0.9em;
+      background: rgba(8, 10, 16, 0.35);
+      font-size: 1.15em;
+      font-weight: 600;
+    }
+
+    .text-card textarea {
+      width: 100%;
+      min-height: 13.25em;
+      resize: vertical;
+      border-radius: 0.95em;
+      border: 0.0625em solid rgba(127, 55, 255, 0.28);
+      background: rgba(8, 10, 16, 0.42);
+      color: #f7f8ff;
+      padding: 1em 1.05em;
+      outline: none;
+      font-size: 1.08em;
+      line-height: 1.55;
+      box-shadow: inset 0 0 0 0.05em rgba(255, 255, 255, 0.02);
+    }
+
+    .text-card textarea::placeholder {
+      color: #8f97b7;
+    }
+
+    .side-card+.side-card {
+      margin-top: 0;
+    }
+
+    .select-box {
+      min-height: 8.2em;
+      border-radius: 0.95em;
+      background: rgba(8, 10, 16, 0.52);
+      border: 0.0625em solid rgba(24, 216, 255, 0.12);
+      padding: 1.2em 1.1em;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.55em;
+    }
+
+    .select-box .label {
+      color: #9eb0d4;
+      font-size: 1.05em;
+    }
+
+    .select-box .value {
+      font-size: 1.55em;
+      font-weight: 800;
+      color: #12dfff;
+    }
+
+    .sign-btn {
+      width: 100%;
+      border: none;
+      border-radius: 0.9em;
+      padding: 1.15em 1.1em;
+      color: #f8f4ff;
+      font-size: 1.1em;
+      font-weight: 700;
+      background: linear-gradient(135deg, #8a14ff 0%, #6b00ff 100%);
+      box-shadow: 0 0.9em 2em rgba(106, 0, 255, 0.18), inset 0 0 0 0.06em rgba(255, 255, 255, 0.08);
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .sign-btn.is-signed {
+      background: linear-gradient(90deg, #6D1BFF, #7E2FFF);
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .signature-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 12px;
+      width: 100%;
+    }
+
+    .signature-success {
+      display: none;
+      height: 48px;
+      width: 100%;
+      border-radius: 12px;
+      background: rgba(0, 255, 160, .08);
+      border: 1px solid #00FFAA;
+      color: #00FFAA;
+      font-weight: 700;
+      align-items: center;
+      justify-content: center;
+      transition: .25s ease-in-out;
+      font-size: 14px;
+    }
+
+    .signature-success.show {
+      display: flex;
+      animation: badgeReveal 250ms ease-out forwards;
+    }
+
+    @keyframes badgeReveal {
+      from {
+        opacity: 0;
+        transform: translateY(-5px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .details-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.1em;
+    }
+
+    .detail-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1em;
+      border-radius: 0.75em;
+      background: rgba(8, 10, 16, 0.42);
+      padding: 1.15em 1.15em;
+      border: 0.0625em solid rgba(255, 255, 255, 0.03);
+      font-size: 1.02em;
+    }
+
+    .detail-row .detail-label {
+      color: #8ea0c4;
+    }
+
+    .detail-row .detail-value {
+      color: #f7f8ff;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .preview-box {
+      margin-top: 1.1em;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85em;
+    }
+
+    .preview-frame {
+      min-height: 9.5em;
+      border-radius: 0.85em;
+      border: 0.0625em solid rgba(24, 216, 255, 0.2);
+      background: rgba(8, 10, 16, 0.52);
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      padding: 0.55em;
+    }
+
+    .preview-frame img {
+      display: none;
+      width: 100%;
+      max-height: 12em;
+      object-fit: cover;
+      border-radius: 0.6em;
+      background: #000;
+    }
+
+    .preview-frame.has-image img {
+      display: block;
+    }
+
+    .preview-frame.has-image .preview-empty {
+      display: none;
+    }
+
+    .preview-frame.has-pdf .preview-empty {
+      display: none;
+    }
+
+    .preview-pdf {
+      display: none;
+      width: 100%;
+      min-height: 8em;
+      border-radius: 0.6em;
+      border: 0.0625em solid rgba(127, 55, 255, 0.4);
+      background: rgba(14, 18, 28, 0.9);
+      color: #dbe7ff;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55em;
+      padding: 0.85em;
+      text-align: center;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .preview-pdf i {
+      width: 1.1em;
+      height: 1.1em;
+      color: #18d8ff;
+      flex-shrink: 0;
+    }
+
+    .preview-frame.has-pdf .preview-pdf {
+      display: inline-flex;
+    }
+
+    .preview-empty {
+      font-size: 0.98em;
+      font-weight: 600;
+      color: #9aa4c3;
+      text-align: center;
+      padding: 0.9em;
+    }
+
+    .preview-upload {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5em;
+    }
+
+    .preview-upload .action-btn {
+      width: 100%;
+      padding: 0.7em 0.5em;
+      font-size: 0.95em;
+      border-radius: 0.7em;
+    }
+
+    /* Redesigned AI Analysis Styles */
+    .ai-analysis-card {
+      position: relative;
+      overflow: hidden;
+      border-color: rgba(24, 216, 255, 0.4);
+    }
+
+    .ai-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1.5em;
+      margin-bottom: 1.5em;
+    }
+
+    .ai-status-group {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+    }
+
+    .ai-status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.6em;
+      padding: 0.5em 1em;
+      border-radius: 8px;
+      font-size: 0.9em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      transition: all 0.3s ease;
+    }
+
+    .ai-status-badge.ready {
+      background: rgba(148, 163, 184, 0.1);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    .ai-status-badge.processing {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+    }
+
+    .ai-status-badge.completed {
+      background: rgba(0, 255, 153, 0.1);
+      border: 1px solid rgba(0, 255, 153, 0.3);
+      color: #00ff99;
+    }
+
+    .ai-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .ai-status-badge.processing .ai-status-dot {
+      animation: pulse 1.5s infinite;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .ai-progress-wrap {
+      width: 100%;
+      margin-bottom: 2em;
+      display: none;
+    }
+
+    .ai-progress-wrap.active {
+      display: block;
+    }
+
+    .ai-progress-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5em;
+      font-size: 0.9em;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .ai-progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .ai-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #3b82f6, #60a5fa);
+      transition: width 0.3s ease;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    }
+
+    .ai-insight-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25em;
+      margin-bottom: 2em;
+    }
+
+    .ai-insight-card {
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid rgba(24, 216, 255, 0.1);
+      border-radius: 12px;
+      padding: 1.25em;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5em;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.4), rgba(15, 17, 26, 0.4));
+    }
+
+    .ai-insight-label {
+      font-size: 0.8em;
+      color: #94a3b8;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .ai-insight-value {
+      font-size: 1.15em;
+      color: #f8fafc;
+      font-weight: 800;
+    }
+
+    .ai-summary-card {
+      background: rgba(16, 185, 129, 0.05);
+      border: 1px solid rgba(16, 185, 129, 0.15);
+      border-radius: 12px;
+      padding: 1.5em;
+      margin-bottom: 1.5em;
+      display: none;
+    }
+
+    .ai-summary-card.active {
+      display: block;
+    }
+
+    .ai-summary-title {
+      font-size: 1em;
+      font-weight: 700;
+      color: #34d399;
+      margin-bottom: 1em;
+      display: flex;
+      align-items: center;
+      gap: 0.6em;
+    }
+
+    .ai-summary-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75em 2em;
+    }
+
+    .ai-summary-list li {
+      position: relative;
+      padding-left: 1.25em;
+      color: #cbd5e1;
+      font-size: 0.95em;
+    }
+
+    .ai-summary-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #34d399;
+      font-weight: bold;
+    }
+
+    .ai-details-panel {
+      background: rgba(15, 23, 42, 0.3);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      margin: 1.5em -1.6em -1.45em;
+      padding: 1.5em 1.6em;
+      display: none;
+    }
+
+    .ai-details-panel.active {
+      display: block;
+    }
+
+    .ai-details-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5em;
+    }
+
+    .ai-detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3em;
+    }
+
+    .ai-detail-label {
+      font-size: 0.8em;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .ai-detail-value {
+      font-size: 0.95em;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+
+    .expand-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
+      padding: 0.5em 1em;
+      border-radius: 6px;
+      font-size: 0.9em;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      transition: all 0.2s;
+    }
+
+    .expand-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+    }
+
+    .ai-analyze-btn {
+      height: 44px;
+      padding: 0 1.5em;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.95em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6em;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: none;
+      color: white;
+      background: linear-gradient(135deg, #7c3aed, #9333ea);
+    }
+
+    .ai-analyze-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.5);
+    }
+
+    .ai-analyze-btn:active:not(:disabled) {
+      transform: translateY(0px);
+    }
+
+    .ai-analyze-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      filter: grayscale(1);
+    }
+
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.6;
+        transform: scale(1.1);
+      }
+
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
+
+    @media (max-width: 900px) {
+      .ai-insight-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .print-only {
+      display: none;
+    }
+
+    .preview-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 180;
+      display: grid;
+      place-items: center;
+      padding: 1.2em;
+      background: rgba(4, 8, 18, 0.72);
+      backdrop-filter: blur(1.1em);
+      opacity: 1;
+      transition: opacity 0.18s ease;
+    }
+
+    .preview-modal.hidden {
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    .preview-modal-backdrop {
+      position: absolute;
+      inset: 0;
+    }
+
+    .preview-modal-card {
+      position: relative;
+      z-index: 1;
+      width: min(72vw, 66em);
+      max-height: min(82vh, 54em);
+      border-radius: 1.2em;
+      border: 0.0625em solid rgba(24, 216, 255, 0.22);
+      background: linear-gradient(180deg, rgba(12, 14, 22, 0.98), rgba(7, 10, 18, 0.98));
+      box-shadow: 0 1.8em 4.5em rgba(0, 0, 0, 0.55), 0 0 1.4em rgba(24, 216, 255, 0.08);
+      padding: 1em;
+      overflow: visible;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.9em;
+      transform: translateY(0);
+      animation: previewPop 180ms ease-out;
+    }
+
+    @keyframes previewPop {
+      from {
+        transform: scale(0.975);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .preview-modal-card img {
+      width: 100%;
+      max-height: calc(82vh - 6em);
+      object-fit: contain;
+      border-radius: 0.9em;
+      background: #000;
+      box-shadow: inset 0 0 0 0.0625em rgba(255, 255, 255, 0.04);
+    }
+
+    .preview-modal-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 0 1em rgba(0, 0, 0, 0.35);
+      transition: transform 0.2s ease;
+    }
+
+    .preview-modal-close:hover {
+      transform: scale(1.05);
+    }
+
+    .preview-modal-close i {
+      width: 1.2em;
+      height: 1.2em;
+    }
+
+    .preview-modal-caption {
+      font-size: 1.05em;
+      color: #c9d2ee;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .action-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85em;
+    }
+
+    .action-btn {
+      width: 100%;
+      border: 0.0625em solid transparent;
+      border-radius: 0.85em;
+      padding: 1.05em 1.1em;
+      font-size: 1.08em;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55em;
+    }
+
+    .action-btn.primary {
+      color: #f5edff;
+      background: linear-gradient(135deg, #7d14ff 0%, #5b00ff 100%);
+      box-shadow: 0 0.9em 2em rgba(106, 0, 255, 0.16);
+    }
+
+    .action-btn.secondary {
+      color: #07181d;
+      background: linear-gradient(135deg, #18d8ff 0%, #00bfe7 100%);
+      box-shadow: 0 0.9em 2em rgba(0, 191, 231, 0.14);
+    }
+
+    .action-btn.ghost {
+      color: #b87cff;
+      border-color: rgba(184, 124, 255, 0.22);
+      background: rgba(10, 12, 20, 0.42);
+    }
+
+    .toast {
+      position: fixed;
+      right: 1.25em;
+      bottom: 1.25em;
+      z-index: 80;
+      background: rgba(13, 18, 33, 0.94);
+      border: 0.0625em solid rgba(24, 216, 255, 0.18);
+      color: #dce7ff;
+      padding: 0.9em 1.15em;
+      border-radius: 0.8em;
+      box-shadow: 0 1.2em 2.5em rgba(0, 0, 0, 0.25);
+      opacity: 0;
+      transform: translateY(0.5em);
+      pointer-events: none;
+      transition: opacity 0.22s ease, transform 0.22s ease;
+      font-size: 1.02em;
+      font-weight: 600;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .sidebar-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(5, 8, 22, 0.66);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+
+    .sidebar-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 22.25em;
+      z-index: 50;
+      transform: translateX(-104%);
+      transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+      background: linear-gradient(180deg, rgba(17, 19, 28, 0.98) 0%, rgba(10, 12, 20, 0.98) 100%);
+      border-right: 0.0625em solid rgba(106, 0, 255, 0.2);
+      box-shadow: 1.125em 0 2.75em rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    .sidebar-header {
+      height: 6.5em;
+      padding: 1.375em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 0.0625em solid rgba(106, 0, 255, 0.16);
+      flex-shrink: 0;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 1.125em;
+    }
+
+    .sidebar-brand .brand-logo-wrap {
+      width: 3.5em;
+      height: 3.5em;
+      border-radius: 0.875em;
+      background: rgba(255, 255, 255, 0.98);
+      border: 0.0625em solid rgba(106, 0, 255, 0.14);
+      display: grid;
+      place-items: center;
+    }
+
+    .sidebar-brand .brand-logo-wrap svg {
+      width: 2em;
+      height: 2em;
+    }
+
+    .sidebar-brand .brand-logo-wrap img {
+      width: 2em;
+      height: 2em;
+      object-fit: contain;
+    }
+
+    .sidebar-brand .brand-logo {
+      width: 2em;
+      height: 2em;
+      object-fit: contain;
+    }
+
+    .brand-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1875em;
+    }
+
+    .brand-copy strong {
+      font-size: 1.5em;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .brand-copy span {
+      font-size: 1.125em;
+      color: var(--text-muted);
+      line-height: 1.2;
+    }
+
+    .close-sidebar {
+      width: 3.5em;
+      height: 3.5em;
+      border-radius: 0.75em;
+      border: 0.0625em solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-muted);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.22s ease;
+    }
+
+    .close-sidebar i {
+      width: 1.5em;
+      height: 1.5em;
+    }
+
+    .close-sidebar:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #00e5ff;
+    }
+
+    .close-sidebar:focus {
+      outline: 0.0625em solid rgba(24, 216, 255, 0.5);
+      outline-offset: 0.125em;
+    }
+
+    .sidebar-nav {
+      padding: 1.125em;
+      display: grid;
+      gap: 0.875em;
+      flex: 1;
+    }
+
+    .sidebar-link {
+      width: 100%;
+      min-height: 4em;
+      padding: 0 1.25em;
+      border: 0.0625em solid rgba(106, 0, 255, 0.18);
+      background: rgba(15, 17, 23, 0.94);
+      border-radius: 0.875em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 1em;
+      cursor: pointer;
+      text-align: left;
+      font-size: 1.25em;
+      font-weight: 700;
+      transition: all 0.22s ease;
+    }
+
+    .sidebar-link:hover,
+    .sidebar-link.active {
+      background: rgba(106, 0, 255, 0.18);
+      border-color: rgba(106, 0, 255, 0.42);
+    }
+
+    .sidebar-link.logout {
+      color: #ff6b6b;
+    }
+
+    .sidebar-link.logout:hover {
+      background: rgba(255, 107, 107, 0.1);
+      border-color: rgba(255, 107, 107, 0.3);
+    }
+
+    .sidebar-link .link-icon {
+      width: 1.5em;
+      height: 1.5em;
+    }
+
+    .sidebar-spacer {
+      flex: 1;
+    }
+
+    .sidebar-footer {
+      padding: 1.25em;
+      border-top: 0.0625em solid rgba(106, 0, 255, 0.16);
+    }
+
+    .user-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3em;
+      color: var(--text-muted);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 1180px) {
+      .report-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .report-rail {
+        order: -1;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        font-size: 58%;
+      }
+
+      .patient-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .heading-row,
+      .heading-left-cluster,
+      .title-wrap {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+
+    @media print {
+
+      .app-shell,
+      .torus-ambient-bg,
+      .report-back-btn,
+      .back-btn,
+      .sidebar-overlay,
+      .sidebar,
+      .toast,
+      .preview-modal {
+        display: none !important;
+      }
+
+      .print-only {
+        display: block !important;
+      }
+
+      body {
+        background: #fff;
+        color: #000;
+      }
+
+      .print-report {
+        font-family: 'Inter', sans-serif;
+        color: #000;
+        padding: 0.4in;
+      }
+
+      .print-report h1 {
+        font-size: 1.4rem;
+        margin: 0 0 0.4rem;
+      }
+
+      .print-report h2 {
+        font-size: 1rem;
+        margin: 0.9rem 0 0.35rem;
+      }
+
+      .print-report p {
+        margin: 0.2rem 0;
+      }
+
+      .print-report .meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.35rem 1rem;
+      }
+
+      .print-report .print-images {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+      }
+
+      .print-report .print-images img,
+      .print-report .preview-image {
+        width: 100%;
+        border: 0.0625em solid #bbb;
+        border-radius: 0.3em;
+        object-fit: cover;
+        max-height: 3.2in;
+      }
+    }
+
+    /* Report Preview Modal Styling */
+    .report-preview-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: #f1f5f9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow-y: auto;
+      padding: 40px 20px;
+    }
+
+    .report-preview-modal.hidden {
+      display: none !important;
+    }
+
+    .report-preview-card {
+      background: #ffffff;
+      color: #0f172a;
+      width: 100%;
+      max-width: 800px;
+      min-height: 297mm;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      margin-bottom: 40px;
+    }
+
+    .report-preview-body {
+      padding: 40px 50px;
+      flex: 1;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.6;
+    }
+
+    .report-preview-close-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10100;
+      background: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: all 0.2s ease;
+    }
+
+    .report-preview-close-btn:hover {
+      background: #1e293b;
+      transform: translateY(-1px);
+    }
+
+    /* Hidden buttons helper class */
+    .action-stack .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Branded TORUS Ambient Background Treatment -->
+  <div class="torus-ambient-bg" aria-hidden="true">
+    <div class="torus-bg-grid"></div>
+    <svg class="torus-bg-waveform" viewBox="0 0 1440 200" preserveAspectRatio="none">
+      <path d="M0,100 L180,100 Q210,100 230,85 T260,135 T290,50 T310,165 T330,80 T350,115 T380,100 L680,100 Q710,100 730,85 T760,135 T790,50 T810,165 T830,80 T850,115 T880,100 L1180,100 Q1210,100 1230,85 T1260,135 T1290,50 T1310,165 T1330,80 T1350,115 T1380,100 L1440,100" fill="none" stroke="currentColor" stroke-width="1.5" />
+    </svg>
+    <div class="torus-bg-watermark">TORUS</div>
+    <div class="torus-bg-watermark-sub">ROBOTIC ULTRASOUND PLATFORM</div>
+  </div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="menu-icon-btn" id="menuToggle" type="button" aria-label="Open sidebar"><i
+            data-lucide="menu"></i></button>
+        <div class="brand-inline">
+          <div class="brand-logo-wrap"><img src="logo.png" alt="TORUS Logo" class="brand-logo" /></div>
+          <div class="brand-wordmark">TORUS</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" type="button" aria-label="Connection status"><i data-lucide="wifi"></i></button>
+        <button class="icon-btn" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+        <div class="profile-pill">DA</div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="heading-row">
+        <div class="heading-left-cluster">
+          <button id="backBtn" class="report-back-btn back-btn" type="button" aria-label="Back to Previous Page">
+            <i data-lucide="arrow-left"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></i>
+            <span>Back</span>
+          </button>
+          <div class="title-wrap">
+            <div class="title-icon"><i data-lucide="file-text"></i></div>
+            <div>
+              <h1>Report Generation</h1>
+              <p>Create comprehensive ultrasound examination report</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="report-grid">
+        <div class="report-main">
+          <article class="panel-card">
+            <div class="section-header">
+              <h2>Patient Information</h2>
+            </div>
+            <div class="patient-grid">
+              <div class="patient-item">
+                <div class="label"><i data-lucide="user"></i>Patient Name</div>
+                <div class="value" id="patientName">Patient A</div>
+              </div>
+              <div class="patient-item">
+                <div class="label"><i data-lucide="calendar"></i>Exam Date</div>
+                <div class="value" id="examDate">March 23, 2026</div>
+              </div>
+              <div class="patient-item">
+                <div class="label"><i data-lucide="activity"></i>Scan Type</div>
+                <div class="value" id="scanType">Abdominal Ultrasound</div>
+              </div>
+              <div class="patient-item">
+                <div class="label"><i data-lucide="hard-drive"></i>Device</div>
+                <div class="value" id="deviceName">TORUS-A12</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel-card">
+            <div class="section-header">
+              <h2>Captured Images</h2>
+              <div class="pill-count" id="imageCountPill">0 / 0 images</div>
+            </div>
+            <div class="empty-state hidden" id="emptyState">No captured images available</div>
+            <div class="captured-grid" id="capturedGrid"></div>
+          </article>
+
+          <!-- AI Preliminary Analysis Section -->
+          <article class="panel-card ai-analysis-card">
+            <div class="ai-header-row">
+              <div class="section-header"
+                style="margin-bottom: 0; flex-direction: column; align-items: flex-start; gap: 4px;">
+                <h2 style="display: flex; align-items: center; gap: 10px; margin-bottom: 0;">🧠 AI Preliminary Analysis
+                </h2>
+                <p style="margin: 0; font-size: 1.02em; color: #a38cff; font-weight: 500;">Automated image
+                  interpretation for clinical assistance</p>
+              </div>
+              <div class="ai-status-group">
+                <div class="ai-status-badge ready" id="aiStatusBadge">
+                  <div class="ai-status-dot"></div>
+                  <span id="aiStatusText">Ready</span>
+                </div>
+                <button class="ai-analyze-btn primary" id="runAiBtn">
+                  <i data-lucide="play"></i>
+                  <span id="runAiBtnText">Start Analysis</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="ai-progress-wrap" id="aiProgressWrap">
+              <div class="ai-progress-labels">
+                <span id="aiProgressStep">Initializing...</span>
+                <span id="aiProgressPercent">0%</span>
+              </div>
+              <div class="ai-progress-bar">
+                <div class="ai-progress-fill" id="aiProgressFill"></div>
+              </div>
+            </div>
+
+            <div class="ai-insight-grid">
+              <div class="ai-insight-card">
+                <span class="ai-insight-label">Image Quality</span>
+                <span class="ai-insight-value" id="aiInsightQuality">Pending</span>
+              </div>
+              <div class="ai-insight-card">
+                <span class="ai-insight-label">Detection Confidence</span>
+                <span class="ai-insight-value" id="aiInsightConfidence">--</span>
+              </div>
+              <div class="ai-insight-card">
+                <span class="ai-insight-label">Structures Detected</span>
+                <span class="ai-insight-value" id="aiInsightStructures">None</span>
+              </div>
+              <div class="ai-insight-card">
+                <span class="ai-insight-label">AI Observation</span>
+                <span class="ai-insight-value" id="aiInsightObservation">Pending</span>
+              </div>
+              <div class="ai-insight-card">
+                <span class="ai-insight-label">Clinical Risk</span>
+                <span class="ai-insight-value" id="aiInsightRisk">Unknown</span>
+              </div>
+              <div class="ai-insight-card"
+                style="justify-content: center; align-items: center; background: transparent; border-style: dashed;">
+                <button class="expand-btn" id="toggleAiDetails">
+                  <i data-lucide="chevron-down"></i>
+                  View Detailed Analysis
+                </button>
+              </div>
+            </div>
+
+            <div class="ai-summary-card" id="aiSummaryCard">
+              <div class="ai-summary-title">
+                <i data-lucide="clipboard-list"></i>
+                Preliminary AI Summary
+              </div>
+              <ul class="ai-summary-list" id="aiSummaryList">
+                <!-- Bullet points go here -->
+              </ul>
+            </div>
+
+            <div class="ai-details-panel" id="aiDetailsPanel">
+              <div class="ai-details-grid">
+                <div class="ai-detail-item">
+                  <span class="ai-detail-label">Detected Features</span>
+                  <span class="ai-detail-value" id="aiDetailFeatures">Standard Ultrasound Pattern</span>
+                </div>
+                <div class="ai-detail-item">
+                  <span class="ai-detail-label">Processing Time</span>
+                  <span class="ai-detail-value" id="aiDetailTime">--</span>
+                </div>
+                <div class="ai-detail-item">
+                  <span class="ai-detail-label">Model Version</span>
+                  <span class="ai-detail-value">TORUS-Vision-v4.2</span>
+                </div>
+                <div class="ai-detail-item">
+                  <span class="ai-detail-label">Timestamp</span>
+                  <span class="ai-detail-value" id="aiDetailTimestamp">--</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel-card text-card">
+            <div class="section-header">
+              <h2>Findings</h2>
+            </div>
+            <textarea id="findingsField"
+              placeholder="Enter detailed findings from the ultrasound examination..."></textarea>
+          </article>
+
+          <article class="panel-card text-card">
+            <div class="section-header">
+              <h2>Recommendations</h2>
+            </div>
+            <textarea id="recommendationsField"
+              placeholder="Enter recommendations and follow-up instructions..."></textarea>
+          </article>
+        </div>
+
+        <aside class="report-rail">
+          <article class="panel-card side-card">
+            <div class="section-header">
+              <h2>Select Images</h2>
+            </div>
+            <div class="select-box">
+              <div class="label">Selected:</div>
+              <div class="value" id="selectedCount">0 / 0 images</div>
+            </div>
+          </article>
+
+          <div class="signature-section" id="signatureSection">
+            <button class="sign-btn" id="digitalSignBtn" type="button">
+              <i data-lucide="signature"></i>Digital Sign
+            </button>
+            <div id="signatureSuccess"
+              style="display:none; margin-top:12px; height:48px; border-radius:12px; background:#08382B; border:1px solid rgba(0,255,170,.35); color:#00FF99; font-weight:700; align-items:center; justify-content:center;">
+              ✓ Digitally Signed
+            </div>
+          </div>
+
+          <article class="panel-card side-card">
+            <div class="section-header">
+              <h2>Report Details</h2>
+            </div>
+            <div class="details-list">
+              <div class="detail-row">
+                <div class="detail-label">Exam Duration</div>
+                <div class="detail-value" id="examDuration">18:42</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Images Captured</div>
+                <div class="detail-value" id="imagesCaptured">0</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Selected Images</div>
+                <div class="detail-value" id="selectedImagesCount">0</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Doctor</div>
+                <div class="detail-value" id="doctorName">Dr. Anderson</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Location</div>
+                <div class="detail-value" id="locationName">NYC Medical</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Report ID</div>
+                <div class="detail-value" id="reportId">RPT-000000</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Signature Status</div>
+                <div class="detail-value" id="signatureStatus">Unsigned</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">AI Status</div>
+                <div class="detail-value" id="detailAiStatus">Ready</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Last Analysis</div>
+                <div class="detail-value" id="detailAiTime">--</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Generated Time</div>
+                <div class="detail-value" id="generatedTime">Not generated</div>
+              </div>
+            </div>
+
+            <div class="preview-box" id="reportPreviewBox">
+              <div class="preview-frame" id="previewFrame">
+                <img id="reportPreviewImage" alt="Uploaded report preview" />
+                <div class="preview-pdf" id="reportPreviewPdf"><i data-lucide="file-text"></i><span
+                    id="reportPreviewFileName"></span></div>
+                <div class="preview-empty" id="previewEmpty">No preview uploaded</div>
+              </div>
+              <input id="reportPreviewInput" type="file" accept="image/jpeg,image/jpg,image/png,application/pdf"
+                class="hidden" />
+              <div class="preview-upload">
+                <button class="action-btn ghost" id="uploadPreviewBtn" type="button"><i
+                    data-lucide="upload"></i>Upload</button>
+                <button class="action-btn ghost" id="replacePreviewBtn" type="button"><i
+                    data-lucide="refresh-cw"></i>Replace</button>
+                <button class="action-btn ghost" id="removePreviewBtn" type="button"><i
+                    data-lucide="trash-2"></i>Remove</button>
+              </div>
+            </div>
+          </article>
+
+          <div class="action-stack">
+            <button class="action-btn secondary" id="generatePreviewBtn" type="button"><i data-lucide="eye"></i>Preview
+              Report</button>
+            <button class="action-btn primary" id="sendCapturedImagesBtn" type="button"><i
+                data-lucide="image"></i>Captured Images</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <div id="sidebarOverlay" class="sidebar-overlay"></div>
+  <aside id="sidebar" class="sidebar" aria-label="Dashboard navigation">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <div class="brand-logo-wrap">
+          <img src="logo.png" alt="TORUS Logo" class="brand-logo" />
+        </div>
+        <div class="brand-copy">
+          <strong>TORUS</strong>
+          <span>Doctor Portal</span>
+        </div>
+      </div>
+      <button class="close-sidebar" id="closeSidebar" type="button" aria-label="Close sidebar">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="sidebar-link active" type="button" data-nav-target="dashboard">
+        <i data-lucide="layout-dashboard" class="link-icon"></i>
+        <span>Dashboard</span>
+      </button>
+      <button class="sidebar-link" type="button" data-nav-target="doctor-profile">
+        <i data-lucide="users" class="link-icon"></i>
+        <span>Doctor Profile</span>
+      </button>
+      <button class="sidebar-link" type="button" data-nav-target="activity-log">
+        <i data-lucide="activity" class="link-icon"></i>
+        <span>Activity Log</span>
+      </button>
+      <button class="sidebar-link" type="button" data-nav-target="insights">
+        <i data-lucide="bar-chart-3" class="link-icon"></i>
+        <span>Insights</span>
+      </button>
+      <button class="sidebar-link" type="button" data-nav-target="patient-reports">
+        <i data-lucide="file-text" class="link-icon"></i>
+        <span>Patient Reports</span>
+      </button>
+      <button class="sidebar-link" type="button" data-nav-target="history">
+        <i data-lucide="history" class="link-icon"></i>
+        <span>History</span>
+      </button>
+      <button class="sidebar-link logout" type="button" data-action="logout">
+        <i data-lucide="log-out" class="link-icon"></i>
+        <span>Logout</span>
+      </button>
+    </nav>
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-footer">
+      <div class="user-summary">
+        <strong data-user-name>Dr. User</strong>
+        <span data-user-email>user@example.com</span>
+        <span>Role: <span data-user-role>doctor</span></span>
+      </div>
+    </div>
+  </aside>
+
+  <div id="printOnlyContainer" class="print-only" aria-hidden="true"></div>
+
+  <div id="imagePreviewModal" class="preview-modal hidden" aria-hidden="true">
+    <div class="preview-modal-backdrop"></div>
+    <div class="preview-modal-card" role="dialog" aria-modal="true" aria-label="Captured image preview">
+      <button id="closePreviewModal" class="preview-modal-close" type="button" aria-label="Close preview">
+        <i data-lucide="x"></i>
+      </button>
+      <img id="previewModalImage" alt="Captured image preview" />
+      <div class="preview-modal-caption" id="previewModalCaption"></div>
+    </div>
+  </div>
+
+  <!-- Report Preview Modal -->
+  <div id="reportPreviewModal" class="report-preview-modal hidden" aria-hidden="true">
+    <button id="closeReportPreviewBtn" class="report-preview-close-btn" type="button" aria-label="Close preview"
+      style="display: none;">
+      <i data-lucide="x" style="width: 16px; height: 16px;"></i> Close Preview
+    </button>
+    <div class="report-preview-card">
+      <div class="report-preview-body">
+        <!-- Clinic Header -->
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <img src="logo.png" alt="TORUS Logo" style="width: 45px; height: auto;" />
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: #0f172a;">TORUS
+                MEDICAL</h2>
+              <span style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 500;">Diagnostic
+                Imaging Center</span>
+            </div>
+          </div>
+          <div style="text-align: right; font-size: 12px; color: #64748b;">
+            <div id="previewReportId" style="font-weight: 600; color: #0f172a; font-size: 14px;"></div>
+            <div id="previewReportDate"></div>
+          </div>
+        </div>
+
+        <!-- Patient & Exam Details -->
+        <div
+          style="background: #f8fafc; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+          <h3
+            style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+            Patient & Case Details</h3>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px;">
+            <div><strong style="color: #64748b;">Patient Name:</strong> <span id="previewPatientName"
+                style="color: #0f172a; font-weight: 500;"></span></div>
+            <div><strong style="color: #64748b;">Exam Date:</strong> <span id="previewExamDate"
+                style="color: #0f172a;"></span></div>
+            <div><strong style="color: #64748b;">Scan Type:</strong> <span id="previewScanType"
+                style="color: #0f172a; font-weight: 500;"></span></div>
+            <div><strong style="color: #64748b;">Device:</strong> <span id="previewDeviceName"
+                style="color: #0f172a;"></span></div>
+            <div><strong style="color: #64748b;">Location:</strong> <span id="previewLocationName"
+                style="color: #0f172a;"></span></div>
+            <div><strong style="color: #64748b;">Duration:</strong> <span id="previewDuration"
+                style="color: #0f172a;"></span></div>
+          </div>
+        </div>
+
+        <!-- Captured Images Section -->
+        <div style="margin-bottom: 20px;">
+          <h3
+            style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+            Captured Scan Images</h3>
+          <div id="previewImagesContainer"
+            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px;">
+            <!-- Images will be dynamically rendered here -->
+          </div>
+        </div>
+
+        <!-- AI Analysis Section -->
+        <div
+          style="background: #f0fdf4; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #bbf7d0;">
+          <h3
+            style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #166534; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #bbf7d0; padding-bottom: 4px;">
+            AI Preliminary Analysis</h3>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px;">
+            <div><strong style="color: #166534;">Observation:</strong> <span id="previewAiObservation"
+                style="color: #14532d; font-weight: 500;"></span></div>
+            <div><strong style="color: #166534;">Detection Confidence:</strong> <span id="previewAiConfidence"
+                style="color: #14532d;"></span></div>
+            <div><strong style="color: #166534;">Image Quality:</strong> <span id="previewAiQuality"
+                style="color: #14532d;"></span></div>
+            <div><strong style="color: #166534;">Clinical Risk:</strong> <span id="previewAiRisk"
+                style="color: #14532d; font-weight: 500;"></span></div>
+          </div>
+        </div>
+
+        <!-- Findings & Recommendations -->
+        <div style="margin-bottom: 20px;">
+          <h3
+            style="margin-top: 0; margin-bottom: 8px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+            Clinical Findings</h3>
+          <div id="previewFindings"
+            style="font-size: 13.5px; color: #0f172a; white-space: pre-wrap; padding: 5px 0 15px 0;"></div>
+        </div>
+
+        <div style="margin-bottom: 25px;">
+          <h3
+            style="margin-top: 0; margin-bottom: 8px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+            Recommendations</h3>
+          <div id="previewRecommendations"
+            style="font-size: 13.5px; color: #0f172a; white-space: pre-wrap; padding: 5px 0 15px 0;"></div>
+        </div>
+
+        <!-- Doctor Details & Signature -->
+        <div
+          style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px dashed #cbd5e1; padding-top: 20px; font-size: 13px;">
+          <div>
+            <strong style="color: #64748b;">Referring Clinician:</strong>
+            <div id="previewDoctorName" style="font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 4px;">
+            </div>
+            <div id="previewDoctorLocation" style="color: #64748b; font-size: 12px;"></div>
+          </div>
+          <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
+            <div id="previewSignatureStatus"
+              style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px;">
+              <i data-lucide="check-circle" style="width: 14px; height: 14px;"></i> Digitally Signed
+            </div>
+            <div id="previewSignerInfo" style="font-size: 12px; color: #0f172a; font-weight: 500;"></div>
+            <div id="previewSignTime" style="font-size: 11px; color: #64748b;"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Preview Modal Footer Actions -->
+      <div class="preview-footer-actions"
+        style="display: flex; gap: 16px; justify-content: flex-end; padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">
+        <button id="editReportPreviewBtn" class="action-btn secondary" type="button"
+          style="padding: 10px 20px; font-weight: 600; font-size: 14px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+          <i data-lucide="edit-3"></i> Edit Report
+        </button>
+        <button id="generateReportPreviewBtn" class="action-btn primary" type="button"
+          style="background: #6f2cff; color: #ffffff; padding: 10px 20px; font-weight: 600; font-size: 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);">
+          <i data-lucide="file-check"></i> Generate Report
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- Success Confirmation Dialog -->
+  <div id="successDialogModal" class="report-preview-modal hidden" aria-hidden="true" style="z-index: 11000;">
+    <div
+      style="background: #ffffff; color: #0f172a; width: 90%; max-width: 420px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; padding: 24px; align-items: center; font-family: 'Inter', sans-serif; text-align: center;">
+      <div
+        style="width: 56px; height: 56px; border-radius: 50%; background: #dcfce7; color: #16a34a; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+        <i data-lucide="check-circle" style="width: 32px; height: 32px;"></i>
+      </div>
+      <h3
+        style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0; font-family: 'Inter', sans-serif;">
+        Report Generated</h3>
+      <p
+        style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px 0; font-family: 'Inter', sans-serif;">
+        Your report has been generated successfully.<br><br>The report will be available to the patient after 2 hours.
+      </p>
+      <button class="action-btn primary" id="successDialogOkBtn"
+        style="background: var(--purple); color: #ffffff; padding: 10px 24px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);"
+        type="button">
+        OK
+      </button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Doctor Captured Images Modal -->
+  <div id="doctorCapturedImagesModal" class="report-preview-modal hidden" aria-hidden="true"
+    style="z-index: 11000; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); display: none; align-items: center; justify-content: center;">
+    <div
+      style="background: #ffffff; color: #0f172a; width: 90%; max-width: 800px; height: 85vh; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif;">
+      <!-- Modal Header -->
+      <div
+        style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <h3 id="doctorImagesModalTitle" style="font-size: 18px; font-weight: 700; margin: 0; color: #0f172a;">Captured
+          Images</h3>
+        <button id="closeDoctorImagesModalBtn"
+          style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <!-- Modal Content (Grid View) -->
+      <div id="doctorImagesGridView"
+        style="flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px;">
+        <div id="doctorImagesGridContainer"
+          style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px;">
+          <!-- Selected captured images thumbnails will be populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Modal Content (Edit View) -->
+      <div id="doctorImagesEditView" style="flex: 1; display: none; overflow: hidden; padding: 0;">
+        <div style="display: flex; height: 100%;">
+          <!-- Left Sidebar (Select image to edit) -->
+          <div id="editImagesSidebar"
+            style="width: 200px; border-right: 1px solid #e2e8f0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #f8fafc;">
+            <div style="font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">SELECT IMAGE</div>
+            <div id="editImagesSidebarContainer" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          </div>
+          <!-- Right Workspace (Active editing area) -->
+          <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #f1f5f9;">
+            <!-- Canvas container -->
+            <div
+              style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: hidden; position: relative;">
+              <canvas id="editingCanvas"
+                style="max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 4px; background: #ffffff;"></canvas>
+            </div>
+            <!-- Editing Controls Panel -->
+            <div
+              style="padding: 16px 24px; border-top: 1px solid #e2e8f0; background: #ffffff; display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+                <button id="editorRotateBtn" class="action-btn secondary"
+                  style="padding: 6px 12px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;"><i
+                    data-lucide="rotate-cw" style="width: 14px; height: 14px;"></i> Rotate 90°</button>
+                <label
+                  style="font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: #475569;">
+                  <i data-lucide="upload" style="width: 14px; height: 14px;"></i> Replace Image
+                  <input type="file" id="editorReplaceInput" accept="image/*" style="display: none;">
+                </label>
+                <button id="editorRemoveBtn" class="action-btn"
+                  style="background: #ef4444; color: #ffffff; border: none; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;"><i
+                    data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Remove Image</button>
+              </div>
+
+              <!-- Sliders grid -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <!-- Adjustments sliders -->
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <div
+                    style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: #475569;">
+                    <span>Brightness</span><span id="brightnessVal">100%</span>
+                  </div>
+                  <input type="range" id="editorBrightness" min="50" max="150" value="100" style="width: 100%;">
+
+                  <div
+                    style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: #475569; margin-top: 4px;">
+                    <span>Contrast</span><span id="contrastVal">100%</span>
+                  </div>
+                  <input type="range" id="editorContrast" min="50" max="150" value="100" style="width: 100%;">
+                </div>
+                <!-- Crop sliders -->
+                <div
+                  style="display: flex; flex-direction: column; gap: 4px; border-left: 1px solid #e2e8f0; padding-left: 16px;">
+                  <div
+                    style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                    <span>Crop Borders (Px)</span>
+                    <button id="applyCropBtn" class="action-btn primary"
+                      style="padding: 2px 6px; font-size: 11px; font-weight: 600; border-radius: 4px; line-height: 1;">Apply
+                      Crop</button>
+                  </div>
+                  <div
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; color: #64748b;">
+                    <div>Top: <input type="range" id="cropTop" min="0" max="100" value="0" style="width: 100%;"></div>
+                    <div>Bottom: <input type="range" id="cropBottom" min="0" max="100" value="0" style="width: 100%;">
+                    </div>
+                    <div>Left: <input type="range" id="cropLeft" min="0" max="100" value="0" style="width: 100%;"></div>
+                    <div>Right: <input type="range" id="cropRight" min="0" max="100" value="0" style="width: 100%;">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div id="doctorImagesModalFooter"
+        style="padding: 16px 24px; border-top: 1px solid #e2e8f0; background: #ffffff; display: flex; gap: 16px; width: 100%; box-sizing: border-box;">
+        <!-- Grid view buttons -->
+        <button id="gridEditImagesBtn"
+          style="flex: 1; background: #00ceec; color: #07181d; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; padding: 14px 24px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s;">
+          <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> Edit Images
+        </button>
+        <button id="gridSendImagesBtn"
+          style="flex: 1; background: #6f2cff; color: #ffffff; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; padding: 14px 24px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s; box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);">
+          <i data-lucide="send" style="width: 16px; height: 16px;"></i> Send Images
+        </button>
+
+        <!-- Edit view buttons (hidden by default) -->
+        <button id="editBackToGridBtn" class="action-btn secondary"
+          style="display: none; width: 100%; padding: 14px 24px; font-weight: 700; font-size: 14px; border-radius: 8px; cursor: pointer; align-items: center; justify-content: center; gap: 8px;">
+          <i data-lucide="arrow-left"></i> Save & Back
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Send Images Confirmation Modal -->
+  <div id="sendImagesConfirmModal" class="report-preview-modal hidden" aria-hidden="true"
+    style="z-index: 12000; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); display: none; align-items: center; justify-content: center;">
+    <div
+      style="background: #ffffff; color: #0f172a; width: 90%; max-width: 400px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; padding: 24px; align-items: center; font-family: 'Inter', sans-serif; text-align: center;">
+      <div
+        style="width: 56px; height: 56px; border-radius: 50%; background: #fee2e2; color: #ef4444; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+        <i data-lucide="help-circle" style="width: 32px; height: 32px;"></i>
+      </div>
+      <h3 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0;">Send Selected Images?</h3>
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px 0;">The selected captured images
+        will be shared with the patient.</p>
+      <div style="display: flex; gap: 12px; width: 100%;">
+        <button id="cancelSendImagesBtn" class="action-btn secondary"
+          style="flex: 1; padding: 10px 20px; font-weight: 600; font-size: 14px; border-radius: 6px; cursor: pointer;"
+          type="button">Cancel</button>
+        <button id="confirmSendImagesBtn" class="action-btn primary"
+          style="flex: 1; background: #6f2cff; color: #ffffff; padding: 10px 20px; font-weight: 600; font-size: 14px; border-radius: 6px; border: none; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);"
+          type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Send Images Success Modal -->
+  <div id="sendImagesSuccessModal" class="report-preview-modal hidden" aria-hidden="true"
+    style="z-index: 12000; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); display: none; align-items: center; justify-content: center;">
+    <div
+      style="background: #ffffff; color: #0f172a; width: 90%; max-width: 400px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; padding: 24px; align-items: center; font-family: 'Inter', sans-serif; text-align: center;">
+      <div
+        style="width: 56px; height: 56px; border-radius: 50%; background: #dcfce7; color: #16a34a; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+        <i data-lucide="check-circle" style="width: 32px; height: 32px;"></i>
+      </div>
+      <h3 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0;">Images Sent Successfully</h3>
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px 0;">The selected captured images
+        have been shared with the patient successfully.</p>
+      <button id="sendImagesSuccessOkBtn" class="action-btn primary"
+        style="background: #6f2cff; color: #ffffff; padding: 10px 24px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 14px; width: 100%; box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);"
+        type="button">OK</button>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const roomParam = String(new URLSearchParams(window.location.search).get('room') || 'default').trim().toUpperCase();
+
+    const STORAGE_KEYS = {
+      collage: 'torus-report-collage-' + roomParam,
+      selectedIds: 'torus-report-selected-ids-' + roomParam,
+      findings: 'torus-report-findings-' + roomParam,
+      recommendations: 'torus-report-recommendations-' + roomParam,
+      context: 'torus-report-context-' + roomParam,
+      reportId: 'torus-report-id-' + roomParam,
+      reportDetails: 'torus-report-details-' + roomParam,
+      reportPreview: 'torus-report-preview-' + roomParam,
+      generatedReport: 'torus-report-generated-' + roomParam,
+      deliveryStatus: 'torus-report-delivery-status-' + roomParam
+    };
+
+    const CAPTURE_STORAGE_KEYS = {
+      sessionId: 'torus-capture-session-id-' + roomParam,
+      images: 'capturedImages-' + roomParam
+    };
+
+    function createCaptureSessionId() {
+      return `capture-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function getActiveCaptureSessionId() {
+      return localStorage.getItem(CAPTURE_STORAGE_KEYS.sessionId)
+        || sessionStorage.getItem(CAPTURE_STORAGE_KEYS.sessionId)
+        || '';
+    }
+
+    function setActiveCaptureSessionId(sessionId) {
+      localStorage.setItem(CAPTURE_STORAGE_KEYS.sessionId, sessionId);
+      sessionStorage.setItem(CAPTURE_STORAGE_KEYS.sessionId, sessionId);
+      return sessionId;
+    }
+
+    const BUILD_VERSION = '20260521_01';
+
+    function initializeBuildVersion() {
+      try {
+        const previousVersion = localStorage.getItem('torus-build-version') || '';
+        if (previousVersion !== BUILD_VERSION) {
+          localStorage.removeItem(CAPTURE_STORAGE_KEYS.images);
+          localStorage.removeItem(CAPTURE_STORAGE_KEYS.sessionId);
+          sessionStorage.removeItem(CAPTURE_STORAGE_KEYS.images);
+          sessionStorage.removeItem(CAPTURE_STORAGE_KEYS.sessionId);
+        }
+
+        localStorage.setItem('torus-build-version', BUILD_VERSION);
+        sessionStorage.setItem('torus-build-version', BUILD_VERSION);
+      } catch (error) {
+        console.warn('Unable to initialize build version:', error);
+      }
+    }
+
+    function clearCaptureStorage(keepSessionId = false) {
+      localStorage.removeItem(CAPTURE_STORAGE_KEYS.images);
+      sessionStorage.removeItem(CAPTURE_STORAGE_KEYS.images);
+
+      if (!keepSessionId) {
+        localStorage.removeItem(CAPTURE_STORAGE_KEYS.sessionId);
+        sessionStorage.removeItem(CAPTURE_STORAGE_KEYS.sessionId);
+      }
+    }
+
+    function ensureCaptureSession() {
+      const sessionId = getActiveCaptureSessionId();
+      if (sessionId) {
+        return sessionId;
+      }
+
+      return setActiveCaptureSessionId(createCaptureSessionId());
+    }
+
+    function readCaptureImages() {
+      try {
+        const raw = localStorage.getItem(CAPTURE_STORAGE_KEYS.images)
+          || sessionStorage.getItem(CAPTURE_STORAGE_KEYS.images)
+          || '[]';
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.warn('Unable to read capture images:', error);
+        return [];
+      }
+    }
+
+    function writeCaptureImages(images) {
+      const serialized = JSON.stringify(images);
+      localStorage.setItem(CAPTURE_STORAGE_KEYS.images, serialized);
+      sessionStorage.setItem(CAPTURE_STORAGE_KEYS.images, serialized);
+    }
+
+    const savedGeneratedReport = readJson(STORAGE_KEYS.generatedReport, null);
+    const reportState = {
+      images: [],
+      selectedIds: new Set(),
+      reportPreview: readJson(STORAGE_KEYS.reportPreview, null),
+      reportDetails: readJson(STORAGE_KEYS.reportDetails, null),
+      generatedReport: savedGeneratedReport,
+      digitalSignature: savedGeneratedReport ? Boolean(savedGeneratedReport.digitalSignature) : false,
+      isGenerating: false,
+      isSending: false,
+      sendLocked: localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent',
+      scrollTopBeforePreview: 0,
+      previewIndex: -1,
+      previewHoverTimer: null
+    };
+
+    const dom = {
+      backBtn: document.getElementById('backBtn'),
+      capturedGrid: document.getElementById('capturedGrid'),
+      emptyState: document.getElementById('emptyState'),
+      imageCountPill: document.getElementById('imageCountPill'),
+      selectedCount: document.getElementById('selectedCount'),
+      findingsField: document.getElementById('findingsField'),
+      recommendationsField: document.getElementById('recommendationsField'),
+      generatePreviewBtn: document.getElementById('generatePreviewBtn'),
+      sendCapturedImagesBtn: document.getElementById('sendCapturedImagesBtn'),
+      sendPatientBtn: document.getElementById('sendPatientBtn'),
+      digitalSignBtn: document.getElementById('digitalSignBtn'),
+      toast: document.getElementById('toast'),
+      patientName: document.getElementById('patientName'),
+      examDate: document.getElementById('examDate'),
+      scanType: document.getElementById('scanType'),
+      deviceName: document.getElementById('deviceName'),
+      doctorName: document.getElementById('doctorName'),
+      locationName: document.getElementById('locationName'),
+      reportId: document.getElementById('reportId'),
+      imagesCaptured: document.getElementById('imagesCaptured'),
+      selectedImagesCount: document.getElementById('selectedImagesCount'),
+      generatedTime: document.getElementById('generatedTime'),
+      examDuration: document.getElementById('examDuration'),
+      reportPreviewInput: document.getElementById('reportPreviewInput'),
+      uploadPreviewBtn: document.getElementById('uploadPreviewBtn'),
+      replacePreviewBtn: document.getElementById('replacePreviewBtn'),
+      removePreviewBtn: document.getElementById('removePreviewBtn'),
+      reportPreviewImage: document.getElementById('reportPreviewImage'),
+      reportPreviewPdf: document.getElementById('reportPreviewPdf'),
+      reportPreviewFileName: document.getElementById('reportPreviewFileName'),
+      previewFrame: document.getElementById('previewFrame'),
+      previewEmpty: document.getElementById('previewEmpty'),
+      printOnlyContainer: document.getElementById('printOnlyContainer'),
+      sidebar: document.getElementById('sidebar'),
+      sidebarOverlay: document.getElementById('sidebarOverlay'),
+      closeSidebar: document.getElementById('closeSidebar'),
+      imagePreviewModal: document.getElementById('imagePreviewModal'),
+      closePreviewModal: document.getElementById('closePreviewModal'),
+      previewModalImage: document.getElementById('previewModalImage'),
+      previewModalCaption: document.getElementById('previewModalCaption'),
+      signatureStatus: document.getElementById('signatureStatus'),
+      signatureSuccessCard: document.getElementById('signatureSuccessCard'),
+      reportPreviewModal: document.getElementById('reportPreviewModal'),
+      editReportBtn: document.getElementById('editReportBtn'),
+      confirmGenerateBtn: document.getElementById('confirmGenerateBtn')
+    };
+
+    function showToast(message) {
+      if (!dom.toast) return;
+      dom.toast.textContent = message;
+      dom.toast.classList.add('show');
+      window.clearTimeout(showToast._timer);
+      showToast._timer = window.setTimeout(() => dom.toast.classList.remove('show'), 1800);
+    }
+
+    function readJson(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    function writeJson(key, value) {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    function normalizeImages(items) {
+      return (items || []).map((item, index) => ({
+        id: item.id || `${item.createdAt || 'capture'}-${index}`,
+        panel: item.panel || 'ultrasound',
+        createdAt: item.createdAt || item.capturedAt || item.timestamp || new Date().toISOString(),
+        dataUrl: item.dataUrl || item.image || item.src || ''
+      }));
+    }
+
+    function getTimeLabel(createdAt) {
+      const date = new Date(createdAt || Date.now());
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function sanitizeFileName(value) {
+      return String(value || 'Report').replace(/[^a-z0-9-_]+/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'Report';
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function syncCounts() {
+      const total = reportState.images.length;
+      const selected = reportState.selectedIds.size;
+      if (dom.imageCountPill) dom.imageCountPill.textContent = `${selected} / ${total} images`;
+      if (dom.selectedCount) dom.selectedCount.textContent = `${selected} / ${total} images`;
+      if (dom.imagesCaptured) dom.imagesCaptured.textContent = String(total);
+      if (dom.selectedImagesCount) dom.selectedImagesCount.textContent = String(selected);
+    }
+
+    function buildAutoReportId() {
+      const now = Date.now();
+      const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      return `RPT-${now.toString().slice(-4)}${random}`;
+    }
+
+    function updateSignatureUI() {
+      const isSigned = reportState.digitalSignature;
+      if (dom.signatureStatus) {
+        dom.signatureStatus.textContent = isSigned ? 'Signed' : 'Unsigned';
+      }
+      const success = document.getElementById('signatureSuccess');
+      const btn = document.getElementById('digitalSignBtn');
+      if (btn) {
+        if (isSigned) {
+          btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
+        } else {
+          btn.innerHTML = '<i data-lucide="signature"></i>Digital Sign';
+        }
+      }
+      if (success) {
+        success.style.display = isSigned ? "flex" : "none";
+      }
+      lucide.createIcons();
+    }
+
+    function setReportId(id) {
+      if (!id) return;
+      if (dom.reportId) dom.reportId.textContent = id;
+      localStorage.setItem(STORAGE_KEYS.reportId, id);
+    }
+
+    function setGeneratedTime(isoString) {
+      if (!dom.generatedTime) return;
+      if (!isoString) {
+        dom.generatedTime.textContent = 'Not generated';
+        return;
+      }
+      dom.generatedTime.textContent = new Date(isoString).toLocaleString();
+    }
+
+    function updatePreviewThumbnail() {
+      if (!dom.previewFrame || !dom.reportPreviewImage || !dom.previewEmpty || !dom.reportPreviewPdf || !dom.reportPreviewFileName) return;
+      const preview = reportState.reportPreview;
+      const previewData = preview && (preview.data || preview.dataUrl || preview.src);
+      const hasPreview = Boolean(previewData);
+      const isImage = hasPreview && /^image\//i.test(preview.type || '');
+      const isPdf = hasPreview && /^application\/pdf$/i.test(preview.type || '');
+
+      if (isImage) {
+        dom.reportPreviewImage.src = previewData;
+        dom.reportPreviewFileName.textContent = '';
+        dom.previewFrame.classList.add('has-image');
+        dom.previewFrame.classList.remove('has-pdf');
+      } else if (isPdf) {
+        dom.reportPreviewImage.removeAttribute('src');
+        dom.reportPreviewFileName.textContent = preview.name || 'Document.pdf';
+        dom.previewFrame.classList.remove('has-image');
+        dom.previewFrame.classList.add('has-pdf');
+      } else {
+        dom.reportPreviewImage.removeAttribute('src');
+        dom.reportPreviewFileName.textContent = '';
+        dom.previewFrame.classList.remove('has-image');
+        dom.previewFrame.classList.remove('has-pdf');
+      }
+      lucide.createIcons();
+    }
+
+    function renderReportPreview(preview) {
+      reportState.reportPreview = preview || null;
+      if (reportState.reportPreview) {
+        updatePreviewThumbnail();
+      } else {
+        updatePreviewThumbnail();
+      }
+      try { console.log('PREVIEW RENDERED'); } catch (e) { }
+    }
+
+    function setSendLockedState(locked) {
+      reportState.sendLocked = Boolean(locked);
+      if (!dom.sendPatientBtn) return;
+      if (reportState.sendLocked) {
+        dom.sendPatientBtn.disabled = true;
+        dom.sendPatientBtn.setAttribute('aria-disabled', 'true');
+        dom.sendPatientBtn.innerHTML = '<i data-lucide="check-circle"></i><span>Sent</span>';
+        lucide.createIcons();
+        return;
+      }
+      dom.sendPatientBtn.removeAttribute('aria-disabled');
+      dom.sendPatientBtn.disabled = false;
+      if (dom.sendPatientBtn.dataset.defaultMarkup) {
+        dom.sendPatientBtn.innerHTML = dom.sendPatientBtn.dataset.defaultMarkup;
+      } else {
+        dom.sendPatientBtn.innerHTML = '<i data-lucide="send"></i>Send to Patient';
+      }
+      lucide.createIcons();
+    }
+
+    function getSelectedImagesForCurrentState() {
+      return reportState.images.filter((image) => reportState.selectedIds.has(image.id));
+    }
+
+    function syncSelectionUI() {
+      const cards = dom.capturedGrid ? dom.capturedGrid.querySelectorAll('.image-card') : [];
+      cards.forEach((card) => {
+        const id = card.dataset.imageId;
+        const isSelected = Boolean(id && reportState.selectedIds.has(id));
+        card.classList.toggle('is-selected', isSelected);
+        const checkbox = card.querySelector('.image-check input');
+        if (checkbox) checkbox.checked = isSelected;
+      });
+    }
+
+    function toggleSelectedImage(imageId) {
+      if (reportState.selectedIds.has(imageId)) {
+        reportState.selectedIds.delete(imageId);
+      } else {
+        reportState.selectedIds.add(imageId);
+      }
+      writeJson(STORAGE_KEYS.selectedIds, Array.from(reportState.selectedIds));
+      invalidateGeneratedReport();
+      syncCounts();
+      syncSelectionUI();
+    }
+
+    function getCurrentReportId() {
+      return dom.reportId ? dom.reportId.textContent.trim() : localStorage.getItem(STORAGE_KEYS.reportId) || '';
+    }
+
+    function getCurrentReportDetails(reportIdOverride = '') {
+      const selectedImages = getSelectedImagesForCurrentState();
+      return {
+        examDuration: dom.examDuration ? dom.examDuration.textContent.trim() : '',
+        imagesCaptured: reportState.images.length,
+        selectedImages: selectedImages.length,
+        doctor: dom.doctorName ? dom.doctorName.textContent.trim() : '',
+        location: dom.locationName ? dom.locationName.textContent.trim() : '',
+        reportId: reportIdOverride || getCurrentReportId(),
+        signatureStatus: reportState.digitalSignature ? 'Signed' : 'Unsigned',
+        generatedTime: reportState.generatedReport ? reportState.generatedReport.generatedAt : null
+      };
+    }
+
+    function collectReportData() {
+      const selectedImages = getSelectedImagesForCurrentState();
+      const reportId = getCurrentReportId();
+      const reportDetails = getCurrentReportDetails(reportId);
+      return {
+        reportId,
+        generatedAt: (reportState.generatedReport && reportState.generatedReport.generatedAt) || new Date().toISOString(),
+        patientInfo: {
+          patientName: dom.patientName ? dom.patientName.textContent.trim() : '',
+          examDate: dom.examDate ? dom.examDate.textContent.trim() : '',
+          scanType: dom.scanType ? dom.scanType.textContent.trim() : '',
+          device: dom.deviceName ? dom.deviceName.textContent.trim() : '',
+          doctor: dom.doctorName ? dom.doctorName.textContent.trim() : '',
+          location: dom.locationName ? dom.locationName.textContent.trim() : '',
+          examDuration: dom.examDuration ? dom.examDuration.textContent.trim() : ''
+        },
+        reportDetails,
+        capturedImages: reportState.images,
+        selectedImages,
+        findings: dom.findingsField ? dom.findingsField.value.trim() : '',
+        recommendations: dom.recommendationsField ? dom.recommendationsField.value.trim() : '',
+        reportPreview: reportState.reportPreview,
+        selectedImageIds: selectedImages.map((image) => image.id),
+        selectedImagesCount: selectedImages.length,
+        totalImages: reportState.images.length,
+        digitalSignature: reportState.digitalSignature
+      };
+    }
+
+    function validateReportData(reportData) {
+      const missing = [];
+      if (!reportData.patientInfo.patientName) missing.push('Patient Information');
+      if (!reportData.reportId) missing.push('Report ID');
+      if (!reportData.findings) missing.push('Findings');
+      if (!reportData.recommendations) missing.push('Recommendations');
+      if (!reportData.selectedImages || reportData.selectedImages.length === 0) missing.push('Captured Images (Select at least one)');
+      if (!reportData.digitalSignature) missing.push('Digital Signature');
+      return missing;
+    }
+
+    function persistGeneratedReport(reportData) {
+      reportState.generatedReport = reportData;
+      reportState.reportDetails = reportData.reportDetails;
+      writeJson(STORAGE_KEYS.generatedReport, reportData);
+      writeJson(STORAGE_KEYS.reportDetails, reportData.reportDetails);
+      writeJson(STORAGE_KEYS.reportPreview, reportData.reportPreview || reportState.reportPreview || null);
+      const deliveryStatus = reportData.deliveryStatus === 'sent' ? 'sent' : 'ready';
+      localStorage.setItem(STORAGE_KEYS.deliveryStatus, deliveryStatus);
+      setSendLockedState(deliveryStatus === 'sent');
+      setGeneratedTime(reportData.generatedAt);
+    }
+
+    function invalidateGeneratedReport() {
+      reportState.reportDetails = getCurrentReportDetails();
+      writeJson(STORAGE_KEYS.reportDetails, reportState.reportDetails);
+    }
+
+    function setButtonBusy(button, label) {
+      if (!button) return;
+      if (!button.dataset.defaultMarkup) {
+        button.dataset.defaultMarkup = button.innerHTML;
+      }
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      button.innerHTML = `<i data-lucide="loader-2"></i><span>${label}</span>`;
+      lucide.createIcons();
+    }
+
+    function restoreButton(button) {
+      if (!button) return;
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      if (button.dataset.defaultMarkup) {
+        button.innerHTML = button.dataset.defaultMarkup;
+        lucide.createIcons();
+      }
+    }
+
+    function flashButtonSuccess(button, label) {
+      if (!button) return;
+      if (!button.dataset.defaultMarkup) {
+        button.dataset.defaultMarkup = button.innerHTML;
+      }
+      button.innerHTML = `<i data-lucide="check"></i><span>${label}</span>`;
+      lucide.createIcons();
+      window.setTimeout(() => restoreButton(button), 900);
+    }
+
+    function ensureGeneratedReport({ allowAutoGenerate = false } = {}) {
+      if (reportState.generatedReport) {
+        return reportState.generatedReport;
+      }
+
+      if (!allowAutoGenerate) {
+        showToast('Generate report first');
+        return null;
+      }
+
+      const reportData = collectReportData();
+      const missing = validateReportData(reportData);
+      if (missing.length) {
+        showToast(`Cannot continue: add ${missing.join(', ')}.`);
+        return null;
+      }
+
+      persistGeneratedReport(reportData);
+      return reportData;
+    }
+
+    function openPreview(imageIndex) {
+      const image = reportState.images[imageIndex];
+      if (!image || !dom.imagePreviewModal) return;
+
+      if (reportState.previewHoverTimer) {
+        window.clearTimeout(reportState.previewHoverTimer);
+        reportState.previewHoverTimer = null;
+      }
+
+      reportState.previewIndex = imageIndex;
+      reportState.scrollTopBeforePreview = window.scrollY;
+      if (dom.previewModalImage) dom.previewModalImage.src = image.dataUrl;
+      if (dom.previewModalCaption) dom.previewModalCaption.textContent = `Image ${imageIndex + 1} • ${getTimeLabel(image.createdAt)}`;
+      dom.imagePreviewModal.classList.remove('hidden');
+      dom.imagePreviewModal.setAttribute('aria-hidden', 'false');
+      lucide.createIcons();
+    }
+
+    function closePreview() {
+      if (!dom.imagePreviewModal) return;
+      dom.imagePreviewModal.classList.add('hidden');
+      dom.imagePreviewModal.setAttribute('aria-hidden', 'true');
+      reportState.previewIndex = -1;
+      window.scrollTo({ top: reportState.scrollTopBeforePreview, behavior: 'auto' });
+    }
+
+    function createImageCard(image, index) {
+      const card = document.createElement('article');
+      card.className = 'image-card';
+      card.tabIndex = 0;
+      card.dataset.imageId = image.id;
+      if (reportState.selectedIds.has(image.id)) {
+        card.classList.add('is-selected');
+      }
+
+      const img = document.createElement('img');
+      img.src = image.dataUrl;
+      img.alt = 'Captured ultrasound frame';
+      img.loading = 'lazy';
+
+      const checkboxWrap = document.createElement('label');
+      checkboxWrap.className = 'image-check';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = reportState.selectedIds.has(image.id);
+      checkbox.addEventListener('change', () => {
+        toggleSelectedImage(image.id);
+      });
+
+      checkboxWrap.appendChild(checkbox);
+
+      const meta = document.createElement('div');
+      meta.className = 'image-meta';
+
+      const timestamp = document.createElement('div');
+      timestamp.className = 'timestamp';
+      timestamp.textContent = getTimeLabel(image.createdAt);
+
+      meta.appendChild(timestamp);
+      card.appendChild(img);
+      card.appendChild(checkboxWrap);
+      card.appendChild(meta);
+
+      const launchPreview = () => openPreview(index);
+
+      img.addEventListener('click', launchPreview);
+      card.addEventListener('click', (event) => {
+        if (event.target.closest('input')) return;
+        launchPreview();
+      });
+      card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          launchPreview();
+        }
+      });
+
+      return card;
+    }
+
+    function renderCapturedImages(images = reportState.images) {
+      if (!dom.capturedGrid) return;
+      dom.capturedGrid.innerHTML = '';
+
+      if (!images.length) {
+        dom.emptyState.classList.remove('hidden');
+        syncCounts();
+        return;
+      }
+
+      dom.emptyState.classList.add('hidden');
+
+      images.forEach((image, index) => {
+        dom.capturedGrid.appendChild(createImageCard(image, index));
+      });
+
+      syncCounts();
+    }
+
+    function loadCapturedImages() {
+      let collage = normalizeImages(readCaptureImages());
+      reportState.images = collage;
+      console.log('Captured Images:', collage);
+      console.log('Snapshot Count:', collage.length);
+
+      const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
+      if (selectedIds.size === 0 && collage.length > 0) {
+        selectedIds.add(collage[0].id);
+        writeJson(STORAGE_KEYS.selectedIds, Array.from(selectedIds));
+      }
+      const currentIds = new Set(collage.map((image) => image.id));
+      reportState.selectedIds = new Set(Array.from(selectedIds).filter((id) => currentIds.has(id)));
+
+      renderCapturedImages(collage);
+    }
+
+    function loadReportContext() {
+      const context = {
+        ...readJson(STORAGE_KEYS.context, {}),
+        ...readJson('torus-report-meta', {})
+      };
+      loadCapturedImages();
+      const saved = readJson('reportPreview', null) || readJson(STORAGE_KEYS.reportPreview, null);
+      if (saved) {
+        renderReportPreview(saved);
+      } else {
+        renderReportPreview(null);
+      }
+      reportState.reportDetails = readJson(STORAGE_KEYS.reportDetails, null);
+
+      reportState.generatedReport = readJson(STORAGE_KEYS.generatedReport, null);
+      reportState.digitalSignature = reportState.generatedReport ? Boolean(reportState.generatedReport.digitalSignature) : false;
+      updateSignatureUI();
+
+      reportState.sendLocked = localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent';
+
+      const reportId = context.reportId
+        || (reportState.generatedReport && reportState.generatedReport.reportId)
+        || localStorage.getItem(STORAGE_KEYS.reportId)
+        || buildAutoReportId();
+      setReportId(reportId);
+
+      if (dom.patientName) dom.patientName.textContent = context.patientName || 'Patient A';
+      if (dom.examDate) dom.examDate.textContent = context.examDate || 'March 23, 2026';
+      if (dom.scanType) dom.scanType.textContent = context.scanType || 'Abdominal Ultrasound';
+      if (dom.deviceName) dom.deviceName.textContent = context.device || 'TORUS-A12';
+      if (dom.doctorName) dom.doctorName.textContent = context.doctor || 'Dr. Anderson';
+      if (dom.locationName) dom.locationName.textContent = context.location || 'NYC Medical';
+      if (dom.reportId) dom.reportId.textContent = reportId;
+      if (dom.examDuration) dom.examDuration.textContent = context.examDuration || '18:42';
+
+      if (dom.findingsField) dom.findingsField.value = localStorage.getItem(STORAGE_KEYS.findings) || '';
+      if (dom.recommendationsField) dom.recommendationsField.value = localStorage.getItem(STORAGE_KEYS.recommendations) || '';
+
+      if (reportState.generatedReport && reportState.generatedReport.reportId === reportId) {
+        setGeneratedTime(reportState.generatedReport.generatedAt);
+      } else {
+        setGeneratedTime(null);
+      }
+
+      setSendLockedState(reportState.sendLocked);
+
+      renderCapturedImages(reportState.images);
+      invalidateGeneratedReport();
+
+      applyPatientView();
+      applyDoctorView();
+    }
+
+    function applyPatientView() {
+      const params = new URLSearchParams(window.location.search);
+      const isPatient = params.get('role') === 'patient' || params.get('role') === 'pat';
+      if (!isPatient) return;
+
+      console.log("Applying Patient View layout overrides");
+
+      // Add a body class for styling targets
+      document.body.classList.add('is-patient-view');
+
+      // Hide elements
+      const idsToHide = [
+        'runAiBtn',
+        'digitalSignBtn',
+        'uploadPreviewBtn',
+        'replacePreviewBtn',
+        'removePreviewBtn',
+        'generatePreviewBtn',
+        'sendPatientBtn',
+        'menuToggle'
+      ];
+      idsToHide.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.setProperty('display', 'none', 'important');
+      });
+
+      const previewUpload = document.querySelector('.preview-upload');
+      if (previewUpload) previewUpload.style.setProperty('display', 'none', 'important');
+
+      document.querySelectorAll('.panel-card.side-card').forEach(card => {
+        if (card.querySelector('h2')?.textContent.includes('Select Images')) {
+          card.style.setProperty('display', 'none', 'important');
+        }
+      });
+
+      // Update sidebar/footer user details if visible
+      const nameEl = document.querySelector('[data-user-name]');
+      if (nameEl) nameEl.textContent = 'Patient User';
+      const emailEl = document.querySelector('[data-user-email]');
+      if (emailEl) emailEl.textContent = 'patient@example.com';
+      const roleEl = document.querySelector('[data-user-role]');
+      if (roleEl) roleEl.textContent = 'patient';
+
+      // Set inputs read-only
+      if (dom.findingsField) {
+        dom.findingsField.readOnly = true;
+        if (!dom.findingsField.value.trim()) {
+          dom.findingsField.placeholder = "No findings recorded yet.";
+        }
+      }
+      if (dom.recommendationsField) {
+        dom.recommendationsField.readOnly = true;
+        if (!dom.recommendationsField.value.trim()) {
+          dom.recommendationsField.placeholder = "No recommendations recorded yet.";
+        }
+      }
+
+      // Re-bind back button
+      if (dom.backBtn) {
+        dom.backBtn.replaceWith(dom.backBtn.cloneNode(true));
+        dom.backBtn = document.getElementById('backBtn');
+        dom.backBtn.addEventListener('click', () => {
+          window.location.href = `connected-device.html?room=${roomParam}&role=patient`;
+        });
+      }
+
+      // Add dynamic styles for patient view (hide check boxes, read-only textarea styling)
+      if (!document.getElementById('patient-view-styles')) {
+        const style = document.createElement('style');
+        style.id = 'patient-view-styles';
+        style.textContent = `
+          .is-patient-view .image-card .image-check {
+            display: none !important;
+          }
+          .is-patient-view .image-card {
+            cursor: pointer !important;
+          }
+          .is-patient-view textarea[readonly] {
+            background: rgba(8, 10, 16, 0.22) !important;
+            border-color: rgba(127, 55, 255, 0.18) !important;
+            color: #f1f5f9 !important;
+            cursor: default !important;
+            box-shadow: none !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+
+    function applyDoctorView() {
+      const params = new URLSearchParams(window.location.search);
+      const isDoctor = params.get('role') === 'doctor';
+      if (!isDoctor) return;
+
+      console.log("Applying Doctor View layout overrides");
+
+      // Remove "Send to Patient" button for doctor role
+      if (dom.sendPatientBtn) {
+        dom.sendPatientBtn.remove();
+        dom.sendPatientBtn = null;
+      }
+    }
+
+    function downloadReportPdf(reportData) {
+      const selectedImages = (reportData.selectedImages && reportData.selectedImages.length)
+        ? reportData.selectedImages
+        : (reportData.capturedImages || []);
+      const jsPdfApi = window.jspdf && window.jspdf.jsPDF;
+      if (!jsPdfApi) {
+        throw new Error('PDF library unavailable');
+      }
+
+      const doc = new jsPdfApi({ unit: 'pt', format: 'a4', compress: true });
+      const width = doc.internal.pageSize.getWidth();
+      const height = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const contentWidth = width - margin * 2;
+      const halfWidth = (contentWidth - 14) / 2;
+      let y = 40;
+
+      const paintBackground = () => {
+        doc.setFillColor(11, 15, 24);
+        doc.rect(0, 0, width, height, 'F');
+        doc.setDrawColor(24, 216, 255);
+        doc.line(margin, 58, width - margin, 58);
+      };
+
+      const newPage = () => {
+        doc.addPage();
+        paintBackground();
+        y = 40;
+      };
+
+      const sectionHeader = (title) => {
+        doc.setFillColor(124, 58, 237);
+        doc.roundedRect(margin, y - 10, contentWidth, 20, 8, 8, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(247, 248, 255);
+        doc.text(title, margin + 10, y + 4);
+        y += 22;
+      };
+
+      const infoBox = (x, top, boxWidth, label, value) => {
+        doc.setDrawColor(42, 173, 209);
+        doc.setFillColor(8, 10, 16);
+        doc.roundedRect(x, top, boxWidth, 52, 8, 8, 'FD');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(158, 176, 212);
+        doc.text(label, x + 10, top + 16);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(247, 248, 255);
+        doc.text(doc.splitTextToSize(String(value || '-'), boxWidth - 20), x + 10, top + 34);
+      };
+
+      const wrapText = (text, top) => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(247, 248, 255);
+        const lines = doc.splitTextToSize(String(text || ''), contentWidth);
+        doc.text(lines, margin, top);
+        return top + lines.length * 16;
+      };
+
+      paintBackground();
+      doc.setTextColor(247, 248, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text('Report Generation', margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(156, 163, 185);
+      doc.text(`Report ID: ${reportData.reportId}`, margin, y + 20);
+      doc.text(`Generated: ${new Date(reportData.generatedAt).toLocaleString()}`, margin, y + 34);
+      y += 54;
+
+      sectionHeader('Patient Information');
+      infoBox(margin, y, halfWidth, 'Patient Name', reportData.patientInfo.patientName);
+      infoBox(margin + halfWidth + 14, y, halfWidth, 'Exam Date', reportData.patientInfo.examDate);
+      y += 64;
+      infoBox(margin, y, halfWidth, 'Scan Type', reportData.patientInfo.scanType);
+      infoBox(margin + halfWidth + 14, y, halfWidth, 'Device', reportData.patientInfo.device);
+      y += 64;
+      infoBox(margin, y, halfWidth, 'Doctor', reportData.patientInfo.doctor);
+      infoBox(margin + halfWidth + 14, y, halfWidth, 'Location', reportData.patientInfo.location);
+      y += 64;
+      infoBox(margin, y, contentWidth, 'Exam Duration', reportData.patientInfo.examDuration);
+      y += 72;
+
+      sectionHeader('Findings');
+      y = wrapText(reportData.findings || 'No findings provided.', y + 4);
+      y += 12;
+
+      sectionHeader('Recommendations');
+      y = wrapText(reportData.recommendations || 'No recommendations provided.', y + 4);
+      y += 12;
+
+      sectionHeader('Report Details');
+      infoBox(margin, y, halfWidth, 'Images Captured', String(reportData.reportDetails.imagesCaptured));
+      infoBox(margin + halfWidth + 14, y, halfWidth, 'Selected Images', String(reportData.reportDetails.selectedImages));
+      y += 64;
+      infoBox(margin, y, halfWidth, 'Doctor', reportData.reportDetails.doctor);
+      infoBox(margin + halfWidth + 14, y, halfWidth, 'Location', reportData.reportDetails.location);
+      y += 64;
+      infoBox(margin, y, contentWidth, 'Report ID', reportData.reportDetails.reportId);
+      y += 72;
+
+      if (reportData.reportPreview && (reportData.reportPreview.data || reportData.reportPreview.dataUrl || reportData.reportPreview.src)) {
+        if (y + 210 > height - 40) {
+          newPage();
+        }
+        sectionHeader('Uploaded Preview');
+        doc.setDrawColor(127, 55, 255);
+        doc.setFillColor(8, 10, 16);
+        doc.roundedRect(margin, y, contentWidth, 180, 10, 10, 'FD');
+        const previewType = String(reportData.reportPreview.type || '').toLowerCase();
+        const previewData = reportData.reportPreview.data || reportData.reportPreview.dataUrl || reportData.reportPreview.src;
+        if (/^image\//.test(previewType)) {
+          try {
+            const mimeMatch = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(previewData || '');
+            const format = mimeMatch ? mimeMatch[1].split('/')[1].toUpperCase() : 'JPEG';
+            doc.addImage(previewData, format, margin + 8, y + 8, contentWidth - 16, 164, undefined, 'FAST');
+            y += 192;
+          } catch {
+            doc.setFontSize(10);
+            doc.setTextColor(156, 163, 185);
+            doc.text('Preview image unavailable', margin + 12, y + 24);
+            y += 48;
+          }
+        } else {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(11);
+          doc.setTextColor(247, 248, 255);
+          doc.text('PDF Preview Attached', margin + 12, y + 28);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(156, 163, 185);
+          doc.text(`File: ${String(reportData.reportPreview.name || 'Document.pdf')}`, margin + 12, y + 46);
+          y += 68;
+        }
+      }
+
+      if (selectedImages.length) {
+        sectionHeader('Captured Images');
+        const imageWidth = (contentWidth - 14) / 2;
+        const imageHeight = 126;
+
+        selectedImages.forEach((image, index) => {
+          if (index % 2 === 0 && y + imageHeight + 44 > height - 36) {
+            newPage();
+            sectionHeader('Selected Images');
+          } else if (index % 2 === 1 && y + imageHeight + 44 > height - 36) {
+            newPage();
+            sectionHeader('Selected Images');
+          }
+
+          const x = margin + (index % 2) * (imageWidth + 14);
+          doc.setDrawColor(127, 55, 255);
+          doc.setFillColor(8, 10, 16);
+          doc.roundedRect(x, y, imageWidth, imageHeight + 28, 10, 10, 'FD');
+
+          try {
+            const mimeMatch = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(image.dataUrl || '');
+            const format = mimeMatch ? mimeMatch[1].split('/')[1].toUpperCase() : 'JPEG';
+            doc.addImage(image.dataUrl, format, x + 8, y + 8, imageWidth - 16, imageHeight - 4, undefined, 'FAST');
+          } catch {
+            doc.setFontSize(10);
+            doc.setTextColor(156, 163, 185);
+            doc.text('Image unavailable', x + 12, y + 46);
+          }
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(156, 163, 185);
+          doc.text(`Image ${index + 1}`, x + 10, y + imageHeight + 18);
+          doc.setFont('helvetica', 'normal');
+          doc.text(getTimeLabel(image.createdAt), x + 10, y + imageHeight + 28);
+
+          if (index % 2 === 1) {
+            y += imageHeight + 42;
+          }
+        });
+      }
+
+      doc.save(`Report_${sanitizeFileName(reportData.reportId)}.pdf`);
+    }
+
+    function generateReportAction() {
+      if (reportState.isGenerating) return;
+
+      // Force Digital Signature validation
+      if (!reportState.digitalSignature) {
+        showToast("Please complete the Digital Signature before generating the report.");
+        return;
+      }
+
+      const reportData = collectReportData();
+      const missing = validateReportData(reportData);
+      if (missing.length) {
+        showToast(`Cannot generate report: add ${missing.join(', ')}.`);
+        return;
+      }
+
+      reportState.isGenerating = true;
+      const previewGenBtn = document.getElementById('generateReportPreviewBtn');
+      if (previewGenBtn) {
+        setButtonBusy(previewGenBtn, 'Generating...');
+      }
+      setButtonBusy(dom.confirmGenerateBtn, 'Generating...');
+
+      const targetTime = Date.now();
+      reportData.generatedAt = new Date(targetTime).toISOString();
+      reportData.reportDetails = {
+        ...reportData.reportDetails,
+        reportId: reportData.reportId,
+        generatedTime: reportData.generatedAt
+      };
+
+      const API_BASE_URL = (window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5002';
+
+      fetch(`${API_BASE_URL}/api/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reportId: reportData.reportId,
+          patientName: reportData.patientInfo.patientName,
+          scanType: reportData.patientInfo.scanType,
+          findings: reportData.findings,
+          recommendations: reportData.recommendations,
+          roomId: roomParam,
+          generatedTime: targetTime,
+          signatureData: 'Digitally Signed',
+          signedBy: reportData.patientInfo.doctor,
+          signedTimestamp: reportData.generatedAt
+        })
+      })
+        .then(async (response) => {
+          const resData = await response.json();
+          if (!response.ok) {
+            throw new Error(resData.error || 'Failed to save report to backend');
+          }
+
+          if (resData.reportId) {
+            reportData.reportId = resData.reportId;
+            if (reportData.reportDetails) {
+              reportData.reportDetails.reportId = resData.reportId;
+            }
+            setReportId(resData.reportId);
+          }
+
+          localStorage.setItem('torus-report-finalized-' + roomParam, 'true');
+          persistGeneratedReport(reportData);
+
+          // Trigger the patient notification (emit socket and persist delivery status)
+          const payload = {
+            reportId: reportData.reportId,
+            patientInfo: reportData.patientInfo,
+            findings: reportData.findings,
+            recommendations: reportData.recommendations,
+            reportDetails: reportData.reportDetails,
+            reportPreview: reportData.reportPreview,
+            sentAt: new Date().toISOString()
+          };
+          writeJson('torus-report-last-send-payload', payload);
+
+          if (window.reportSocket && window.reportSocket.connected) {
+            window.reportSocket.emit('share-report', { room: roomParam, report: payload });
+          }
+
+          persistGeneratedReport({
+            ...reportData,
+            deliveryStatus: 'sent',
+            sentAt: new Date().toISOString()
+          });
+          localStorage.setItem(STORAGE_KEYS.deliveryStatus, 'sent');
+          setSendLockedState(true);
+
+          // Mark report as finalized in UI immediately
+          markReportAsFinalized(reportData);
+
+          // Hide preview modal
+          if (dom.reportPreviewModal) {
+            dom.reportPreviewModal.classList.add('hidden');
+            dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
+          }
+
+          // Do NOT show any success popup on the doctor side (commented out per instructions)
+          /*
+          const successModal = document.getElementById('successDialogModal');
+          if (successModal) {
+            successModal.classList.remove('hidden');
+            successModal.setAttribute('aria-hidden', 'false');
+          }
+          */
+
+          window.setTimeout(() => {
+            reportState.isGenerating = false;
+            if (previewGenBtn) {
+              restoreButton(previewGenBtn);
+            }
+            restoreButton(dom.confirmGenerateBtn);
+          }, 450);
+        })
+        .catch((error) => {
+          console.error('Error saving report to backend SQLite:', error);
+          // Hide SQLite/backend database errors from user interface
+          showToast('Failed to generate report. Please try again.');
+          reportState.isGenerating = false;
+          if (previewGenBtn) {
+            restoreButton(previewGenBtn);
+          }
+          restoreButton(dom.confirmGenerateBtn);
+        });
+    }
+
+    function previewReportAction(force = false) {
+      const reportId = getCurrentReportId() || buildAutoReportId();
+      setReportId(reportId);
+
+      const reportData = collectReportData();
+      if (!force) {
+        const missing = validateReportData(reportData);
+        if (missing.length) {
+          showToast(`Cannot preview report: add ${missing.join(', ')}.`);
+          return;
+        }
+      }
+
+      // Populate preview modal fields
+      const previewReportId = document.getElementById('previewReportId');
+      const previewReportDate = document.getElementById('previewReportDate');
+      const previewPatientName = document.getElementById('previewPatientName');
+      const previewExamDate = document.getElementById('previewExamDate');
+      const previewScanType = document.getElementById('previewScanType');
+      const previewDeviceName = document.getElementById('previewDeviceName');
+      const previewLocationName = document.getElementById('previewLocationName');
+      const previewDuration = document.getElementById('previewDuration');
+      const previewFindings = document.getElementById('previewFindings');
+      const previewRecommendations = document.getElementById('previewRecommendations');
+      const previewDoctorName = document.getElementById('previewDoctorName');
+      const previewDoctorLocation = document.getElementById('previewDoctorLocation');
+      const previewSignerInfo = document.getElementById('previewSignerInfo');
+      const previewSignTime = document.getElementById('previewSignTime');
+
+      if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
+      if (previewReportDate) previewReportDate.textContent = `Date: ${new Date(reportData.generatedAt).toLocaleDateString()}`;
+      if (previewPatientName) previewPatientName.textContent = reportData.patientInfo.patientName;
+      if (previewExamDate) previewExamDate.textContent = reportData.patientInfo.examDate;
+      if (previewScanType) previewScanType.textContent = reportData.patientInfo.scanType;
+      if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo.device;
+      if (previewLocationName) previewLocationName.textContent = reportData.patientInfo.location;
+      if (previewDuration) previewDuration.textContent = reportData.patientInfo.examDuration;
+
+      if (previewFindings) previewFindings.textContent = reportData.findings;
+      if (previewRecommendations) previewRecommendations.textContent = reportData.recommendations;
+      if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo.doctor;
+      if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo.location;
+      const isSigned = reportState.digitalSignature;
+      const previewSignatureStatus = document.getElementById('previewSignatureStatus');
+
+      if (previewSignatureStatus) {
+        previewSignatureStatus.style.display = isSigned ? 'inline-flex' : 'none';
+      }
+
+      if (isSigned) {
+        if (previewSignerInfo) {
+          previewSignerInfo.style.display = 'block';
+          previewSignerInfo.textContent = `Dr. ${reportData.patientInfo.doctor.replace('Dr. ', '')}`;
+        }
+        if (previewSignTime) {
+          previewSignTime.style.display = 'block';
+          const sigTime = reportState.signedTimestamp || (reportState.generatedReport ? reportState.generatedReport.generatedAt : reportData.generatedAt);
+          previewSignTime.textContent = new Date(sigTime).toLocaleString();
+        }
+      } else {
+        if (previewSignerInfo) previewSignerInfo.style.display = 'none';
+        if (previewSignTime) previewSignTime.style.display = 'none';
+      }
+
+      // AI Analysis fields
+      const aiQuality = document.getElementById('aiInsightQuality') ? document.getElementById('aiInsightQuality').textContent : 'Good';
+      const aiConfidence = document.getElementById('aiInsightConfidence') ? document.getElementById('aiInsightConfidence').textContent : '97%';
+      const aiObservation = document.getElementById('aiInsightObservation') ? document.getElementById('aiInsightObservation').textContent : 'No significant abnormality detected';
+      const aiRisk = document.getElementById('aiInsightRisk') ? document.getElementById('aiInsightRisk').textContent : 'Low';
+
+      const previewAiQuality = document.getElementById('previewAiQuality');
+      const previewAiConfidence = document.getElementById('previewAiConfidence');
+      const previewAiObservation = document.getElementById('previewAiObservation');
+      const previewAiRisk = document.getElementById('previewAiRisk');
+
+      if (previewAiQuality) previewAiQuality.textContent = aiQuality;
+      if (previewAiConfidence) previewAiConfidence.textContent = aiConfidence;
+      if (previewAiObservation) previewAiObservation.textContent = aiObservation;
+      if (previewAiRisk) previewAiRisk.textContent = aiRisk;
+
+      // Render Selected Images
+      const container = document.getElementById('previewImagesContainer');
+      if (container) {
+        container.innerHTML = '';
+        reportData.selectedImages.forEach(imgData => {
+          const imgEl = document.createElement('img');
+          imgEl.src = imgData.dataUrl;
+          imgEl.style.width = '100%';
+          imgEl.style.borderRadius = '6px';
+          imgEl.style.border = '1px solid #cbd5e1';
+          imgEl.style.aspectRatio = '4/3';
+          imgEl.style.objectFit = 'cover';
+          container.appendChild(imgEl);
+        });
+      }
+
+      // Open preview modal
+      if (dom.reportPreviewModal) {
+        dom.reportPreviewModal.classList.remove('hidden');
+        dom.reportPreviewModal.setAttribute('aria-hidden', 'false');
+      }
+
+      lucide.createIcons();
+    }
+
+    function markReportAsFinalized(reportData) {
+      if (reportData) {
+        if (reportData.findings && dom.findingsField) {
+          dom.findingsField.value = reportData.findings;
+        }
+        if (reportData.recommendations && dom.recommendationsField) {
+          dom.recommendationsField.value = reportData.recommendations;
+        }
+        if (reportData.signature_data) {
+          reportState.digitalSignature = true;
+          updateSignatureUI();
+          const signSuccess = document.getElementById("signatureSuccess");
+          if (signSuccess) signSuccess.style.display = "flex";
+          if (dom.digitalSignBtn) {
+            dom.digitalSignBtn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
+          }
+        }
+      }
+
+      // Disable inputs
+      if (dom.findingsField) dom.findingsField.disabled = true;
+      if (dom.recommendationsField) dom.recommendationsField.disabled = true;
+      if (dom.digitalSignBtn) {
+        dom.digitalSignBtn.disabled = true;
+        dom.digitalSignBtn.classList.add('disabled');
+        dom.digitalSignBtn.style.pointerEvents = 'none';
+      }
+
+      // Keep Preview Report button visible and enabled
+      if (dom.generatePreviewBtn) {
+        dom.generatePreviewBtn.disabled = false;
+        dom.generatePreviewBtn.classList.remove('disabled', 'hidden');
+        dom.generatePreviewBtn.style.display = 'inline-flex';
+        dom.generatePreviewBtn.innerHTML = '<i data-lucide="eye"></i>Preview Report';
+      }
+
+      // Hide Generate Report button
+      if (dom.confirmGenerateBtn) {
+        dom.confirmGenerateBtn.classList.add('hidden');
+        dom.confirmGenerateBtn.style.display = 'none';
+      }
+
+      // Hide Report Finalized button
+      const reportFinalizedBtn = document.getElementById('reportFinalizedBtn');
+      if (reportFinalizedBtn) {
+        reportFinalizedBtn.classList.add('hidden');
+        reportFinalizedBtn.style.display = 'none';
+      }
+
+      // Show Captured Images button
+      if (dom.sendCapturedImagesBtn) {
+        dom.sendCapturedImagesBtn.classList.remove('hidden');
+        dom.sendCapturedImagesBtn.disabled = false;
+        dom.sendCapturedImagesBtn.style.display = 'inline-flex';
+        dom.sendCapturedImagesBtn.innerHTML = '<i data-lucide="image"></i>Captured Images';
+      }
+
+      lucide.createIcons();
+    }
+
+    function downloadPdfAction() {
+      if (reportState.isGenerating || reportState.isSending) return;
+
+      const reportData = reportState.generatedReport;
+      if (!reportData) {
+        showToast('Generate report first');
+        return;
+      }
+
+      try {
+        setButtonBusy(dom.downloadPdfBtn, 'Creating PDF...');
+        downloadReportPdf(reportData);
+        showToast(`Downloaded Report_${sanitizeFileName(reportData.reportId)}.pdf`);
+      } catch {
+        showToast('PDF download failed. Please try again.');
+      } finally {
+        restoreButton(dom.downloadPdfBtn);
+      }
+    }
+
+    async function sendReportToPatient() {
+      if (reportState.isGenerating || reportState.isSending) return;
+      if (reportState.sendLocked) {
+        showToast('Report sent successfully');
+        return;
+      }
+
+      const reportData = reportState.generatedReport;
+      if (!reportData) {
+        showToast('Generate report first');
+        return;
+      }
+
+      reportState.isSending = true;
+      setButtonBusy(dom.sendPatientBtn, 'Sending...');
+
+      try {
+        const payload = {
+          reportId: reportData.reportId,
+          patientInfo: reportData.patientInfo,
+          findings: reportData.findings,
+          recommendations: reportData.recommendations,
+          reportDetails: reportData.reportDetails,
+          reportPreview: reportData.reportPreview,
+          sentAt: new Date().toISOString()
+        };
+        writeJson('torus-report-last-send-payload', payload);
+
+        if (window.reportSocket && window.reportSocket.connected) {
+          const room = new URLSearchParams(window.location.search).get('room') || 'DEFAULT_ROOM';
+          window.reportSocket.emit('share-report', { room, report: payload });
+        } else {
+          console.warn('Socket not connected. Saving to localStorage for patient polling fallback.');
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 1100));
+        persistGeneratedReport({
+          ...reportData,
+          deliveryStatus: 'sent',
+          sentAt: new Date().toISOString()
+        });
+        localStorage.setItem(STORAGE_KEYS.deliveryStatus, 'sent');
+        setSendLockedState(true);
+        showToast('Report sent successfully');
+      } catch {
+        showToast('Sending failed. Please try again.');
+      } finally {
+        reportState.isSending = false;
+        if (!reportState.sendLocked) restoreButton(dom.sendPatientBtn);
+      }
+    }
+
+    function buildPrintMarkup(reportData) {
+      const imageSet = (reportData.selectedImages && reportData.selectedImages.length)
+        ? reportData.selectedImages
+        : (reportData.capturedImages || []);
+      const imagesMarkup = imageSet
+        .map((image, index) => `<div><img src="${image.dataUrl}" alt="Captured image ${index + 1}" /></div>`)
+        .join('');
+      const previewMarkup = reportData.reportPreview && (reportData.reportPreview.data || reportData.reportPreview.dataUrl || reportData.reportPreview.src)
+        ? (
+          /^image\//i.test(String(reportData.reportPreview.type || ''))
+            ? `<h2>Uploaded Preview</h2><img class="preview-image" src="${reportData.reportPreview.data || reportData.reportPreview.dataUrl || reportData.reportPreview.src}" alt="Uploaded preview" />`
+            : `<h2>Uploaded Preview</h2><p><strong>PDF:</strong> ${escapeHtml(reportData.reportPreview.name || 'Document.pdf')}</p>`
+        )
+        : '';
+
+      return `
+        <article class="print-report">
+          <h1>Report Generation</h1>
+          <p><strong>Report ID:</strong> ${escapeHtml(reportData.reportId || '-')}</p>
+          <p><strong>Generated:</strong> ${escapeHtml(reportData.generatedAt ? new Date(reportData.generatedAt).toLocaleString() : '-')}</p>
+
+          <h2>Patient Information</h2>
+          <div class="meta-grid">
+            <p><strong>Patient Name:</strong> ${escapeHtml(reportData.patientInfo.patientName || '-')}</p>
+            <p><strong>Exam Date:</strong> ${escapeHtml(reportData.patientInfo.examDate || '-')}</p>
+            <p><strong>Scan Type:</strong> ${escapeHtml(reportData.patientInfo.scanType || '-')}</p>
+            <p><strong>Device:</strong> ${escapeHtml(reportData.patientInfo.device || '-')}</p>
+            <p><strong>Doctor:</strong> ${escapeHtml(reportData.patientInfo.doctor || '-')}</p>
+            <p><strong>Location:</strong> ${escapeHtml(reportData.patientInfo.location || '-')}</p>
+          </div>
+
+          <h2>Findings</h2>
+          <p>${escapeHtml(reportData.findings || 'No findings provided.')}</p>
+
+          <h2>Recommendations</h2>
+          <p>${escapeHtml(reportData.recommendations || 'No recommendations provided.')}</p>
+
+          <h2>Report Details</h2>
+          <div class="meta-grid">
+            <p><strong>Exam Duration:</strong> ${escapeHtml(reportData.reportDetails.examDuration || '-')}</p>
+            <p><strong>Images Captured:</strong> ${escapeHtml(reportData.reportDetails.imagesCaptured || 0)}</p>
+            <p><strong>Selected Images:</strong> ${escapeHtml(reportData.reportDetails.selectedImages || 0)}</p>
+            <p><strong>Report ID:</strong> ${escapeHtml(reportData.reportDetails.reportId || '-')}</p>
+          </div>
+
+          ${previewMarkup}
+
+          <h2>Captured Images</h2>
+          <div class="print-images">${imagesMarkup}</div>
+        </article>
+      `;
+    }
+
+    function printReportLayout() {
+      const reportData = reportState.generatedReport || collectReportData();
+      if (!reportData) return;
+      if (dom.printOnlyContainer) {
+        dom.printOnlyContainer.innerHTML = buildPrintMarkup(reportData);
+      }
+      window.print();
+    }
+
+    function setupSidebar() {
+      const menuToggle = document.getElementById('menuToggle');
+      if (menuToggle) {
+        menuToggle.addEventListener('click', () => {
+          if (dom.sidebar) dom.sidebar.classList.add('open');
+          if (dom.sidebarOverlay) dom.sidebarOverlay.classList.add('active');
+        });
+      }
+
+      if (dom.sidebarOverlay) {
+        dom.sidebarOverlay.addEventListener('click', () => {
+          dom.sidebar.classList.remove('open');
+          dom.sidebarOverlay.classList.remove('active');
+        });
+      }
+
+      if (dom.closeSidebar) {
+        dom.closeSidebar.addEventListener('click', () => {
+          dom.sidebar.classList.remove('open');
+          dom.sidebarOverlay.classList.remove('active');
+        });
+      }
+
+      document.querySelectorAll('[data-nav-target]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const target = button.dataset.navTarget;
+          if (target === 'dashboard') {
+            window.location.href = 'doctor-dashboard.html';
+          }
+        });
+      });
+
+      document.querySelectorAll('[data-action="logout"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          localStorage.removeItem('doctorSession');
+          window.location.href = 'doctor-portal.html';
+        });
+      });
+    }
+
+    function handlePreviewFile(file) {
+      if (!file) return;
+      const allowedTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']);
+      const fileType = String(file.type || '').toLowerCase();
+      if (!allowedTypes.has(fileType)) {
+        showToast('Only JPG, JPEG, PNG, or PDF supported');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { console.log('FILEREADER COMPLETE'); } catch (e) { }
+        const reportPreview = {
+          name: file.name,
+          type: fileType,
+          data: String(reader.result || '')
+        };
+        // Save to canonical key requested by UX + keep existing names for compatibility
+        try {
+          localStorage.setItem('reportPreview', JSON.stringify(reportPreview));
+        } catch (e) { }
+        try { localStorage.setItem(STORAGE_KEYS.reportPreview, JSON.stringify(reportPreview)); } catch (e) { }
+        try { console.log('PREVIEW SAVED'); } catch (e) { }
+        renderReportPreview(reportPreview);
+        invalidateGeneratedReport();
+        if (reportState.previewAction === 'replace') {
+          showToast('Preview replaced');
+        } else {
+          showToast('Preview uploaded successfully');
+        }
+        reportState.previewAction = 'upload';
+      };
+      reader.onerror = () => {
+        showToast('Preview upload failed');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function promptPreviewUpload() {
+      if (!dom.reportPreviewInput) return;
+      try { console.log('UPLOAD CLICK'); } catch (e) { }
+      dom.reportPreviewInput.value = '';
+      dom.reportPreviewInput.click();
+    }
+
+    if (dom.reportPreviewInput) {
+      dom.reportPreviewInput.onchange = (event) => {
+        try { console.log('FILE SELECTED'); } catch (e) { }
+        const file = event.target.files && event.target.files[0];
+        handlePreviewFile(file);
+      };
+    }
+
+    function navigateBackFromReport() {
+      // 1. Return to same-origin referrer if available and not this page
+      if (document.referrer) {
+        try {
+          const refUrl = new URL(document.referrer);
+          if (refUrl.origin === window.location.origin && !refUrl.pathname.toLowerCase().endsWith('report-generation.html')) {
+            window.location.href = document.referrer;
+            return;
+          }
+        } catch (e) {
+          console.warn('Invalid referrer:', e);
+        }
+      }
+
+      // 2. Fall back to browser history if applicable
+      if (window.history.length > 1 && document.referrer && document.referrer.startsWith(window.location.origin)) {
+        window.history.back();
+        return;
+      }
+
+      // 3. Fallback: Return to Video Consultation preserving current room and role parameters
+      const backUrl = new URL(window.location.href);
+      backUrl.pathname = backUrl.pathname.replace(/report-generation\.html$/i, 'index.html');
+      window.location.href = backUrl.toString();
+    }
+
+    if (dom.backBtn) {
+      dom.backBtn.addEventListener('click', navigateBackFromReport);
+    }
+
+    dom.findingsField.addEventListener('input', () => {
+      localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
+      invalidateGeneratedReport();
+    });
+
+    dom.recommendationsField.addEventListener('input', () => {
+      localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
+      invalidateGeneratedReport();
+    });
+
+    if (dom.uploadPreviewBtn) {
+      dom.uploadPreviewBtn.addEventListener('click', () => {
+        reportState.previewAction = 'upload';
+        try { console.log('UPLOAD CLICK'); } catch (e) { }
+        promptPreviewUpload();
+      });
+    }
+
+    if (dom.replacePreviewBtn) {
+      dom.replacePreviewBtn.addEventListener('click', () => {
+        reportState.previewAction = 'replace';
+        try { console.log('UPLOAD CLICK'); } catch (e) { }
+        promptPreviewUpload();
+      });
+    }
+
+    if (dom.removePreviewBtn) {
+      dom.removePreviewBtn.addEventListener('click', () => {
+        renderReportPreview(null);
+        try { localStorage.removeItem('reportPreview'); } catch (e) { }
+        try { localStorage.removeItem(STORAGE_KEYS.reportPreview); } catch (e) { }
+        invalidateGeneratedReport();
+        showToast('Preview removed');
+      });
+    }
+
+    async function sendCapturedImagesToPatient() {
+      const room = roomParam || 'default';
+      const selectedImages = doctorSelectedImages;
+
+      console.log('Sharing captured images:', {
+        room,
+        imagesCount: selectedImages.length,
+        selectedImages
+      });
+
+      const payload = {
+        type: 'share-captured-images',
+        room: room,
+        roomId: room,
+        images: selectedImages
+      };
+
+      if (window.reportSocket && window.reportSocket.connected) {
+        window.reportSocket.emit('share-captured-images', payload);
+        // Show success dialog
+        const successModal = document.getElementById('sendImagesSuccessModal');
+        if (successModal) {
+          successModal.style.display = 'flex';
+          successModal.classList.remove('hidden');
+          successModal.setAttribute('aria-hidden', 'false');
+        }
+      } else {
+        showToast('WebSocket not connected. Unable to send images.');
+      }
+    }
+
+    // Doctor Captured Images & Editing controller
+    let doctorSelectedImages = [];
+    let activeEditImageIndex = -1;
+    let currentBrightness = 100;
+    let currentContrast = 100;
+    let rotationAngle = 0;
+    let activeImageObj = null;
+
+    function openDoctorCapturedImagesModal() {
+      const rawImages = readCaptureImages();
+      const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
+
+      // Populate local array
+      doctorSelectedImages = normalizeImages(rawImages).filter(img => {
+        return selectedIds.has(img.id);
+      });
+
+      renderDoctorImagesGrid();
+
+      const modal = document.getElementById('doctorCapturedImagesModal');
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+
+      // Reset to grid view
+      showDoctorGridView();
+    }
+
+    function closeDoctorCapturedImagesModal() {
+      const modal = document.getElementById('doctorCapturedImagesModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    function showDoctorGridView() {
+      document.getElementById('doctorImagesGridView').style.display = 'flex';
+      document.getElementById('doctorImagesEditView').style.display = 'none';
+
+      // Footer buttons
+      document.getElementById('gridEditImagesBtn').style.display = 'inline-flex';
+      document.getElementById('gridSendImagesBtn').style.display = 'inline-flex';
+      document.getElementById('editBackToGridBtn').style.display = 'none';
+      document.getElementById('doctorImagesModalTitle').textContent = 'Captured Images';
+
+      renderDoctorImagesGrid();
+    }
+
+    function showDoctorEditView() {
+      document.getElementById('doctorImagesGridView').style.display = 'none';
+      document.getElementById('doctorImagesEditView').style.display = 'block';
+
+      // Footer buttons
+      document.getElementById('gridEditImagesBtn').style.display = 'none';
+      document.getElementById('gridSendImagesBtn').style.display = 'none';
+      document.getElementById('editBackToGridBtn').style.display = 'inline-flex';
+      document.getElementById('doctorImagesModalTitle').textContent = 'Edit Images';
+
+      renderEditSidebar();
+
+      // Load first image for editing if available
+      if (doctorSelectedImages.length > 0) {
+        selectImageForEditing(0);
+      } else {
+        // If no images left, go back to grid
+        showDoctorGridView();
+      }
+    }
+
+    function renderDoctorImagesGrid() {
+      const container = document.getElementById('doctorImagesGridContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      doctorSelectedImages.forEach((img, idx) => {
+        const card = document.createElement('div');
+        card.style.cssText = 'border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #f8fafc; display: flex; flex-direction: column;';
+
+        const imgWrapper = document.createElement('div');
+        imgWrapper.style.cssText = 'aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; background: #f1f5f9; position: relative; overflow: hidden;';
+
+        const el = document.createElement('img');
+        el.src = img.dataUrl;
+        el.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+        imgWrapper.appendChild(el);
+
+        const label = document.createElement('div');
+        label.style.cssText = 'padding: 8px; font-size: 12px; font-weight: 600; text-align: center; color: #475569; background: #ffffff; border-top: 1px solid #e2e8f0;';
+        label.textContent = `Image ${idx + 1}`;
+
+        card.appendChild(imgWrapper);
+        card.appendChild(label);
+        container.appendChild(card);
+      });
+    }
+
+    function renderEditSidebar() {
+      const container = document.getElementById('editImagesSidebarContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      doctorSelectedImages.forEach((img, idx) => {
+        const btn = document.createElement('div');
+        btn.style.cssText = `padding: 8px; border: 1px solid ${idx === activeEditImageIndex ? '#6f2cff' : '#e2e8f0'}; border-radius: 6px; cursor: pointer; background: ${idx === activeEditImageIndex ? '#f3e8ff' : '#ffffff'}; display: flex; align-items: center; gap: 8px; transition: all 0.2s;`;
+
+        const thumb = document.createElement('img');
+        thumb.src = img.dataUrl;
+        thumb.style.cssText = 'width: 32px; height: 24px; object-fit: cover; border-radius: 2px; border: 1px solid #cbd5e1;';
+
+        const label = document.createElement('span');
+        label.style.cssText = `font-size: 12px; font-weight: 600; color: ${idx === activeEditImageIndex ? '#6f2cff' : '#334155'};`;
+        label.textContent = `Image ${idx + 1}`;
+
+        btn.appendChild(thumb);
+        btn.appendChild(label);
+
+        btn.addEventListener('click', () => {
+          selectImageForEditing(idx);
+        });
+
+        container.appendChild(btn);
+      });
+    }
+
+    function selectImageForEditing(index) {
+      activeEditImageIndex = index;
+      renderEditSidebar();
+
+      const imgData = doctorSelectedImages[index];
+      if (!imgData) return;
+
+      // Reset adjustment controls
+      currentBrightness = 100;
+      currentContrast = 100;
+      rotationAngle = 0;
+      document.getElementById('editorBrightness').value = 100;
+      document.getElementById('brightnessVal').textContent = '100%';
+      document.getElementById('editorContrast').value = 100;
+      document.getElementById('contrastVal').textContent = '100%';
+
+      // Reset crop controls
+      document.getElementById('cropTop').value = 0;
+      document.getElementById('cropBottom').value = 0;
+      document.getElementById('cropLeft').value = 0;
+      document.getElementById('cropRight').value = 0;
+
+      activeImageObj = new Image();
+      activeImageObj.onload = function () {
+        updateCanvasPreview();
+      };
+      activeImageObj.src = imgData.dataUrl;
+    }
+
+    function updateCanvasPreview() {
+      const canvas = document.getElementById('editingCanvas');
+      if (!canvas || !activeImageObj) return;
+
+      const ctx = canvas.getContext('2d');
+
+      // Handle rotation sizes
+      const isRotated90or270 = (rotationAngle === 90 || rotationAngle === 270);
+      const w = isRotated90or270 ? activeImageObj.height : activeImageObj.width;
+      const h = isRotated90or270 ? activeImageObj.width : activeImageObj.height;
+
+      canvas.width = w;
+      canvas.height = h;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Apply filters
+      ctx.filter = `brightness(${currentBrightness}%) contrast(${currentContrast}%)`;
+
+      // Apply rotation translation
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate((rotationAngle * Math.PI) / 180);
+      ctx.drawImage(activeImageObj, -activeImageObj.width / 2, -activeImageObj.height / 2);
+    }
+
+    function saveCanvasState() {
+      const canvas = document.getElementById('editingCanvas');
+      if (!canvas || activeEditImageIndex === -1) return;
+
+      // Save current canvas to data URL
+      const dataUrl = canvas.toDataURL('image/png');
+      doctorSelectedImages[activeEditImageIndex].dataUrl = dataUrl;
+
+      // Sync back to capture images local storage!
+      const rawImages = readCaptureImages();
+      const activeId = doctorSelectedImages[activeEditImageIndex].id;
+      const targetRaw = rawImages.find(img => img.id === activeId);
+      if (targetRaw) {
+        targetRaw.dataUrl = dataUrl;
+        writeCaptureImages(rawImages);
+      }
+    }
+
+    // Hook rotate button
+    document.getElementById('editorRotateBtn').addEventListener('click', () => {
+      rotationAngle = (rotationAngle + 90) % 360;
+      updateCanvasPreview();
+      saveCanvasState();
+      renderEditSidebar();
+    });
+
+    // Hook adjustment sliders
+    document.getElementById('editorBrightness').addEventListener('input', (e) => {
+      currentBrightness = e.target.value;
+      document.getElementById('brightnessVal').textContent = `${currentBrightness}%`;
+      updateCanvasPreview();
+    });
+    document.getElementById('editorBrightness').addEventListener('change', () => {
+      saveCanvasState();
+      renderEditSidebar();
+    });
+
+    document.getElementById('editorContrast').addEventListener('input', (e) => {
+      currentContrast = e.target.value;
+      document.getElementById('contrastVal').textContent = `${currentContrast}%`;
+      updateCanvasPreview();
+    });
+    document.getElementById('editorContrast').addEventListener('change', () => {
+      saveCanvasState();
+      renderEditSidebar();
+    });
+
+    // Hook crop apply button
+    document.getElementById('applyCropBtn').addEventListener('click', () => {
+      const canvas = document.getElementById('editingCanvas');
+      if (!canvas || !activeImageObj) return;
+
+      // Fetch sliders
+      const cropT = Number(document.getElementById('cropTop').value);
+      const cropB = Number(document.getElementById('cropBottom').value);
+      const cropL = Number(document.getElementById('cropLeft').value);
+      const cropR = Number(document.getElementById('cropRight').value);
+
+      // Convert percentage to actual pixels on current canvas size
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const leftPx = Math.floor((cropL / 100) * w);
+      const rightPx = Math.floor((cropR / 100) * w);
+      const topPx = Math.floor((cropT / 100) * h);
+      const bottomPx = Math.floor((cropB / 100) * h);
+
+      const newW = w - leftPx - rightPx;
+      const newH = h - topPx - bottomPx;
+
+      if (newW <= 10 || newH <= 10) {
+        showToast('Crop area too small');
+        return;
+      }
+
+      // Copy cropped area
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = newW;
+      tempCanvas.height = newH;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(canvas, leftPx, topPx, newW, newH, 0, 0, newW, newH);
+
+      // Load cropped image back as active image
+      activeImageObj = new Image();
+      activeImageObj.onload = function () {
+        // Reset controls
+        currentBrightness = 100;
+        currentContrast = 100;
+        rotationAngle = 0;
+        document.getElementById('editorBrightness').value = 100;
+        document.getElementById('brightnessVal').textContent = '100%';
+        document.getElementById('editorContrast').value = 100;
+        document.getElementById('contrastVal').textContent = '100%';
+
+        document.getElementById('cropTop').value = 0;
+        document.getElementById('cropBottom').value = 0;
+        document.getElementById('cropLeft').value = 0;
+        document.getElementById('cropRight').value = 0;
+
+        updateCanvasPreview();
+        saveCanvasState();
+        renderEditSidebar();
+      };
+      activeImageObj.src = tempCanvas.toDataURL('image/png');
+    });
+
+    // Hook replace image file input
+    document.getElementById('editorReplaceInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (evt) {
+        const dataUrl = evt.target.result;
+
+        activeImageObj = new Image();
+        activeImageObj.onload = function () {
+          updateCanvasPreview();
+          saveCanvasState();
+          renderEditSidebar();
+        };
+        activeImageObj.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Hook remove image button
+    document.getElementById('editorRemoveBtn').addEventListener('click', () => {
+      if (activeEditImageIndex === -1) return;
+
+      // Remove from list
+      const removed = doctorSelectedImages.splice(activeEditImageIndex, 1)[0];
+
+      // Sync local storage selected IDs and capture images
+      if (removed) {
+        const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
+        selectedIds.delete(removed.id);
+        writeJson(STORAGE_KEYS.selectedIds, Array.from(selectedIds));
+      }
+
+      // Reset index and load next available or return to grid
+      if (doctorSelectedImages.length > 0) {
+        const nextIndex = Math.min(activeEditImageIndex, doctorSelectedImages.length - 1);
+        selectImageForEditing(nextIndex);
+      } else {
+        showDoctorGridView();
+      }
+    });
+
+    // Hook footer actions
+    document.getElementById('gridEditImagesBtn').addEventListener('click', showDoctorEditView);
+    document.getElementById('editBackToGridBtn').addEventListener('click', showDoctorGridView);
+
+    // Close button
+    document.getElementById('closeDoctorImagesModalBtn').addEventListener('click', closeDoctorCapturedImagesModal);
+
+    // Hook Send Images button
+    document.getElementById('gridSendImagesBtn').addEventListener('click', () => {
+      const confirmModal = document.getElementById('sendImagesConfirmModal');
+      if (confirmModal) {
+        confirmModal.style.display = 'flex';
+        confirmModal.classList.remove('hidden');
+        confirmModal.setAttribute('aria-hidden', 'false');
+      }
+    });
+
+    document.getElementById('cancelSendImagesBtn').addEventListener('click', () => {
+      const confirmModal = document.getElementById('sendImagesConfirmModal');
+      if (confirmModal) {
+        confirmModal.style.display = 'none';
+        confirmModal.classList.add('hidden');
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    document.getElementById('confirmSendImagesBtn').addEventListener('click', () => {
+      console.log('--- DEBUG START: SEND IMAGES ---');
+      console.log('Step 1: doctorSelectedImages collected:', doctorSelectedImages);
+      console.log('Step 2: roomParam (room ID):', roomParam);
+
+      // Hide confirmation
+      const confirmModal = document.getElementById('sendImagesConfirmModal');
+      if (confirmModal) {
+        confirmModal.style.display = 'none';
+        confirmModal.classList.add('hidden');
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
+
+      const room = roomParam || 'default';
+
+      // Save to localStorage
+      try {
+        localStorage.setItem(`torus-shared-images-${room.toUpperCase()}`, JSON.stringify(doctorSelectedImages));
+        console.log('Step 3/4/5: Stored in localStorage key torus-shared-images-' + room.toUpperCase() + ':', localStorage.getItem(`torus-shared-images-${room.toUpperCase()}`));
+      } catch (e) {
+        console.error('Step 3/4/5 ERROR storing in localStorage:', e);
+      }
+
+      // Perform socket send
+      const payload = {
+        type: 'share-captured-images',
+        room: room,
+        roomId: room,
+        images: doctorSelectedImages
+      };
+
+      if (window.reportSocket && window.reportSocket.connected) {
+        window.reportSocket.emit('share-captured-images', payload);
+        // Show Success modal
+        const successModal = document.getElementById('sendImagesSuccessModal');
+        if (successModal) {
+          successModal.style.display = 'flex';
+          successModal.classList.remove('hidden');
+          successModal.setAttribute('aria-hidden', 'false');
+        }
+      } else {
+        showToast('WebSocket not connected. Unable to send images.');
+      }
+    });
+
+    document.getElementById('sendImagesSuccessOkBtn').addEventListener('click', () => {
+      const successModal = document.getElementById('sendImagesSuccessModal');
+      if (successModal) {
+        successModal.style.display = 'none';
+        successModal.classList.add('hidden');
+        successModal.setAttribute('aria-hidden', 'true');
+      }
+      closeDoctorCapturedImagesModal();
+    });
+
+    if (dom.sendCapturedImagesBtn) {
+      dom.sendCapturedImagesBtn.addEventListener('click', openDoctorCapturedImagesModal);
+    }
+
+    dom.generatePreviewBtn.addEventListener('click', previewReportAction);
+    const closeReportPreviewBtn = document.getElementById('closeReportPreviewBtn');
+    if (closeReportPreviewBtn) {
+      closeReportPreviewBtn.addEventListener('click', () => {
+        if (dom.reportPreviewModal) {
+          dom.reportPreviewModal.classList.add('hidden');
+          dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    }
+    const editReportPreviewBtn = document.getElementById('editReportPreviewBtn');
+    if (editReportPreviewBtn) {
+      editReportPreviewBtn.addEventListener('click', () => {
+        if (dom.reportPreviewModal) {
+          dom.reportPreviewModal.classList.add('hidden');
+          dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    }
+    const generateReportPreviewBtn = document.getElementById('generateReportPreviewBtn');
+    if (generateReportPreviewBtn) {
+      generateReportPreviewBtn.addEventListener('click', generateReportAction);
+    }
+    if (dom.confirmGenerateBtn) {
+      dom.confirmGenerateBtn.addEventListener('click', generateReportAction);
+    }
+
+    const successDialogOkBtn = document.getElementById('successDialogOkBtn');
+    if (successDialogOkBtn) {
+      successDialogOkBtn.addEventListener('click', () => {
+        const successModal = document.getElementById('successDialogModal');
+        if (successModal) {
+          successModal.classList.add('hidden');
+          successModal.setAttribute('aria-hidden', 'true');
+        }
+        if (reportState.generatedReport) {
+          markReportAsFinalized(reportState.generatedReport);
+        } else {
+          markReportAsFinalized();
+        }
+        sendReportToPatient();
+      });
+    }
+
+    if (dom.sendPatientBtn) {
+      dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
+    }
+    dom.digitalSignBtn.addEventListener('click', function () {
+      if (reportState.digitalSignature) return;
+      reportState.digitalSignature = true;
+      updateSignatureUI();
+      invalidateGeneratedReport();
+    });
+
+    if (dom.closePreviewModal) {
+      dom.closePreviewModal.addEventListener('click', closePreview);
+    }
+    if (dom.imagePreviewModal) {
+      dom.imagePreviewModal.addEventListener('click', (event) => {
+        if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
+          closePreview();
+        }
+      });
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
+        closePreview();
+      }
+    });
+
+    setupSidebar();
+    initializeBuildVersion();
+    if (roomParam) {
+      localStorage.removeItem('torus-report-finalized-' + roomParam);
+      localStorage.removeItem(STORAGE_KEYS.deliveryStatus);
+    }
+    loadReportContext();
+
+    // Check if report is already generated for this room
+    if (roomParam && roomParam !== 'default') {
+      const API_BASE_URL = (window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5002';
+      fetch(`${API_BASE_URL}/api/reports/room/${roomParam}`)
+        .then(res => res.json())
+        .then(resData => {
+          if (resData.exists && resData.data) {
+            const reportData = resData.data;
+
+            // Construct reportState.generatedReport from database record
+            const generatedAt = reportData.generated_date || new Date(reportData.generated_time || Date.now()).toISOString();
+            reportState.generatedReport = {
+              reportId: reportData.report_id,
+              generatedAt: generatedAt,
+              findings: reportData.findings,
+              recommendations: reportData.recommendations,
+              digitalSignature: !!reportData.signature_data,
+              patientInfo: {
+                patientName: reportData.patient_name || (dom.patientName ? dom.patientName.textContent.trim() : ''),
+                examDate: dom.examDate ? dom.examDate.textContent.trim() : '',
+                scanType: reportData.scan_type || (dom.scanType ? dom.scanType.textContent.trim() : ''),
+                device: dom.deviceName ? dom.deviceName.textContent.trim() : '',
+                doctor: reportData.signed_by || (dom.doctorName ? dom.doctorName.textContent.trim() : ''),
+                location: dom.locationName ? dom.locationName.textContent.trim() : '',
+                examDuration: dom.examDuration ? dom.examDuration.textContent.trim() : ''
+              },
+              selectedImages: normalizeImages(readCaptureImages()).filter(img => {
+                const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
+                return selectedIds.has(img.id);
+              })
+            };
+
+            if (reportData.findings && dom.findingsField) {
+              dom.findingsField.value = reportData.findings;
+            }
+            if (reportData.recommendations && dom.recommendationsField) {
+              dom.recommendationsField.value = reportData.recommendations;
+            }
+            if (reportData.signature_data) {
+              reportState.digitalSignature = true;
+              updateSignatureUI();
+              const signSuccess = document.getElementById("signatureSuccess");
+              if (signSuccess) signSuccess.style.display = "flex";
+              if (dom.digitalSignBtn) {
+                dom.digitalSignBtn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
+              }
+            }
+          }
+        })
+        .catch(err => {
+          console.error("Error checking report status:", err);
+          if (localStorage.getItem('torus-report-finalized-' + roomParam) === 'true') {
+            const savedReport = readJson(STORAGE_KEYS.generatedReport, null);
+            if (savedReport) {
+              reportState.generatedReport = savedReport;
+              if (savedReport.findings && dom.findingsField) {
+                dom.findingsField.value = savedReport.findings;
+              }
+              if (savedReport.recommendations && dom.recommendationsField) {
+                dom.recommendationsField.value = savedReport.recommendations;
+              }
+              if (savedReport.digitalSignature) {
+                reportState.digitalSignature = true;
+                updateSignatureUI();
+                const signSuccess = document.getElementById("signatureSuccess");
+                if (signSuccess) signSuccess.style.display = "flex";
+                if (dom.digitalSignBtn) {
+                  dom.digitalSignBtn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
+                }
+              }
+            }
+          }
+        });
+    }
+
+    window.addEventListener('storage', (event) => {
+      if ([
+        STORAGE_KEYS.collage,
+        STORAGE_KEYS.selectedIds,
+        STORAGE_KEYS.generatedReport,
+        STORAGE_KEYS.context,
+        STORAGE_KEYS.reportId,
+        STORAGE_KEYS.reportPreview,
+        STORAGE_KEYS.reportDetails,
+        STORAGE_KEYS.deliveryStatus,
+        CAPTURE_STORAGE_KEYS.images,
+        CAPTURE_STORAGE_KEYS.sessionId
+      ].includes(event.key)) {
+        loadReportContext();
+      }
+    });
+
+    lucide.createIcons();
+
+    // Camera capture support for Report Generation page
+    (function () {
+      let captureInProgress = false;
+
+      async function captureFromCamera() {
+        if (captureInProgress) return null;
+        captureInProgress = true;
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (err) {
+          console.warn('Camera blocked or unavailable, using simulated capture fallback:', err);
+          // Create a mock image fallback
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = 480;
+          const ctx = canvas.getContext('2d');
+          const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+          grad.addColorStop(0, '#0b0f19');
+          grad.addColorStop(1, '#1e293b');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Draw simulated ultrasound circle
+          ctx.strokeStyle = '#00d7ff';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Draw scanning grid lines
+          ctx.strokeStyle = 'rgba(0, 215, 255, 0.2)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let x = 0; x < canvas.width; x += 40) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+          }
+          for (let y = 0; y < canvas.height; y += 40) {
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 20px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Simulated Scan Capture', canvas.width / 2, canvas.height / 2 - 20);
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '14px sans-serif';
+          ctx.fillText('Camera Blocked/Unavailable Fallback', canvas.width / 2, canvas.height / 2 + 30);
+          ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 60);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          captureInProgress = false;
+          return dataUrl;
+        }
+
+        try {
+          const video = document.createElement('video');
+          video.style.position = 'fixed';
+          video.style.left = '-9999px';
+          video.autoplay = true;
+          video.playsInline = true;
+          video.muted = true;
+          document.body.appendChild(video);
+          video.srcObject = stream;
+
+          await new Promise((resolve, reject) => {
+            const onCan = () => { resolve(); };
+            video.addEventListener('loadedmetadata', onCan, { once: true });
+            // fallback if metadata doesn't fire
+            setTimeout(resolve, 700);
+          });
+
+          const w = video.videoWidth || 1280;
+          const h = video.videoHeight || 720;
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+          // cleanup
+          try { video.pause(); } catch (e) { }
+          try { video.srcObject = null; } catch (e) { }
+          document.body.removeChild(video);
+          stream.getTracks().forEach((t) => t.stop());
+          captureInProgress = false;
+          return dataUrl;
+        } catch (err) {
+          if (stream) stream.getTracks().forEach((t) => t.stop());
+          captureInProgress = false;
+          showToast('Capture failed');
+          return null;
+        }
+      }
+
+      function persistCapturedImage(obj) {
+        try {
+          ensureCaptureSession();
+          const capturedImages = readCaptureImages();
+          console.log('Before save:', capturedImages.length);
+          capturedImages.push(obj);
+          console.log('After save:', capturedImages.length);
+          writeCaptureImages(capturedImages);
+          return capturedImages.length;
+        } catch (e) {
+          console.warn('Unable to persist captured image', e);
+          return 0;
+        }
+      }
+
+      async function addNewCapturedImage(dataUrl) {
+        if (!dataUrl) return;
+        const createdAt = new Date().toISOString();
+        const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
+        const item = { id, createdAt, dataUrl };
+        // Keep compatibility with normalizeImages() which expects dataUrl field
+        reportState.images = (reportState.images || []).concat([item]);
+        const count = persistCapturedImage({ id, createdAt, dataUrl });
+        console.log('Rendered Cards:', reportState.images.length);
+        if (count !== reportState.images.length) {
+          console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
+        }
+        renderCapturedImages(reportState.images);
+        invalidateGeneratedReport();
+        showToast('Image captured');
+      }
+
+      async function handlePossibleCameraClick(target) {
+        // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
+        if (!target) return false;
+        const el = target.closest('button, [role="button"], a');
+        if (!el) return false;
+        const aria = String(el.getAttribute('aria-label') || '');
+        const hasCameraLabel = /camera|capture/i.test(aria);
+        const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
+        if (!hasCameraLabel && !hasCameraIcon) return false;
+
+        // perform capture
+        const dataUrl = await captureFromCamera();
+        if (dataUrl) await addNewCapturedImage(dataUrl);
+        return true;
+      }
+
+      document.addEventListener('click', (ev) => {
+        try {
+          // check clicked element and its ancestors for camera icon/label
+          handlePossibleCameraClick(ev.target).catch(() => { });
+        } catch (e) { }
+      }, { passive: true });
+    })();
+
+    // Redesigned AI Analysis Logic
+    (function () {
+      const runAiBtn = document.getElementById('runAiBtn');
+      const runAiBtnText = document.getElementById('runAiBtnText');
+      const aiStatusBadge = document.getElementById('aiStatusBadge');
+      const aiStatusText = document.getElementById('aiStatusText');
+      const aiProgressWrap = document.getElementById('aiProgressWrap');
+      const aiProgressStep = document.getElementById('aiProgressStep');
+      const aiProgressPercent = document.getElementById('aiProgressPercent');
+      const aiProgressFill = document.getElementById('aiProgressFill');
+      const aiSummaryCard = document.getElementById('aiSummaryCard');
+      const aiSummaryList = document.getElementById('aiSummaryList');
+      const aiDetailsPanel = document.getElementById('aiDetailsPanel');
+      const toggleAiDetails = document.getElementById('toggleAiDetails');
+
+      const detailAiStatus = document.getElementById('detailAiStatus');
+      const detailAiTime = document.getElementById('detailAiTime');
+
+      const insightEls = {
+        quality: document.getElementById('aiInsightQuality'),
+        confidence: document.getElementById('aiInsightConfidence'),
+        structures: document.getElementById('aiInsightStructures'),
+        observation: document.getElementById('aiInsightObservation'),
+        risk: document.getElementById('aiInsightRisk')
+      };
+
+      const detailEls = {
+        features: document.getElementById('aiDetailFeatures'),
+        time: document.getElementById('aiDetailTime'),
+        timestamp: document.getElementById('aiDetailTimestamp')
+      };
+
+      const STORAGE_KEY = 'torus_ai_analysis';
+
+      function resetCards() {
+        insightEls.quality.textContent = 'Pending';
+        insightEls.confidence.textContent = '--';
+        insightEls.structures.textContent = 'None';
+        insightEls.observation.textContent = 'Pending';
+        insightEls.risk.textContent = 'Unknown';
+      }
+
+      function updateAiUI(status, results = null) {
+        aiStatusBadge.className = `ai-status-badge ${status.toLowerCase()}`;
+        aiStatusText.textContent = status === 'Completed' ? 'COMPLETED' : status;
+        if (detailAiStatus) detailAiStatus.textContent = status;
+
+        if (status === 'Processing') {
+          runAiBtn.disabled = true;
+          runAiBtnText.textContent = 'Analyzing...';
+          aiProgressWrap.classList.add('active');
+          aiSummaryCard.classList.remove('active');
+          aiDetailsPanel.classList.remove('active');
+          resetCards();
+        } else if (status === 'Completed') {
+          runAiBtn.disabled = false;
+          runAiBtnText.textContent = 'Re-analyze';
+          runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
+          aiProgressWrap.classList.remove('active');
+          aiSummaryCard.classList.add('active');
+          lucide.createIcons();
+
+          if (results) {
+            insightEls.quality.textContent = results.quality;
+            insightEls.confidence.textContent = results.confidence;
+            insightEls.structures.textContent = results.structures;
+            insightEls.observation.textContent = results.observation;
+            insightEls.risk.textContent = results.risk;
+
+            aiSummaryList.innerHTML = results.summary.map(item => `<li>${item}</li>`).join('');
+
+            detailEls.features.textContent = results.detailed.features;
+            detailEls.time.textContent = results.detailed.time;
+            detailEls.timestamp.textContent = results.detailed.timestamp;
+
+            if (detailAiTime) detailAiTime.textContent = results.detailed.timestamp.split('•')[1].trim();
+          }
+        } else {
+          // Ready state
+          const hasImages = reportState.images && reportState.images.length > 0;
+          runAiBtn.disabled = !hasImages;
+          runAiBtn.innerHTML = hasImages ? '<i data-lucide="play"></i> <span>Start Analysis</span>' : '<span>No Images Available</span>';
+          aiProgressWrap.classList.remove('active');
+          aiSummaryCard.classList.remove('active');
+          resetCards();
+          lucide.createIcons();
+        }
+      }
+
+      async function runAiAnalysis() {
+        if (!reportState.images || reportState.images.length === 0) return;
+
+        updateAiUI('Processing');
+
+        const startTime = Date.now();
+        const steps = [
+          { label: 'Loading captured images...', start: 0, end: 20 },
+          { label: 'Validating image quality...', start: 20, end: 45 },
+          { label: 'Detecting structures...', start: 45, end: 70 },
+          { label: 'Generating observations...', start: 70, end: 90 },
+          { label: 'Finalizing report...', start: 90, end: 100 }
+        ];
+
+        for (const step of steps) {
+          aiProgressStep.textContent = step.label;
+          let currentProgress = step.start;
+          const duration = 800 + Math.random() * 400; // Simulated step duration
+          const interval = 50;
+          const increment = (step.end - step.start) / (duration / interval);
+
+          while (currentProgress < step.end) {
+            await new Promise(r => setTimeout(r, interval));
+            currentProgress += increment;
+            let percent = Math.min(Math.round(currentProgress), 100);
+            aiProgressPercent.textContent = `${percent}%`;
+            aiProgressFill.style.width = `${percent}%`;
+          }
+        }
+
+        const endTime = Date.now();
+        const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
+        const now = new Date();
+        const results = {
+          status: 'Completed',
+          quality: 'Good',
+          confidence: '97%',
+          structures: 'Abdominal Region',
+          observation: 'No significant abnormality detected',
+          risk: 'Low',
+          summary: [
+            'Image quality acceptable',
+            'Structures recognized',
+            'No critical abnormal findings',
+            'Recommend physician verification'
+          ],
+          detailed: {
+            features: 'Abdominal Tissue',
+            clarity: 'High',
+            model: 'TORUS-AI-v1',
+            time: `${durationSeconds}s`,
+            confidence: '97%',
+            timestamp: `${now.toLocaleDateString()} • ${now.toLocaleTimeString()}`
+          }
+        };
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
+        updateAiUI('Completed', results);
+      }
+
+      function restoreAiAnalysis() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const results = JSON.parse(saved);
+            updateAiUI('Completed', results);
+          } catch (e) {
+            console.error('Failed to restore AI analysis', e);
+          }
+        } else {
+          updateAiUI('Ready');
+        }
+      }
+
+      if (runAiBtn) {
+        runAiBtn.addEventListener('click', runAiAnalysis);
+      }
+
+      if (toggleAiDetails) {
+        toggleAiDetails.addEventListener('click', () => {
+          const isActive = aiDetailsPanel.classList.toggle('active');
+          toggleAiDetails.querySelector('span') || (toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`);
+
+          if (isActive) {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+              const results = JSON.parse(saved);
+              document.getElementById('aiDetailFeatures').textContent = results.detailed.features;
+              document.getElementById('aiDetailTime').textContent = results.detailed.time;
+              document.getElementById('aiDetailTimestamp').textContent = results.detailed.timestamp;
+              // Add Clarity, Model, Confidence if not present
+              const grid = aiDetailsPanel.querySelector('.ai-details-grid');
+              grid.innerHTML = `
+                  <div class="ai-detail-item">
+                     <span class="ai-detail-label">Detected Structures</span>
+                     <span class="ai-detail-value">${results.detailed.features}</span>
+                  </div>
+                  <div class="ai-detail-item">
+                     <span class="ai-detail-label">Image Clarity</span>
+                     <span class="ai-detail-value">${results.detailed.clarity || 'High'}</span>
+                  </div>
+                  <div class="ai-detail-item">
+                     <span class="ai-detail-label">Model</span>
+                     <span class="ai-detail-value">${results.detailed.model || 'TORUS-AI-v1'}</span>
+                  </div>
+                  <div class="ai-detail-item">
+                     <span class="ai-detail-label">Processing Time</span>
+                     <span class="ai-detail-value">${results.detailed.time}</span>
+                  </div>
+                  <div class="ai-detail-item">
+                     <span class="ai-detail-label">Confidence</span>
+                     <span class="ai-detail-value">${results.detailed.confidence || '97%'}</span>
+                  </div>
+                  <div class="ai-detail-item">
+                     <span class="ai-detail-label">Generated</span>
+                     <span class="ai-detail-value">${results.detailed.timestamp}</span>
+                  </div>
+                `;
+            }
+          }
+          lucide.createIcons();
+        });
+      }
+
+      // Check image count for button state
+      const checkImages = () => {
+        if (aiStatusText.textContent.includes('Ready') || aiStatusText.textContent.includes('Images')) {
+          updateAiUI('Ready');
+        }
+      };
+
+      // Poll or hook into renderCapturedImages
+      const originalRender = window.renderCapturedImages;
+      window.renderCapturedImages = function (...args) {
+        if (originalRender) originalRender.apply(this, args);
+        checkImages();
+      };
+
+      // Initial restore
+    })();
+  </script>
+</body>
+
+</html>
