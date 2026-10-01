@@ -1233,29 +1233,21 @@ if (dom.reportPreviewInput) {
 }
 
 function navigateBackFromReport() {
-  // 1. Return to same-origin referrer if available and not this page
-  if (document.referrer) {
-    try {
-      const refUrl = new URL(document.referrer);
-      if (refUrl.origin === window.location.origin && !refUrl.pathname.toLowerCase().endsWith('report-generation.html')) {
-        window.location.href = document.referrer;
-        return;
-      }
-    } catch (e) {
-      console.warn('Invalid referrer:', e);
+  const currentUrlParams = new URLSearchParams(window.location.search);
+  const room = currentUrlParams.get('room') || 'torus';
+  const role = currentUrlParams.get('role') || 'doctor';
+  
+  const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
+  targetUrl.searchParams.set('room', room);
+  targetUrl.searchParams.set('role', role);
+  
+  for (const [key, val] of currentUrlParams.entries()) {
+    if (key !== 'room' && key !== 'role') {
+      targetUrl.searchParams.set(key, val);
     }
   }
-
-  // 2. Fall back to browser history if applicable
-  if (window.history.length > 1 && document.referrer && document.referrer.startsWith(window.location.origin)) {
-    window.history.back();
-    return;
-  }
-
-  // 3. Fallback: Return to Video Consultation preserving current room and role parameters
-  const backUrl = new URL(window.location.href);
-  backUrl.pathname = backUrl.pathname.replace(/report-generation\.html$/i, 'index.html');
-  window.location.href = backUrl.toString();
+  
+  window.location.href = targetUrl.toString();
 }
 
 if (dom.backBtn) {
