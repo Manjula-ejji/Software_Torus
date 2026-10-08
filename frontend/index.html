@@ -231,25 +231,41 @@
       var returnFromReport = sessionStorage.getItem('torus_return_from_report');
       var activeScreen = sessionStorage.getItem('torus_active_screen_on_load');
 
-      if (screenParam === 'doctor-portal-dashboard' || activeScreen === 'doctor-portal-dashboard' || returnFromReport === 'true') {
+      if (screenParam === 'app-dashboard' || activeScreen === 'app-dashboard' || returnFromReport === 'true') {
         sessionStorage.removeItem('torus_return_from_report');
         sessionStorage.removeItem('torus_active_screen_on_load');
-        
+
         var roleInput = document.getElementById('role');
         if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
         var channelInput = document.getElementById('channel');
         if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
-        
-        window.showTorusScreen('doctor-portal-dashboard');
-      } else if (screenParam === 'app-dashboard' || activeScreen === 'app-dashboard') {
-        sessionStorage.removeItem('torus_active_screen_on_load');
-        
-        var roleInput = document.getElementById('role');
-        if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
-        var channelInput = document.getElementById('channel');
-        if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
-        
+
+        try {
+          var raw = sessionStorage.getItem("torus_nav_history_stack");
+          var st = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(st) || st.length <= 1) {
+            sessionStorage.setItem("torus_nav_history_stack", JSON.stringify(["role-selection-screen", "doctor-login-screen", "doctor-portal-dashboard"]));
+          }
+        } catch (_) {}
+
         window.showTorusScreen('app-dashboard');
+      } else if (screenParam === 'doctor-portal-dashboard' || activeScreen === 'doctor-portal-dashboard') {
+        sessionStorage.removeItem('torus_active_screen_on_load');
+
+        var roleInput = document.getElementById('role');
+        if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
+        var channelInput = document.getElementById('channel');
+        if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
+
+        try {
+          var raw = sessionStorage.getItem("torus_nav_history_stack");
+          var st = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(st) || st.length <= 1) {
+            sessionStorage.setItem("torus_nav_history_stack", JSON.stringify(["role-selection-screen", "doctor-login-screen"]));
+          }
+        } catch (_) {}
+
+        window.showTorusScreen('doctor-portal-dashboard');
       }
     });
   </script>
