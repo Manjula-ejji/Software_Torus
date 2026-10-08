@@ -18,7 +18,7 @@ This is a very small web sample that uses the Agora Web SDK to do 1-to-many vide
 npm start
 ```
 
-3. Open http://localhost:8080 in your browser.
+3. Open http://localhost:3000/ or http://localhost:5000/ in your browser.
 4. Enter your Agora App ID.
 5. Enter a channel name.
 6. Add a token if your Agora project has App Certificate enabled.

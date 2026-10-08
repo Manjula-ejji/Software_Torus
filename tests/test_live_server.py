@@ -10,7 +10,7 @@ sys.path.insert(0, str(backend_dir))
 
 import database
 
-BASE_URL = "http://127.0.0.1:3000"
+BASE_URL = "http://127.0.0.1:5000"
 
 def post_json(path, data):
     url = f"{BASE_URL}{path}"

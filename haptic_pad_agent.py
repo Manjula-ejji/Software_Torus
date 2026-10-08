@@ -27,7 +27,7 @@ import serial.tools.list_ports
 
 # ── Config ────────────────────────────────────────────────────────────────────
 BAUD_RATE = 115200
-DEFAULT_BACKEND_URL = os.environ.get("TORUS_BACKEND_URL", "http://127.0.0.1:3000")
+DEFAULT_BACKEND_URL = os.environ.get("TORUS_BACKEND_URL", "http://127.0.0.1:5000")
 DEFAULT_AGENT_SECRET = os.environ.get("HAPTIC_AGENT_SECRET", "torus_haptic_sec_2026")
 SLAVE_IP_FILE = "slave_ip.txt"
 

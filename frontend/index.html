@@ -10,10 +10,249 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=105" />
+  <link rel="stylesheet" href="css/styles.css?v=106" />
+  <style>
+    :root {
+      --bg-main: #060B18;
+      --bg-surface: #0E1628;
+      --bg-card: #111B31;
+      --text-main: #FFFFFF;
+      --text-muted: #B7C5D8;
+      --accent: #0084FF;
+      --accent-cyan: #00C8FF;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #060B18;
+      background-image: radial-gradient(circle at 50% 20%, rgba(0, 132, 255, 0.15) 0%, transparent 60%),
+                        radial-gradient(circle at 0% 0%, rgba(0, 132, 255, 0.06) 0%, transparent 40%),
+                        radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 45%);
+      color: #FFFFFF;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .role-selection-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: #060B18;
+      background-image: radial-gradient(circle at 50% 30%, rgba(139, 92, 246, 0.18) 0%, transparent 65%),
+                        radial-gradient(circle at 50% 0%, #120e29 0%, #060B18 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 24px;
+    }
+    .role-selection-container {
+      max-width: 960px;
+      width: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    .startup-logo-wrapper { margin-bottom: 12px; display: flex; justify-content: center; align-items: center; }
+    .startup-logo { width: 560px; max-width: 100%; height: auto; aspect-ratio: 3 / 1; object-fit: contain; display: block; }
+    .startup-title {
+      font-family: 'Poppins', sans-serif;
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      margin: 0 0 10px 0;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .startup-subtitle {
+      font-family: 'Poppins', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      color: #00C8FF;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      margin: 0 0 10px 0;
+    }
+    .startup-platform {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: #F8FAFC;
+      letter-spacing: 1.2px;
+      margin: 0 0 45px 0;
+      opacity: 0.95;
+    }
+    .role-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px;
+      width: 100%;
+      position: relative;
+      z-index: 1;
+    }
+    .role-card-item {
+      background: linear-gradient(180deg, rgba(17, 28, 47, 0.72) 0%, rgba(10, 14, 25, 0.92) 100%);
+      border: 1.5px solid rgba(255, 255, 255, 0.10);
+      border-radius: 24px;
+      padding: 48px 32px;
+      cursor: pointer;
+      transition: all 320ms cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .role-card-item:hover {
+      transform: translateY(-8px) scale(1.02);
+      border-color: rgba(120, 190, 255, 0.35) !important;
+      background: linear-gradient(180deg, rgba(24, 38, 64, 0.75) 0%, rgba(12, 18, 32, 0.95) 100%) !important;
+    }
+    .role-icon {
+      width: 94px; height: 94px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 20%, rgba(18, 28, 48, 0.85) 0%, rgba(9, 13, 26, 0.95) 100%);
+      border: 1.5px solid rgba(59, 168, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 26px;
+    }
+    .role-icon-img { width: 72%; height: 72%; object-fit: contain; pointer-events: none; }
+    .role-name {
+      font-family: 'Poppins', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 18px;
+      letter-spacing: 1px;
+    }
+    .role-uid-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+      background: linear-gradient(135deg, rgba(108, 59, 255, 0.35) 0%, rgba(168, 85, 247, 0.35) 100%);
+      border: 1.5px solid rgba(168, 85, 247, 0.35);
+      border-radius: 99px;
+      letter-spacing: 1.2px;
+      min-width: 120px;
+      padding: 12px 22px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+  <script>
+    window.TORUS_ALL_SCREENS = [
+      "role-selection-screen",
+      "doctor-login-screen",
+      "doctor-register-screen",
+      "doctor-forgot-screen",
+      "doctor-biometric-screen",
+      "doctor-bio-register-screen",
+      "patient-login-screen",
+      "patient-register-screen",
+      "patient-forgot-screen",
+      "patient-clinical-registration-screen",
+      "viewer-login-screen",
+      "viewer-register-screen",
+      "viewer-forgot-screen",
+      "join-session-screen",
+      "doctor-portal-dashboard",
+      "app-dashboard"
+    ];
+
+    window.showTorusScreen = function(targetId) {
+      window.TORUS_ALL_SCREENS.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = "none";
+      });
+      var target = document.getElementById(targetId);
+      if (target) {
+        target.style.display = "flex";
+        try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+      }
+    };
+
+    window.selectTorusRole = function(role, uid) {
+      var r = (role || "").toLowerCase().trim();
+      var roleInput = document.getElementById("role");
+      var uidInput = document.getElementById("uid");
+      
+      if (r === "doctor") {
+        if (roleInput) roleInput.value = "doctor";
+        if (uidInput) uidInput.value = uid || "3001";
+        var docAlert = document.getElementById("doctor-login-alert");
+        if (docAlert) docAlert.style.display = "none";
+        var docEmail = document.getElementById("doctor-email-input");
+        if (docEmail && !docEmail.value) docEmail.value = "admin@gmail.com";
+        window.showTorusScreen("doctor-login-screen");
+        return;
+      }
+
+      if (r === "patient") {
+        if (roleInput) roleInput.value = "patient";
+        if (uidInput) uidInput.value = uid || "4001";
+        var patAlert = document.getElementById("patient-login-alert");
+        if (patAlert) patAlert.style.display = "none";
+        var patEmail = document.getElementById("patient-email-input");
+        if (patEmail && !patEmail.value) patEmail.value = "patient@gmail.com";
+        window.showTorusScreen("patient-login-screen");
+        return;
+      }
+
+      if (r === "viewer") {
+        if (roleInput) roleInput.value = "viewer";
+        if (uidInput) uidInput.value = uid || "6001";
+        var viewAlert = document.getElementById("viewer-login-alert");
+        if (viewAlert) viewAlert.style.display = "none";
+        var viewerEmailInput = document.getElementById("viewer-email-input");
+        if (viewerEmailInput && !viewerEmailInput.value) viewerEmailInput.value = "user@gmail.com";
+        window.showTorusScreen("viewer-login-screen");
+        return;
+      }
+
+      window.showTorusScreen("role-selection-screen");
+    };
+
+    window.navigateBackToRoleSelection = function() {
+      window.showTorusScreen("role-selection-screen");
+    };
+
+    document.addEventListener("DOMContentLoaded", function() {
+      var urlParams = new URLSearchParams(window.location.search);
+      var screenParam = urlParams.get('screen');
+      var returnFromReport = sessionStorage.getItem('torus_return_from_report');
+      var activeScreen = sessionStorage.getItem('torus_active_screen_on_load');
+
+      if (screenParam === 'doctor-portal-dashboard' || activeScreen === 'doctor-portal-dashboard' || returnFromReport === 'true') {
+        sessionStorage.removeItem('torus_return_from_report');
+        sessionStorage.removeItem('torus_active_screen_on_load');
+        
+        var roleInput = document.getElementById('role');
+        if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
+        var channelInput = document.getElementById('channel');
+        if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
+        
+        window.showTorusScreen('doctor-portal-dashboard');
+      } else if (screenParam === 'app-dashboard' || activeScreen === 'app-dashboard') {
+        sessionStorage.removeItem('torus_active_screen_on_load');
+        
+        var roleInput = document.getElementById('role');
+        if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
+        var channelInput = document.getElementById('channel');
+        if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
+        
+        window.showTorusScreen('app-dashboard');
+      }
+    });
+  </script>
 </head>
 
 <body>
@@ -26,22 +265,21 @@
       <p class="startup-subtitle">Remote Ultrasound System</p>
       <p class="startup-platform">Next-Generation Healthcare Robotics Platform</p>
       <div class="role-cards-grid">
-        <div class="role-card-item" data-role="doctor" data-uid="3001">
+        <div class="role-card-item" data-role="doctor" data-uid="3001" role="button" tabindex="0" onclick="selectTorusRole('doctor')">
           <div class="role-icon">
             <img src="assets/doctor-logo.png" class="role-icon-img" alt="Doctor">
           </div>
           <h3 class="role-name">Doctor</h3>
           <p class="role-uid-label">UID: 3001</p>
-
         </div>
-        <div class="role-card-item" data-role="patient" data-uid="4001">
+        <div class="role-card-item" data-role="patient" data-uid="4001" role="button" tabindex="0" onclick="selectTorusRole('patient')">
           <div class="role-icon">
             <img src="assets/patient-logo.png" class="role-icon-img" alt="Patient">
           </div>
           <h3 class="role-name">Patient</h3>
           <p class="role-uid-label">UID: 4001</p>
         </div>
-        <div class="role-card-item" data-role="viewer" data-uid="6001">
+        <div class="role-card-item" data-role="viewer" data-uid="6001" role="button" tabindex="0" onclick="selectTorusRole('viewer')">
           <div class="role-icon">
             <img src="assets/viewer-logo.png" class="role-icon-img" alt="Viewer">
           </div>
@@ -55,7 +293,7 @@
   <!-- Doctor Secure Login Screen -->
   <div id="doctor-login-screen" class="doctor-login-screen" style="display: none;">
     <div class="doctor-login-card">
-      <button type="button" id="doctor-login-back-btn" class="doctor-back-btn" title="Back to Role Selection">
+      <button type="button" id="doctor-login-back-btn" class="doctor-back-btn" title="Back to Role Selection" onclick="navigateBackToRoleSelection()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -529,7 +767,7 @@
   <!-- Patient Secure Login Screen -->
   <div id="patient-login-screen" class="doctor-login-screen" style="display: none;">
     <div class="doctor-login-card">
-      <button type="button" id="patient-login-back-btn" class="doctor-back-btn" title="Back to Role Selection">
+      <button type="button" id="patient-login-back-btn" class="doctor-back-btn" title="Back to Role Selection" onclick="navigateBackToRoleSelection()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -1010,7 +1248,7 @@
   <!-- Viewer Secure Login Screen -->
   <div id="viewer-login-screen" class="viewer-login-screen" style="display: none;">
     <div class="viewer-login-card doctor-login-card">
-      <button type="button" id="viewer-login-back-btn" class="doctor-back-btn" title="Back to Role Selection">
+      <button type="button" id="viewer-login-back-btn" class="doctor-back-btn" title="Back to Role Selection" onclick="navigateBackToRoleSelection()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -4234,7 +4472,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=105"></script>
+  <script src="app.js?v=106"></script>
 </body>
 
 </html>

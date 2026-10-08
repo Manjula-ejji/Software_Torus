@@ -15,9 +15,9 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 if __name__ == "__main__":
     print("==================================================================")
-    print(" [TORUS] Port 3000 is the single official application port.")
+    print(" [TORUS] Port 5000 is the single official application port.")
     print(" [TORUS] Launching backend/server.py (Frontend + Backend APIs)...")
-    print(" [TORUS] Access URL: http://127.0.0.1:3000/index.html")
+    print(" [TORUS] Access URL: http://127.0.0.1:5000/")
     print("==================================================================")
     from server import main
     main()

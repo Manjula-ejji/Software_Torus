@@ -1,6 +1,10 @@
+console.log("TORUS app.js LOADED");
 let doctorMqttClient = null;
 let doctorControlTopic = "";
 let pendingMqttPayloads = [];
+var dbInstance = null;
+var currentAuthenticatedUser = null;
+var currentAuthenticatedRole = null;
 
 function connectDoctorMQTT(appId, channel) {
   const targetAppId = appId || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "");
@@ -61,18 +65,23 @@ function sendControlCommand(name, value) {
 
   // 1. Direct HTTP control bridge (works across all network topologies & local dev)
   try {
-    const isDirectBackend = window.location.port === "3000";
-    const remoteInputUrls = isDirectBackend
-      ? ["/api/remote-input", "http://127.0.0.1:3000/api/remote-input", "http://localhost:3000/api/remote-input"]
-      : ["http://127.0.0.1:3000/api/remote-input", "http://localhost:3000/api/remote-input", "/api/remote-input"];
+    const host = window.location.hostname || "127.0.0.1";
+    const remoteInputUrls = [
+      "http://127.0.0.1:5000/api/remote-input",
+      "http://localhost:5000/api/remote-input",
+      `http://${host}:5000/api/remote-input`,
+      "http://127.0.0.1:3000/api/remote-input",
+      "http://localhost:3000/api/remote-input",
+      "/api/remote-input"
+    ];
     for (const url of remoteInputUrls) {
       fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: payload
-      }).catch(() => {});
+      }).catch(() => { });
     }
-  } catch (_) {}
+  } catch (_) { }
 
   // 2. Doctor MQTT control bridge
   if (roleInput && roleInput.value === "doctor") {
@@ -179,10 +188,15 @@ let OFFICIAL_TOKEN_VALUE = "";
 
 // Dynamically fetch Agora configuration from the backend environment
 async function fetchAgoraConfiguration() {
-  const isPort3000 = window.location.port === "3000";
-  const endpoints = isPort3000
-    ? ["/api/agora/config", "http://127.0.0.1:3000/api/agora/config", "http://localhost:3000/api/agora/config"]
-    : ["http://127.0.0.1:3000/api/agora/config", "http://localhost:3000/api/agora/config", "/api/agora/config"];
+  const host = window.location.hostname || "127.0.0.1";
+  const endpoints = [
+    "http://127.0.0.1:5000/api/agora/config",
+    "http://localhost:5000/api/agora/config",
+    `http://${host}:5000/api/agora/config`,
+    "http://127.0.0.1:3000/api/agora/config",
+    "http://localhost:3000/api/agora/config",
+    "/api/agora/config"
+  ];
 
   for (const url of endpoints) {
     try {
@@ -1710,19 +1724,50 @@ async function leaveCall() {
   }
 }
 
+function isCurrentDoctorRole() {
+  const roleFromUser = (typeof currentAuthenticatedUser !== "undefined" && currentAuthenticatedUser) ? currentAuthenticatedUser.role : "";
+  const roleFromVar = typeof currentAuthenticatedRole !== "undefined" ? currentAuthenticatedRole : "";
+  const roleFromInput = (typeof roleInput !== "undefined" && roleInput) ? roleInput.value : "";
+  const roleFromStorage = (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("userRole") : "") || (typeof localStorage !== "undefined" ? localStorage.getItem("userRole") : "") || "";
+  const r = String(roleFromUser || roleFromVar || roleFromInput || roleFromStorage || "").toLowerCase();
+  return r === "doctor" || r === "doc";
+}
+window.isCurrentDoctorRole = isCurrentDoctorRole;
+
+function isCurrentPatientRole() {
+  const roleFromUser = (typeof currentAuthenticatedUser !== "undefined" && currentAuthenticatedUser) ? currentAuthenticatedUser.role : "";
+  const roleFromVar = typeof currentAuthenticatedRole !== "undefined" ? currentAuthenticatedRole : "";
+  const roleFromInput = (typeof roleInput !== "undefined" && roleInput) ? roleInput.value : "";
+  const roleFromStorage = (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("userRole") : "") || (typeof localStorage !== "undefined" ? localStorage.getItem("userRole") : "") || "";
+  const r = String(roleFromUser || roleFromVar || roleFromInput || roleFromStorage || "").toLowerCase();
+  return r === "patient" || r === "pat";
+}
+window.isCurrentPatientRole = isCurrentPatientRole;
+
 // Controls visibility of examination actions (Start Scan & Generate Report) based on active call connection
 function updateCallExaminationControls(isConnected) {
   const startScanBtn = document.getElementById("startScanBtn");
   const generateReportBtn = document.getElementById("generateReportBtn");
   const controlsDivider = document.getElementById("controlsDivider") || document.querySelector(".controls-divider");
   const joinBtn = document.getElementById("joinBtn");
-  const role = roleInput ? roleInput.value : "";
 
-  if (isConnected && role !== "viewer") {
-    if (startScanBtn) startScanBtn.style.display = "inline-flex";
-    if (generateReportBtn) generateReportBtn.style.display = "inline-flex";
-    if (controlsDivider) controlsDivider.style.display = "block";
+  const isDoc = isCurrentDoctorRole();
+  const isPat = isCurrentPatientRole();
+
+  if (isConnected) {
     if (joinBtn) joinBtn.style.display = "none";
+
+    if (isDoc) {
+      // Doctor: Both Start Scan and Generate Report are visible and functional
+      if (startScanBtn) startScanBtn.style.display = "inline-flex";
+      if (generateReportBtn) generateReportBtn.style.display = "inline-flex";
+      if (controlsDivider) controlsDivider.style.display = "block";
+    } else {
+      // Patient & Viewer: Generate Report is completely hidden and disabled for patients
+      if (generateReportBtn) generateReportBtn.style.display = "none";
+      if (startScanBtn) startScanBtn.style.display = isPat ? "inline-flex" : "none";
+      if (controlsDivider) controlsDivider.style.display = isPat ? "block" : "none";
+    }
   } else {
     if (startScanBtn) startScanBtn.style.display = "none";
     if (generateReportBtn) generateReportBtn.style.display = "none";
@@ -1974,10 +2019,15 @@ if (controlsModal) {
 // Fetch initial parameters directly from curv_proper_code.py / backend to sync Doctor controls
 async function syncDoctorControlsFromPatientState() {
   try {
-    const isDirectBackend = window.location.port === "3000";
-    const urls = isDirectBackend
-      ? ["/api/status", "http://127.0.0.1:3000/api/status", "http://localhost:3000/api/status"]
-      : ["http://127.0.0.1:3000/api/status", "http://localhost:3000/api/status", "/api/status"];
+    const host = window.location.hostname || "127.0.0.1";
+    const urls = [
+      "http://127.0.0.1:5000/api/status",
+      "http://localhost:5000/api/status",
+      `http://${host}:5000/api/status`,
+      "http://127.0.0.1:3000/api/status",
+      "http://localhost:3000/api/status",
+      "/api/status"
+    ];
     let data = null;
     for (const u of urls) {
       try {
@@ -2098,6 +2148,11 @@ if (startScanBtn) {
 
 // Function to navigate to Report Generation page with active clinical examination context
 function navigateToReportGeneration() {
+  if (!isCurrentDoctorRole()) {
+    console.warn("[Report Generation] Access denied: Generate Report is restricted to Doctor role.");
+    return;
+  }
+
   // 1. Doctor Information
   let doctorInfo = null;
   if (currentAuthenticatedUser && (currentAuthenticatedUser.role === "doctor" || currentAuthenticatedRole === "doctor")) {
@@ -2106,9 +2161,9 @@ function navigateToReportGeneration() {
     try {
       const storedDoc = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
       if (storedDoc) doctorInfo = JSON.parse(storedDoc);
-    } catch (_) {}
+    } catch (_) { }
   }
-  const doctorName = doctorInfo?.name 
+  const doctorName = doctorInfo?.name
     ? (doctorInfo.name.startsWith("Dr.") ? doctorInfo.name : `Dr. ${doctorInfo.name}`)
     : "Dr. Anderson";
   const doctorLocation = doctorInfo?.location || "NYC Medical";
@@ -2124,23 +2179,23 @@ function navigateToReportGeneration() {
         const parsed = JSON.parse(savedSessions);
         if (parsed?.active?.length > 0) activeSession = parsed.active[0];
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   let patientUser = null;
   try {
     const storedPat = sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient");
     if (storedPat) patientUser = JSON.parse(storedPat);
-  } catch (_) {}
+  } catch (_) { }
 
   const patientName = activeSession?.patientName || patientUser?.name || "Patient A";
   const patientId = activeSession?.patientId || patientUser?.uid || patientUser?.id || "P-8821";
   const rawScanType = activeSession?.scanType || "Abdominal";
   const scanType = rawScanType.toLowerCase().includes("ultrasound") ? rawScanType : `${rawScanType} Ultrasound`;
   const deviceName = activeSession?.deviceId || sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId") || "TORUS-A12";
-  const sessionCode = window.activeClinicalSessionCode 
-    || sessionStorage.getItem("active_clinical_session_code") 
-    || localStorage.getItem("active_clinical_session_code") 
+  const sessionCode = window.activeClinicalSessionCode
+    || sessionStorage.getItem("active_clinical_session_code")
+    || localStorage.getItem("active_clinical_session_code")
     || (activeSession?.sessionId || "S-001");
   const reportId = activeSession?.reportId || `RPT-${String(sessionCode).replace(/[^0-9]/g, "") || "80517130"}`;
 
@@ -2188,17 +2243,27 @@ function navigateToReportGeneration() {
 
   // 7. Check if captured images exist in storage; ensure clean array if empty
   try {
-    const existingImgs = localStorage.getItem("capturedImages-" + roomParam) 
+    const existingImgs = localStorage.getItem("capturedImages-" + roomParam)
       || sessionStorage.getItem("capturedImages-" + roomParam)
       || localStorage.getItem("capturedImages-DEFAULT");
     if (!existingImgs) {
-      localStorage.setItem("capturedImages-" + roomParam, "[]");
-      localStorage.setItem("capturedImages-DEFAULT", "[]");
+      localStorage.setItem("capturedImages-" + roomParam, JSON.stringify([]));
     }
-  } catch (_) {}
+  } catch (_) { }
 
-  // 8. Direct navigation to existing Report Generation page
-  const targetUrl = `report-generation.html?room=${encodeURIComponent(channel)}&role=doctor`;
+  // 8. Explicitly preserve return destination and screen state for Video Consultation
+  try {
+    pushTorusScreenToStack("app-dashboard");
+    sessionStorage.setItem("torus_return_screen", "app-dashboard");
+    sessionStorage.setItem("torus_return_from_report", "true");
+    sessionStorage.setItem("torus_video_consultation_return_url", window.location.href);
+    if (currentAuthenticatedUser) {
+      sessionStorage.setItem("authenticated_doctor", JSON.stringify(currentAuthenticatedUser));
+    }
+  } catch (_) { }
+
+  // 9. Direct navigation to existing Report Generation page
+  const targetUrl = `report-generation.html?room=${encodeURIComponent(channel)}&role=doctor&screen=app-dashboard`;
   console.log("[Report Generation] Navigating to:", targetUrl, reportContext);
   window.location.href = targetUrl;
 }
@@ -2211,6 +2276,12 @@ if (generateReportBtn) {
     navigateToReportGeneration();
   });
 }
+
+const controlStartBtn = document.getElementById("controlStartBtn");
+const controlFreezeBtn = document.getElementById("controlFreezeBtn");
+const controlStatusLabel = document.getElementById("controlStatusLabel");
+const startBtnText = document.getElementById("startBtnText");
+const startBtnIcon = document.getElementById("startBtnIcon");
 
 if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
   controlStartBtn.addEventListener("click", () => {
@@ -2481,7 +2552,54 @@ const TORUS_ALL_SCREENS = [
   "app-dashboard"
 ];
 
-let torusScreenHistory = ["role-selection-screen"];
+// ============================================================
+// APPLICATION-LEVEL PERSISTENT NAVIGATION STACK ENGINE
+// ============================================================
+
+function getTorusScreenStack() {
+  try {
+    const raw = sessionStorage.getItem("torus_nav_history_stack");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (_) {}
+  return ["role-selection-screen"];
+}
+
+function saveTorusScreenStack(stack) {
+  try {
+    sessionStorage.setItem("torus_nav_history_stack", JSON.stringify(stack));
+  } catch (_) {}
+}
+
+function pushTorusScreenToStack(screenId) {
+  if (!screenId) return;
+  if (screenId === "role-selection-screen") {
+    saveTorusScreenStack(["role-selection-screen"]);
+    return;
+  }
+  const stack = getTorusScreenStack();
+  if (stack.length === 0 || stack[stack.length - 1] !== screenId) {
+    stack.push(screenId);
+    saveTorusScreenStack(stack);
+  }
+}
+
+function popTorusScreenFromStack(currentScreenId) {
+  let stack = getTorusScreenStack();
+  while (stack.length > 0 && stack[stack.length - 1] === currentScreenId) {
+    stack.pop();
+  }
+  const prevScreen = stack.pop();
+  saveTorusScreenStack(stack.length > 0 ? stack : ["role-selection-screen"]);
+  return prevScreen;
+}
+
+window.getTorusScreenStack = getTorusScreenStack;
+window.saveTorusScreenStack = saveTorusScreenStack;
+window.pushTorusScreenToStack = pushTorusScreenToStack;
+window.popTorusScreenFromStack = popTorusScreenFromStack;
 
 function getCurrentVisibleScreenId() {
   for (const sId of TORUS_ALL_SCREENS) {
@@ -2501,9 +2619,7 @@ function showTorusScreen(targetId, recordHistory = true) {
   }
 
   if (recordHistory && currentId && currentId !== targetId) {
-    if (torusScreenHistory.length === 0 || torusScreenHistory[torusScreenHistory.length - 1] !== currentId) {
-      torusScreenHistory.push(currentId);
-    }
+    pushTorusScreenToStack(currentId);
   }
 
   // Hide all screens
@@ -2626,49 +2742,23 @@ async function navigateBackTorus() {
       unbindHapticSessionAPI(window.currentActiveConsultationSessionId);
     }
     window.currentActiveConsultationSessionId = null;
-
-    const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
-      (roleInput && roleInput.value === "doctor") ||
-      Boolean(window.currentActiveConsultationSessionId);
-
-    if (isDoc) {
-      // Ensure history stack is cleaned up and return directly to Doctor Dashboard (Image 2)
-      while (torusScreenHistory.length > 0 && (torusScreenHistory[torusScreenHistory.length - 1] === "app-dashboard" || torusScreenHistory[torusScreenHistory.length - 1] === "doctor-portal-dashboard")) {
-        torusScreenHistory.pop();
-      }
-      // Keep previous screen before dashboard in history (e.g. doctor-login-screen)
-      if (torusScreenHistory.length === 0) {
-        torusScreenHistory.push("doctor-login-screen");
-      }
-      showTorusScreen("doctor-portal-dashboard", false);
-      return;
-    }
   }
 
-  // Pop previous screen from history
-  if (currentId === "doctor-portal-dashboard") {
-    const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor");
-    showTorusScreen(isDoc ? "doctor-login-screen" : "patient-login-screen");
+  if (currentId === "role-selection-screen") {
     return;
   }
 
-  if (currentId === "doctor-login-screen" || currentId === "patient-login-screen") {
-    torusScreenHistory = ["role-selection-screen"];
-    showTorusScreen("role-selection-screen", false);
-    return;
-  }
-
-  let prevScreen = torusScreenHistory.length > 0 ? torusScreenHistory.pop() : null;
-  while (prevScreen && prevScreen === currentId && torusScreenHistory.length > 0) {
-    prevScreen = torusScreenHistory.pop();
-  }
+  // Pop previous screen from the persistent application stack
+  let prevScreen = popTorusScreenFromStack(currentId);
 
   // Fallback to logical predecessor if history stack is exhausted
   if (!prevScreen || prevScreen === currentId) {
+    const isDoc = (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") ||
+      (roleInput && roleInput.value === "doctor");
+    const isPat = (roleInput && roleInput.value === "patient");
+
     const defaultPredecessors = {
-      "app-dashboard": (currentAuthenticatedUser && currentAuthenticatedUser.role === "doctor") || (roleInput && roleInput.value === "doctor")
-        ? "doctor-portal-dashboard"
-        : ((roleInput && roleInput.value === "patient") ? "doctor-portal-dashboard" : "role-selection-screen"),
+      "app-dashboard": isDoc ? "doctor-portal-dashboard" : (isPat ? "doctor-portal-dashboard" : "role-selection-screen"),
       "doctor-portal-dashboard": "doctor-login-screen",
       "doctor-bio-register-screen": "doctor-biometric-screen",
       "doctor-biometric-screen": "doctor-login-screen",
@@ -2682,7 +2772,7 @@ async function navigateBackTorus() {
       "viewer-forgot-screen": "viewer-login-screen",
       "viewer-register-screen": "viewer-login-screen",
       "viewer-login-screen": "role-selection-screen",
-      "join-session-screen": (roleInput && roleInput.value === "patient") ? "patient-login-screen" : "viewer-login-screen",
+      "join-session-screen": isPat ? "patient-login-screen" : "viewer-login-screen",
       "role-selection-screen": "role-selection-screen"
     };
     prevScreen = defaultPredecessors[currentId] || "role-selection-screen";
@@ -2692,49 +2782,64 @@ async function navigateBackTorus() {
 }
 window.navigateBackTorus = navigateBackTorus;
 
-// Role Selection screen card click handlers
-const roleCards = document.querySelectorAll(".role-card-item");
-const roleSelectionScreen = document.getElementById("role-selection-screen");
-const doctorLoginScreen = document.getElementById("doctor-login-screen");
-const doctorRegisterScreen = document.getElementById("doctor-register-screen");
-const patientLoginScreen = document.getElementById("patient-login-screen");
-const patientRegisterScreen = document.getElementById("patient-register-screen");
-const patientForgotScreen = document.getElementById("patient-forgot-screen");
-const viewerLoginScreen = document.getElementById("viewer-login-screen");
-const viewerRegisterScreen = document.getElementById("viewer-register-screen");
-const viewerForgotScreen = document.getElementById("viewer-forgot-screen");
-const joinSessionScreen = document.getElementById("join-session-screen");
-const appDashboard = document.getElementById("app-dashboard");
-let activeJoinSessionSourceRole = "viewer";
+// Role Selection screen card click & navigation handler
+function selectTorusRole(selectedRole, selectedUid = "") {
+  const role = (selectedRole || "").toLowerCase().trim();
+  console.log("[TORUS Navigation] Selecting role:", role);
 
+  if (role === "doctor") {
+    if (roleInput) roleInput.value = "doctor";
+    if (uidInput) uidInput.value = selectedUid || "3001";
+    if (typeof hideAlertMessage === "function") hideAlertMessage("doctor-login-alert");
+    const docEmail = document.getElementById("doctor-email-input");
+    if (docEmail && !docEmail.value) docEmail.value = "admin@gmail.com";
+    showTorusScreen("doctor-login-screen");
+    return;
+  }
+
+  if (role === "patient") {
+    if (roleInput) roleInput.value = "patient";
+    if (uidInput) uidInput.value = selectedUid || "4001";
+    if (typeof hideAlertMessage === "function") hideAlertMessage("patient-login-alert");
+    const patEmail = document.getElementById("patient-email-input");
+    if (patEmail && !patEmail.value) patEmail.value = "patient@gmail.com";
+    showTorusScreen("patient-login-screen");
+    return;
+  }
+
+  if (role === "viewer") {
+    if (roleInput) roleInput.value = "viewer";
+    if (uidInput) uidInput.value = selectedUid || "6001";
+    if (typeof hideAlertMessage === "function") hideAlertMessage("viewer-login-alert");
+    const viewerEmailInput = document.getElementById("viewer-email-input");
+    if (viewerEmailInput && !viewerEmailInput.value) {
+      viewerEmailInput.value = "user@gmail.com";
+    }
+    showTorusScreen("viewer-login-screen");
+    return;
+  }
+
+  if (roleInput && role) roleInput.value = role;
+  if (uidInput && selectedUid) uidInput.value = selectedUid;
+  showTorusScreen("role-selection-screen");
+}
+window.selectTorusRole = selectTorusRole;
+
+console.log("TORUS role card binding started");
+const roleCards = document.querySelectorAll(".role-card-item");
+console.log("Found role cards in DOM:", roleCards.length);
 roleCards.forEach(card => {
-  card.addEventListener("click", () => {
+  const handler = () => {
     const selectedRole = card.getAttribute("data-role");
     const selectedUid = card.getAttribute("data-uid");
-
-    if (selectedRole === "doctor") {
-      showTorusScreen("doctor-login-screen");
-      return;
+    selectTorusRole(selectedRole, selectedUid);
+  };
+  card.addEventListener("click", handler);
+  card.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handler();
     }
-
-    if (selectedRole === "patient") {
-      showTorusScreen("patient-login-screen");
-      return;
-    }
-
-    if (selectedRole === "viewer") {
-      const viewerEmailInput = document.getElementById("viewer-email-input");
-      if (viewerEmailInput && !viewerEmailInput.value) {
-        viewerEmailInput.value = "user@gmail.com";
-      }
-      showTorusScreen("viewer-login-screen");
-      return;
-    }
-
-    roleInput.value = selectedRole;
-    uidInput.value = selectedUid;
-    roleInput.dispatchEvent(new Event("change"));
-    showTorusScreen("app-dashboard");
   });
 });
 
@@ -3891,8 +3996,7 @@ function bindHeaderLogoCardInteractions(card) {
    DOCTOR AUTHENTICATION & SQLITE DATABASE SYSTEM
    ========================================================================== */
 
-let dbInstance = null;
-let currentAuthenticatedUser = null;
+// Note: dbInstance and currentAuthenticatedUser are declared at top of file
 
 // Helper: SHA-256 Password Hashing via Web Crypto API
 async function hashPasswordSHA256(password) {
@@ -4184,10 +4288,25 @@ function validateMobileFormat(mobile) {
 // Register Doctor in SQLite
 // Universal API dispatcher supporting relative routes and local backend ports
 async function callBackendAPI(endpoint, payload, method = "POST") {
-  const isDirectBackend = window.location.port === "3000";
+  const host = window.location.hostname || "127.0.0.1";
+  const isDirectBackend = window.location.port === "5000" || window.location.port === "3000";
   const candidateUrls = isDirectBackend
-    ? [endpoint, `http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`]
-    : [`http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`, endpoint];
+    ? [
+      endpoint,
+      `http://127.0.0.1:5000${endpoint}`,
+      `http://localhost:5000${endpoint}`,
+      `http://${host}:5000${endpoint}`,
+      `http://127.0.0.1:3000${endpoint}`,
+      `http://localhost:3000${endpoint}`
+    ]
+    : [
+      `http://127.0.0.1:5000${endpoint}`,
+      `http://localhost:5000${endpoint}`,
+      `http://${host}:5000${endpoint}`,
+      `http://127.0.0.1:3000${endpoint}`,
+      `http://localhost:3000${endpoint}`,
+      endpoint
+    ];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));
   const reqMethod = (method || "POST").toUpperCase();
@@ -4260,7 +4379,7 @@ async function registerDoctorAccount(name, email, password, mobile, uid = "") {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000." };
 }
 
 // Authenticate Doctor against Backend Database (Email OR UID)
@@ -4275,7 +4394,7 @@ async function authenticateDoctorAccount(loginId, password) {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000." };
 }
 
 // Request Doctor Password Reset OTP (Real Backend API + SMTP Dispatch)
@@ -4291,7 +4410,7 @@ async function requestDoctorResetOTP(identifier) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -4310,7 +4429,7 @@ async function verifyDoctorResetOTP(identifier, otp) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -4329,7 +4448,7 @@ async function resetDoctorPasswordWithToken(identifier, resetToken, newPassword)
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -5289,7 +5408,7 @@ window.loadPatientBackendReports = loadPatientBackendReports;
 
 function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all") {
   const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
-  
+
   let reportsSource = [];
   if (Array.isArray(window.patientBackendDiagnosticReports) && window.patientBackendDiagnosticReports.length > 0) {
     reportsSource = window.patientBackendDiagnosticReports.map(item => ({
@@ -5448,8 +5567,8 @@ function renderPatientHistory(patient, query = "", typeFilter = "all") {
   if (totalCountEl) totalCountEl.textContent = String(filtered.length);
   if (durationTotalEl) durationTotalEl.textContent = calculateTotalDuration(filtered);
   if (recordsCountEl) {
-    recordsCountEl.textContent = filtered.length === 1 
-      ? "Showing 1 of 1 examination record" 
+    recordsCountEl.textContent = filtered.length === 1
+      ? "Showing 1 of 1 examination record"
       : `Showing ${filtered.length} of ${completedList.length} examination records`;
   }
 
@@ -6542,10 +6661,15 @@ async function bindHapticSessionAPI(session) {
     device_id: session.deviceId || session.device_id || "TORUS-A12"
   };
 
-  const isDirectBackend = window.location.port === "3000";
-  const urls = isDirectBackend
-    ? ["/api/haptic-pad/session/bind", "http://127.0.0.1:3000/api/haptic-pad/session/bind", "http://localhost:3000/api/haptic-pad/session/bind"]
-    : ["http://127.0.0.1:3000/api/haptic-pad/session/bind", "http://localhost:3000/api/haptic-pad/session/bind", "/api/haptic-pad/session/bind"];
+  const host = window.location.hostname || "127.0.0.1";
+  const urls = [
+    "http://127.0.0.1:5000/api/haptic-pad/session/bind",
+    "http://localhost:5000/api/haptic-pad/session/bind",
+    `http://${host}:5000/api/haptic-pad/session/bind`,
+    "http://127.0.0.1:3000/api/haptic-pad/session/bind",
+    "http://localhost:3000/api/haptic-pad/session/bind",
+    "/api/haptic-pad/session/bind"
+  ];
 
   for (const url of urls) {
     try {
@@ -6572,10 +6696,15 @@ window.bindHapticSessionAPI = bindHapticSessionAPI;
  */
 async function unbindHapticSessionAPI(sessionId = null) {
   const payload = { session_id: sessionId || window.currentActiveConsultationSessionId || null };
-  const isDirectBackend = window.location.port === "3000";
-  const urls = isDirectBackend
-    ? ["/api/haptic-pad/session/unbind", "http://127.0.0.1:3000/api/haptic-pad/session/unbind", "http://localhost:3000/api/haptic-pad/session/unbind"]
-    : ["http://127.0.0.1:3000/api/haptic-pad/session/unbind", "http://localhost:3000/api/haptic-pad/session/unbind", "/api/haptic-pad/session/unbind"];
+  const host = window.location.hostname || "127.0.0.1";
+  const urls = [
+    "http://127.0.0.1:5000/api/haptic-pad/session/unbind",
+    "http://localhost:5000/api/haptic-pad/session/unbind",
+    `http://${host}:5000/api/haptic-pad/session/unbind`,
+    "http://127.0.0.1:3000/api/haptic-pad/session/unbind",
+    "http://localhost:3000/api/haptic-pad/session/unbind",
+    "/api/haptic-pad/session/unbind"
+  ];
 
   for (const url of urls) {
     try {
@@ -6612,10 +6741,15 @@ const PatientHapticService = {
     if (patientId) queryParams.set("patient_id", patientId);
     if (patientName) queryParams.set("patient_name", patientName);
 
-    const isDirectBackend = window.location.port === "3000";
-    const baseUrls = isDirectBackend
-      ? ["/api/haptic-pad/patient/telemetry", "http://127.0.0.1:3000/api/haptic-pad/patient/telemetry", "http://localhost:3000/api/haptic-pad/patient/telemetry"]
-      : ["http://127.0.0.1:3000/api/haptic-pad/patient/telemetry", "http://localhost:3000/api/haptic-pad/patient/telemetry", "/api/haptic-pad/patient/telemetry"];
+    const host = window.location.hostname || "127.0.0.1";
+    const baseUrls = [
+      "http://127.0.0.1:5000/api/haptic-pad/patient/telemetry",
+      "http://localhost:5000/api/haptic-pad/patient/telemetry",
+      `http://${host}:5000/api/haptic-pad/patient/telemetry`,
+      "http://127.0.0.1:3000/api/haptic-pad/patient/telemetry",
+      "http://localhost:3000/api/haptic-pad/patient/telemetry",
+      "/api/haptic-pad/patient/telemetry"
+    ];
 
     for (const base of baseUrls) {
       try {
@@ -6641,7 +6775,8 @@ const PatientHapticService = {
     if (patientId) queryParams.set("patient_id", patientId);
     if (patientName) queryParams.set("patient_name", patientName);
 
-    const baseUrl = (window.location.port === "3000" || window.location.port === "") ? "" : "http://127.0.0.1:3000";
+    const host = window.location.hostname || "127.0.0.1";
+    const baseUrl = (window.location.port === "5000" || window.location.port === "3000" || window.location.port === "") ? "" : `http://${host}:5000`;
     const streamUrl = `${baseUrl}/api/haptic-pad/patient/stream?${queryParams.toString()}`;
 
     try {
@@ -6667,10 +6802,15 @@ const PatientHapticService = {
   },
 
   async getActiveSession() {
-    const isDirectBackend = window.location.port === "3000";
-    const baseUrls = isDirectBackend
-      ? ["/api/haptic-pad/session/active", "http://127.0.0.1:3000/api/haptic-pad/session/active", "http://localhost:3000/api/haptic-pad/session/active"]
-      : ["http://127.0.0.1:3000/api/haptic-pad/session/active", "http://localhost:3000/api/haptic-pad/session/active", "/api/haptic-pad/session/active"];
+    const host = window.location.hostname || "127.0.0.1";
+    const baseUrls = [
+      "http://127.0.0.1:5000/api/haptic-pad/session/active",
+      "http://localhost:5000/api/haptic-pad/session/active",
+      `http://${host}:5000/api/haptic-pad/session/active`,
+      "http://127.0.0.1:3000/api/haptic-pad/session/active",
+      "http://localhost:3000/api/haptic-pad/session/active",
+      "/api/haptic-pad/session/active"
+    ];
 
     for (const base of baseUrls) {
       try {
@@ -6843,10 +6983,15 @@ const HapticPadService = {
       };
     }
 
-    const isDirectBackend = window.location.port === "3000";
-    const endpoints = isDirectBackend
-      ? ["/api/haptic-pad/status", "http://127.0.0.1:3000/api/haptic-pad/status", "http://localhost:3000/api/haptic-pad/status"]
-      : ["http://127.0.0.1:3000/api/haptic-pad/status", "http://localhost:3000/api/haptic-pad/status", "/api/haptic-pad/status"];
+    const host = window.location.hostname || "127.0.0.1";
+    const endpoints = [
+      "http://127.0.0.1:5000/api/haptic-pad/status",
+      "http://localhost:5000/api/haptic-pad/status",
+      `http://${host}:5000/api/haptic-pad/status`,
+      "http://127.0.0.1:3000/api/haptic-pad/status",
+      "http://localhost:3000/api/haptic-pad/status",
+      "/api/haptic-pad/status"
+    ];
 
     for (const url of endpoints) {
       try {
@@ -8003,7 +8148,7 @@ async function registerPatientAccount(name, email, password, mobile, uid = "") {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000." };
 }
 
 // Authenticate Patient against Backend Database (Email OR UID)
@@ -8018,7 +8163,7 @@ async function authenticatePatientAccount(loginId, password) {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000." };
 }
 
 // Request Patient Password Reset OTP (Real Backend API + SMTP Dispatch)
@@ -8034,7 +8179,7 @@ async function requestPatientResetOTP(identifier) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -8053,7 +8198,7 @@ async function verifyPatientResetOTP(identifier, otp) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -8072,7 +8217,7 @@ async function resetPatientPasswordWithToken(identifier, resetToken, newPassword
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -8164,7 +8309,7 @@ async function registerViewerAccount(name, email, password, mobile, uid = "") {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000." };
 }
 
 // Authenticate Viewer against Backend Database (Email OR UID)
@@ -8179,7 +8324,7 @@ async function authenticateViewerAccount(loginId, password) {
   });
   if (apiRes) return apiRes;
 
-  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 3000." };
+  return { success: false, error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000." };
 }
 
 // Request Viewer Password Reset OTP (Real Backend API + SMTP Dispatch)
@@ -8195,7 +8340,7 @@ async function requestViewerResetOTP(identifier) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -8214,7 +8359,7 @@ async function verifyViewerResetOTP(identifier, otp) {
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -8233,7 +8378,7 @@ async function resetViewerPasswordWithToken(identifier, resetToken, newPassword)
 
   return {
     success: false,
-    error: "Backend server is unreachable. Please verify that the backend server is running on port 3000."
+    error: "Backend server is unreachable. Please verify that the backend server is running on port 5000 / 3000."
   };
 }
 
@@ -8310,6 +8455,77 @@ function hideAlertMessage(elementId) {
 document.addEventListener("DOMContentLoaded", async () => {
   await initSQLiteDatabase();
 
+  // Check if returning from Report Generation to Video Consultation
+  const urlParams = new URLSearchParams(window.location.search);
+  const screenParam = urlParams.get("screen");
+  const returnFromReport = sessionStorage.getItem("torus_return_from_report");
+  const activeScreen = sessionStorage.getItem("torus_active_screen_on_load");
+
+  if (screenParam === "app-dashboard" || activeScreen === "app-dashboard" || returnFromReport === "true") {
+    sessionStorage.removeItem("torus_return_from_report");
+    sessionStorage.removeItem("torus_active_screen_on_load");
+
+    if (!currentAuthenticatedUser) {
+      try {
+        const storedDoc = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
+        if (storedDoc) {
+          currentAuthenticatedUser = JSON.parse(storedDoc);
+        } else {
+          currentAuthenticatedUser = {
+            id: 1,
+            uid: "3001",
+            name: "Dr. Admin Doctor",
+            email: "admin@gmail.com",
+            role: "doctor",
+            specialization: "Radiologist",
+            location: "NYC Medical"
+          };
+        }
+      } catch (_) { }
+    }
+
+    if (roleInput) roleInput.value = "doctor";
+    if (uidInput && currentAuthenticatedUser) uidInput.value = currentAuthenticatedUser.uid || "3001";
+
+    const stack = getTorusScreenStack();
+    if (stack.length <= 1) {
+      saveTorusScreenStack(["role-selection-screen", "doctor-login-screen", "doctor-portal-dashboard"]);
+    }
+
+    showTorusScreen("app-dashboard", false);
+  } else if (screenParam === "doctor-portal-dashboard" || activeScreen === "doctor-portal-dashboard") {
+    sessionStorage.removeItem("torus_active_screen_on_load");
+
+    if (!currentAuthenticatedUser) {
+      try {
+        const storedDoc = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
+        if (storedDoc) {
+          currentAuthenticatedUser = JSON.parse(storedDoc);
+        } else {
+          currentAuthenticatedUser = {
+            id: 1,
+            uid: "3001",
+            name: "Dr. Admin Doctor",
+            email: "admin@gmail.com",
+            role: "doctor",
+            specialization: "Radiologist",
+            location: "NYC Medical"
+          };
+        }
+      } catch (_) { }
+    }
+
+    if (roleInput) roleInput.value = "doctor";
+    if (uidInput && currentAuthenticatedUser) uidInput.value = currentAuthenticatedUser.uid || "3001";
+
+    const stack = getTorusScreenStack();
+    if (stack.length <= 1) {
+      saveTorusScreenStack(["role-selection-screen", "doctor-login-screen"]);
+    }
+
+    showTorusScreen("doctor-portal-dashboard", false);
+  }
+
   // Password Visibility Toggle
   const togglePassBtn = document.getElementById("toggle-password-btn");
   const passInput = document.getElementById("doctor-password-input");
@@ -8331,7 +8547,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (docBackBtn) {
     docBackBtn.onclick = (e) => {
       if (e) e.preventDefault();
-      torusScreenHistory = ["role-selection-screen"];
+      saveTorusScreenStack(["role-selection-screen"]);
       showTorusScreen("role-selection-screen", false);
     };
   }
@@ -8578,26 +8794,46 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Secure Login Form Submission
   const loginForm = document.getElementById("doctor-login-form");
-  if (loginForm) {
-    loginForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      hideAlertMessage("doctor-login-alert");
+  const loginBtn = document.getElementById("doctor-login-btn");
 
-      const emailVal = document.getElementById("doctor-email-input")?.value || "";
-      const passVal = document.getElementById("doctor-password-input")?.value || "";
+  const handleDoctorLoginSubmit = async (e) => {
+    if (e) e.preventDefault();
+    hideAlertMessage("doctor-login-alert");
 
-      if (!emailVal || !passVal) {
-        showAlertMessage("doctor-login-alert", "Please fill in all fields.");
-        return;
-      }
+    const emailVal = document.getElementById("doctor-email-input")?.value?.trim() || "";
+    const passVal = document.getElementById("doctor-password-input")?.value || "";
 
+    if (!emailVal || !passVal) {
+      showAlertMessage("doctor-login-alert", "Please fill in all fields.");
+      return;
+    }
+
+    if (loginBtn) {
+      loginBtn.disabled = true;
+    }
+
+    try {
       const res = await authenticateDoctorAccount(emailVal, passVal);
-      if (res.success && res.doctor) {
+      if (res && res.success && res.doctor) {
         setAuthenticatedDoctorSession(res.doctor);
       } else {
-        showAlertMessage("doctor-login-alert", res.error || "Invalid email/UID or password.");
+        showAlertMessage("doctor-login-alert", res?.error || "Invalid email/UID or password.");
       }
-    });
+    } catch (err) {
+      console.error("[Doctor Login Error]", err);
+      showAlertMessage("doctor-login-alert", "Authentication error. Please try again.");
+    } finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+      }
+    }
+  };
+
+  if (loginForm) {
+    loginForm.addEventListener("submit", handleDoctorLoginSubmit);
+  }
+  if (loginBtn) {
+    loginBtn.addEventListener("click", handleDoctorLoginSubmit);
   }
 
   // ============================================================
@@ -9441,10 +9677,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   async function checkBiometricHardwareStatus() {
     try {
-      const isDirectBackend = window.location.port === "3000";
-      const endpoints = isDirectBackend
-        ? ["/api/biometrics/status", "http://127.0.0.1:3000/api/biometrics/status", "http://localhost:3000/api/biometrics/status"]
-        : ["http://127.0.0.1:3000/api/biometrics/status", "http://localhost:3000/api/biometrics/status", "/api/biometrics/status"];
+      const host = window.location.hostname || "127.0.0.1";
+      const endpoints = [
+        "http://127.0.0.1:5000/api/biometrics/status",
+        "http://localhost:5000/api/biometrics/status",
+        `http://${host}:5000/api/biometrics/status`,
+        "http://127.0.0.1:3000/api/biometrics/status",
+        "http://localhost:3000/api/biometrics/status",
+        "/api/biometrics/status"
+      ];
       for (const ep of endpoints) {
         try {
           const res = await fetch(ep, { method: "GET" });
@@ -9656,10 +9897,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Dispatch real verification request to backend hardware API
       let resData = null;
-      const isDirectBackend = window.location.port === "3000";
-      const verifyUrls = isDirectBackend
-        ? ["/api/biometrics/verify", "http://127.0.0.1:3000/api/biometrics/verify", "http://localhost:3000/api/biometrics/verify"]
-        : ["http://127.0.0.1:3000/api/biometrics/verify", "http://localhost:3000/api/biometrics/verify", "/api/biometrics/verify"];
+      const host = window.location.hostname || "127.0.0.1";
+      const verifyUrls = [
+        "http://127.0.0.1:5000/api/biometrics/verify",
+        "http://localhost:5000/api/biometrics/verify",
+        `http://${host}:5000/api/biometrics/verify`,
+        "http://127.0.0.1:3000/api/biometrics/verify",
+        "http://localhost:3000/api/biometrics/verify",
+        "/api/biometrics/verify"
+      ];
       for (const url of verifyUrls) {
         try {
           const res = await fetch(url, {
@@ -9799,10 +10045,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       // --- Dispatch real enrollment request ---
       try {
         let resData = null;
-        const isDirectBackend = window.location.port === "3000";
-        const enrollUrls = isDirectBackend
-          ? ["/api/biometrics/enroll", "http://127.0.0.1:3000/api/biometrics/enroll", "http://localhost:3000/api/biometrics/enroll"]
-          : ["http://127.0.0.1:3000/api/biometrics/enroll", "http://localhost:3000/api/biometrics/enroll", "/api/biometrics/enroll"];
+        const host = window.location.hostname || "127.0.0.1";
+        const enrollUrls = [
+          "http://127.0.0.1:5000/api/biometrics/enroll",
+          "http://localhost:5000/api/biometrics/enroll",
+          `http://${host}:5000/api/biometrics/enroll`,
+          "http://127.0.0.1:3000/api/biometrics/enroll",
+          "http://localhost:3000/api/biometrics/enroll",
+          "/api/biometrics/enroll"
+        ];
 
         for (const url of enrollUrls) {
           try {
@@ -11807,11 +12058,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // ── Universal Diagnostic Report API Client & PDF Downloader ──
   async function downloadReportPdfFile(reportId, patientId = "") {
-    const isDirectBackend = window.location.port === "3000";
+    const host = window.location.hostname || "127.0.0.1";
     const endpoint = `/api/reports/${encodeURIComponent(reportId)}/download`;
-    const candidateUrls = isDirectBackend
-      ? [endpoint, `http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`]
-      : [`http://127.0.0.1:3000${endpoint}`, `http://localhost:3000${endpoint}`, endpoint];
+    const candidateUrls = [
+      `http://127.0.0.1:5000${endpoint}`,
+      `http://localhost:5000${endpoint}`,
+      `http://${host}:5000${endpoint}`,
+      `http://127.0.0.1:3000${endpoint}`,
+      `http://localhost:3000${endpoint}`,
+      endpoint
+    ];
 
     const uniqueUrls = Array.from(new Set(candidateUrls));
     let downloaded = false;
@@ -12068,7 +12324,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     } else {
       if (typeof showToastAlert === "function") {
-        showToastAlert(`Failed to download report ${reportId}. Please verify backend server is running on port 3000.`, "error");
+        showToastAlert(`Failed to download report ${reportId}. Please verify backend server is running on port 5000 / 3000.`, "error");
       }
     }
   }

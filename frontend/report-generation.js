@@ -707,10 +707,7 @@ function applyPatientView() {
   if (dom.backBtn) {
     dom.backBtn.replaceWith(dom.backBtn.cloneNode(true));
     dom.backBtn = document.getElementById('backBtn');
-    dom.backBtn.addEventListener('click', () => {
-      const roomParam = new URLSearchParams(window.location.search).get('room') || '';
-      window.location.href = `connected-device.html?room=${roomParam}&role=patient`;
-    });
+    dom.backBtn.addEventListener('click', navigateBackFromReport);
   }
 
   // Add dynamic styles for patient view (hide check boxes, read-only textarea styling)
@@ -964,7 +961,7 @@ function generateReportAction() {
   // Extract Room ID from URL query parameters
   const roomParam = new URLSearchParams(window.location.search).get('room') || '';
 
-  const API_BASE_URL = (window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5002';
+  const API_BASE_URL = (window.location.port === '5000' || window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5000';
   // Post report details to SQLite database
   fetch(`${API_BASE_URL}/api/reports`, {
     method: 'POST',
@@ -1236,18 +1233,36 @@ function navigateBackFromReport() {
   const currentUrlParams = new URLSearchParams(window.location.search);
   const room = currentUrlParams.get('room') || 'torus';
   const role = currentUrlParams.get('role') || 'doctor';
-  
-  const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
-  targetUrl.searchParams.set('room', room);
-  targetUrl.searchParams.set('role', role);
-  
-  for (const [key, val] of currentUrlParams.entries()) {
-    if (key !== 'room' && key !== 'role') {
-      targetUrl.searchParams.set(key, val);
+
+  try {
+    sessionStorage.setItem('torus_active_screen_on_load', 'app-dashboard');
+    sessionStorage.setItem('torus_return_from_report', 'true');
+  } catch (_) { }
+
+  let targetUrlStr = sessionStorage.getItem('torus_video_consultation_return_url') || '';
+  if (!targetUrlStr || targetUrlStr.includes('report-generation')) {
+    const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
+    targetUrl.searchParams.set('room', room);
+    targetUrl.searchParams.set('role', role);
+    targetUrl.searchParams.set('screen', 'app-dashboard');
+    targetUrlStr = targetUrl.toString();
+  } else {
+    try {
+      const parsed = new URL(targetUrlStr, window.location.origin);
+      parsed.searchParams.set('room', room);
+      parsed.searchParams.set('role', role);
+      parsed.searchParams.set('screen', 'app-dashboard');
+      targetUrlStr = parsed.toString();
+    } catch (_) {
+      const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
+      targetUrl.searchParams.set('room', room);
+      targetUrl.searchParams.set('role', role);
+      targetUrl.searchParams.set('screen', 'app-dashboard');
+      targetUrlStr = targetUrl.toString();
     }
   }
-  
-  window.location.href = targetUrl.toString();
+
+  window.location.href = targetUrlStr;
 }
 
 if (dom.backBtn) {
