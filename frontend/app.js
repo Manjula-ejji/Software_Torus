@@ -2262,12 +2262,45 @@ function navigateToReportGeneration() {
     }
   } catch (_) { }
 
-  // 9. Direct navigation to existing Report Generation page
+  // 9. Display Report Generation in seamless fullscreen overlay to keep active Agora call and video streams alive
   const targetUrl = `report-generation.html?room=${encodeURIComponent(channel)}&role=doctor&screen=app-dashboard`;
-  console.log("[Report Generation] Navigating to:", targetUrl, reportContext);
+  console.log("[Report Generation] Preparing navigation:", targetUrl, reportContext);
+
+  const overlay = document.getElementById("report-generation-overlay");
+  const iframe = document.getElementById("report-generation-iframe");
+  if (overlay && iframe) {
+    console.log("[Report Generation] Opening seamless fullscreen overlay (preserving active call):", targetUrl);
+    iframe.src = targetUrl;
+    overlay.style.display = "block";
+    document.body.style.overflow = "hidden";
+    return;
+  }
+
+  // Fallback to direct navigation if overlay elements are unavailable
   window.location.href = targetUrl;
 }
 window.navigateToReportGeneration = navigateToReportGeneration;
+
+// Function called by Report Generation page Back button to seamlessly return to After-Join-Call page
+function closeReportGenerationOverlay() {
+  const overlay = document.getElementById("report-generation-overlay");
+  const iframe = document.getElementById("report-generation-iframe");
+  if (!overlay || overlay.style.display === "none") {
+    return;
+  }
+  overlay.style.display = "none";
+  document.body.style.overflow = "";
+  if (iframe) {
+    iframe.src = "about:blank";
+  }
+}
+window.closeReportGenerationOverlay = closeReportGenerationOverlay;
+
+window.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "TORUS_CLOSE_REPORT_OVERLAY") {
+    closeReportGenerationOverlay();
+  }
+});
 
 // Bind Generate Report button in bottom floating controller bar
 const generateReportBtn = document.getElementById("generateReportBtn");
@@ -2995,6 +3028,11 @@ if (backBtn) {
 
 // Listen for browser back/forward navigation to update SPA UI states seamlessly
 window.addEventListener("popstate", (event) => {
+  const overlay = document.getElementById("report-generation-overlay");
+  if (overlay && overlay.style.display === "block") {
+    closeReportGenerationOverlay();
+    return;
+  }
   if (event.state && event.state.torusScreen) {
     showTorusScreen(event.state.torusScreen, false);
   } else {
@@ -8493,6 +8531,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     showTorusScreen("app-dashboard", false);
+
+    // If returning from report generation via direct reload, auto-rejoin to restore After-Join-Call state
+    if (returnFromReport === "true" || urlParams.get("rejoin") === "true") {
+      setTimeout(() => {
+        const joinBtnEl = document.getElementById("joinBtn");
+        if (joinBtnEl && !joinBtnEl.disabled && joinBtnEl.style.display !== "none") {
+          joinBtnEl.click();
+        }
+      }, 400);
+    }
   } else if (screenParam === "doctor-portal-dashboard" || activeScreen === "doctor-portal-dashboard") {
     sessionStorage.removeItem("torus_active_screen_on_load");
 

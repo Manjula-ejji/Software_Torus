@@ -1230,6 +1230,22 @@ if (dom.reportPreviewInput) {
 }
 
 function navigateBackFromReport() {
+  // 1. If embedded inside parent window overlay (preserving active live call), seamlessly close overlay
+  try {
+    if (window.parent && window.parent !== window) {
+      if (typeof window.parent.closeReportGenerationOverlay === "function") {
+        console.log("[Report Generation] Returning to active live video call via overlay close");
+        window.parent.closeReportGenerationOverlay();
+        return;
+      }
+      try {
+        window.parent.postMessage({ type: "TORUS_CLOSE_REPORT_OVERLAY" }, "*");
+        return;
+      } catch (_) { }
+    }
+  } catch (_) { }
+
+  // 2. Direct fallback navigation with rejoin flag to restore After-Join-Call state
   const currentUrlParams = new URLSearchParams(window.location.search);
   const room = currentUrlParams.get('room') || 'torus';
   const role = currentUrlParams.get('role') || 'doctor';
@@ -1245,6 +1261,7 @@ function navigateBackFromReport() {
     targetUrl.searchParams.set('room', room);
     targetUrl.searchParams.set('role', role);
     targetUrl.searchParams.set('screen', 'app-dashboard');
+    targetUrl.searchParams.set('rejoin', 'true');
     targetUrlStr = targetUrl.toString();
   } else {
     try {
@@ -1252,18 +1269,21 @@ function navigateBackFromReport() {
       parsed.searchParams.set('room', room);
       parsed.searchParams.set('role', role);
       parsed.searchParams.set('screen', 'app-dashboard');
+      parsed.searchParams.set('rejoin', 'true');
       targetUrlStr = parsed.toString();
     } catch (_) {
       const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
       targetUrl.searchParams.set('room', room);
       targetUrl.searchParams.set('role', role);
       targetUrl.searchParams.set('screen', 'app-dashboard');
+      targetUrl.searchParams.set('rejoin', 'true');
       targetUrlStr = targetUrl.toString();
     }
   }
 
   window.location.href = targetUrlStr;
 }
+window.navigateBackFromReport = navigateBackFromReport;
 
 if (dom.backBtn) {
   dom.backBtn.addEventListener('click', navigateBackFromReport);

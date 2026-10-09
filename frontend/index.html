@@ -232,6 +232,9 @@
       var activeScreen = sessionStorage.getItem('torus_active_screen_on_load');
 
       if (screenParam === 'app-dashboard' || activeScreen === 'app-dashboard' || returnFromReport === 'true') {
+        if (returnFromReport === 'true' || urlParams.get('rejoin') === 'true') {
+          window.torusReturningFromReport = true;
+        }
         sessionStorage.removeItem('torus_return_from_report');
         sessionStorage.removeItem('torus_active_screen_on_load');
 
@@ -249,6 +252,15 @@
         } catch (_) {}
 
         window.showTorusScreen('app-dashboard');
+
+        if (returnFromReport === 'true' || urlParams.get('rejoin') === 'true') {
+          setTimeout(function() {
+            var joinBtnEl = document.getElementById('joinBtn');
+            if (joinBtnEl && !joinBtnEl.disabled && joinBtnEl.style.display !== 'none') {
+              joinBtnEl.click();
+            }
+          }, 350);
+        }
       } else if (screenParam === 'doctor-portal-dashboard' || activeScreen === 'doctor-portal-dashboard') {
         sessionStorage.removeItem('torus_active_screen_on_load');
 
@@ -4486,6 +4498,11 @@
     <div class="self-view-body">
       <canvas id="self-view-canvas" class="self-view-canvas"></canvas>
     </div>
+  </div>
+
+  <!-- Seamless Fullscreen Report Generation Overlay (preserves active live video call) -->
+  <div id="report-generation-overlay" class="report-generation-overlay" style="display: none;">
+    <iframe id="report-generation-iframe" src="about:blank" title="Report Generation" allow="camera; microphone; display-capture"></iframe>
   </div>
 
   <script src="app.js?v=106"></script>
