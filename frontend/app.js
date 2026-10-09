@@ -450,6 +450,17 @@ function updateCardOrders() {
       }
     }
   });
+
+  // Keep single-feed / multi-feed layout class updated on videosGrid
+  if (videosGrid) {
+    if (cards.length <= 1) {
+      videosGrid.classList.add("single-feed");
+      videosGrid.classList.remove("multi-feed");
+    } else {
+      videosGrid.classList.remove("single-feed");
+      videosGrid.classList.add("multi-feed");
+    }
+  }
 }
 
 // ==========================================================================
@@ -2694,6 +2705,9 @@ function showTorusScreen(targetId, recordHistory = true) {
     }
     if (typeof updateLiveConsultationHapticBadge === "function") {
       updateLiveConsultationHapticBadge();
+    }
+    if (typeof updateCardOrders === "function") {
+      updateCardOrders();
     }
   } else if (targetId === "role-selection-screen") {
     const badgeEl = document.getElementById("header-user-badge");
