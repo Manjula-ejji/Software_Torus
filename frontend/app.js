@@ -1696,7 +1696,9 @@ async function leaveCall() {
 
     // Clear dynamic viewer states
     activeViewers.clear();
-    viewerMap.clear();
+    if (typeof viewerMap !== "undefined" && viewerMap && typeof viewerMap.clear === "function") {
+      viewerMap.clear();
+    }
     activeViewerTabKey = null;
 
     // Reset local card hierarchy if it was wrapped
@@ -2747,15 +2749,55 @@ window.showTorusScreen = showTorusScreen;
 async function navigateBackTorus() {
   const currentId = getCurrentVisibleScreenId();
 
-  // If leaving live consultation screen (#app-dashboard)
+  // If on Video Consultation screen (#app-dashboard)
   if (currentId === "app-dashboard") {
-    if (typeof leaveCall === "function" && leaveBtn && !leaveBtn.disabled) {
-      try {
-        await leaveCall();
-      } catch (err) {
-        console.warn("Leave call on back navigation:", err);
+    const isCallActive = (leaveBtn && !leaveBtn.disabled) ||
+      (joinBtn && joinBtn.style.display === "none") ||
+      Boolean(client) ||
+      Boolean(localTracks && (localTracks.videoTrack || localTracks.audioTrack));
+
+    // If currently in a live/joined call, clicking Back navigates directly to the Before-Join page!
+    if (isCallActive) {
+      console.log("[TORUS Navigation] Back clicked on Live Consultation -> returning to Before-Join page");
+
+      // 1. Close Report Generation overlay if open
+      if (typeof closeReportGenerationOverlay === "function") {
+        closeReportGenerationOverlay();
       }
+
+      // 2. Disconnect and leave the call cleanly
+      if (typeof leaveCall === "function") {
+        try {
+          await leaveCall();
+        } catch (err) {
+          console.warn("Leave call on back navigation:", err);
+        }
+      }
+
+      // 3. Clear session and URL flags to prevent accidental auto-rejoin
+      try {
+        sessionStorage.removeItem("torus_return_from_report");
+        sessionStorage.removeItem("torus_active_screen_on_load");
+        window.torusReturningFromReport = false;
+        if (window.history && window.history.replaceState) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete("rejoin");
+          window.history.replaceState(window.history.state, "", cleanUrl.toString());
+        }
+      } catch (_) { }
+
+      // 4. Ensure Before-Join UI state is completely restored on app-dashboard
+      updateCallExaminationControls(false);
+      const localTitle = localCard ? localCard.querySelector(".video-header h2") : null;
+      if (localTitle) localTitle.innerHTML = "📹 Local Feed";
+      if (floatingSelfView) floatingSelfView.classList.remove("show");
+      setStatus("Not connected");
+
+      // Stay on app-dashboard (the Before-Join screen)! Do not navigate away to other screens!
+      return;
     }
+
+    // If ALREADY on Before-Join page (not in a call), proceed to previous screen
     if (window.currentActiveConsultationSessionId) {
       const sess = window.torusSessions?.active?.find(s => s.sessionId === window.currentActiveConsultationSessionId);
       if (sess) {
@@ -2769,8 +2811,6 @@ async function navigateBackTorus() {
     if (typeof saveTorusSessions === "function") {
       saveTorusSessions();
     }
-
-    // Unbind Haptic Pad routing from previous consultation session so signals are safely closed
     if (typeof unbindHapticSessionAPI === "function") {
       unbindHapticSessionAPI(window.currentActiveConsultationSessionId);
     }
