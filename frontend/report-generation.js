@@ -1279,6 +1279,8 @@ function navigateBackFromReport() {
       targetUrl.searchParams.set('rejoin', 'true');
       targetUrlStr = targetUrl.toString();
     }
+  }
+
   try {
     window.location.replace(targetUrlStr);
   } catch (_) {
