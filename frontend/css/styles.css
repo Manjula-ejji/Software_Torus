@@ -373,12 +373,12 @@ body::after {
 /* Floating Controller Bar (Vision Pro Style) */
 .controls {
   position: fixed;
-  bottom: 32px;
-  right: 32px;
+  bottom: 24px;
+  right: 24px;
   z-index: 1000;
-  padding: 12px 18px;
-  background: rgba(20, 22, 42, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 8px 14px;
+  background: rgba(20, 22, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 99px;
   backdrop-filter: blur(32px) saturate(120%);
   -webkit-backdrop-filter: blur(32px) saturate(120%);
@@ -387,6 +387,8 @@ body::after {
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
     0 0 30px rgba(139, 92, 246, 0.05);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
 }
 
 .controls:hover {
@@ -400,8 +402,18 @@ body::after {
 
 .button-row {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap !important;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap !important;
+}
+
+.button-row > .btn,
+.button-row > button {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
 }
 
 @keyframes examBtnAppear {
@@ -417,9 +429,9 @@ body::after {
 }
 
 #startScanBtn {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 600;
-  padding: 12px 28px;
+  padding: 10px 18px;
   border-radius: 99px;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
@@ -433,7 +445,7 @@ body::after {
 
 #startScanBtn:hover:not(:disabled) {
   background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
-  transform: translateY(-2.5px) scale(1.04);
+  transform: translateY(-2px) scale(1.02);
   box-shadow:
     0 8px 24px rgba(16, 185, 129, 0.5),
     0 0 20px rgba(52, 211, 153, 0.35),
@@ -457,9 +469,9 @@ body::after {
 /* Generate Report Action Button (Primary Examination Tool) */
 #generateReportBtn {
   font-family: var(--font-sans);
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 600;
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: 99px;
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.22) 0%, rgba(59, 130, 246, 0.16) 100%);
   color: #ede9fe;
@@ -492,7 +504,7 @@ body::after {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.38) 0%, rgba(59, 130, 246, 0.3) 100%);
   border-color: rgba(196, 181, 253, 0.75);
   color: #ffffff;
-  transform: translateY(-2.5px) scale(1.04);
+  transform: translateY(-2px) scale(1.02);
   box-shadow:
     0 8px 24px rgba(139, 92, 246, 0.42),
     0 0 20px rgba(167, 139, 250, 0.35),
@@ -512,16 +524,17 @@ body::after {
 /* Subtle separator dividing Examination actions from Call controls */
 .controls-divider {
   width: 1px;
-  height: 24px;
+  height: 22px;
   background: rgba(255, 255, 255, 0.14);
-  margin: 0 4px;
+  margin: 0 2px;
   flex-shrink: 0;
   animation: examBtnAppear 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 #joinBtn {
-  font-size: 0.95rem;
-  padding: 12px 28px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 22px;
   border-radius: 99px;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-blue) 100%);
   color: #ffffff;
@@ -532,16 +545,24 @@ body::after {
 
 #joinBtn:hover:not(:disabled) {
   background: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent-cyan) 100%);
-  transform: translateY(-2.5px) scale(1.04);
+  transform: translateY(-2px) scale(1.02);
   box-shadow:
     0 8px 24px rgba(139, 92, 246, 0.5),
     0 0 20px rgba(56, 189, 248, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
+#muteBtn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 99px;
+}
+
 #leaveBtn {
   font-size: 0.85rem;
-  padding: 10px 22px;
+  font-weight: 600;
+  padding: 10px 18px;
   border-radius: 99px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -553,28 +574,55 @@ body::after {
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.4);
   color: #fca5a5;
-  transform: translateY(-2.5px) scale(1.04);
+  transform: translateY(-2px) scale(1.02);
   box-shadow:
     0 8px 20px rgba(239, 68, 68, 0.25),
     0 0 15px rgba(239, 68, 68, 0.15);
 }
 
-@media (max-width: 992px) {
+@media (max-width: 1400px) {
   .controls {
-    bottom: 24px;
-    right: 24px;
-    padding: 10px 14px;
-  }
-
-  .button-row {
-    gap: 8px;
+    bottom: 20px;
+    right: 20px;
+    padding: 6px 12px;
   }
 
   #startScanBtn,
   #generateReportBtn,
   #joinBtn {
-    padding: 10px 20px;
-    font-size: 0.88rem;
+    padding: 9px 15px;
+    font-size: 0.84rem;
+  }
+
+  #muteBtn,
+  #leaveBtn {
+    padding: 9px 14px;
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 992px) {
+  .controls {
+    bottom: 20px;
+    right: 20px;
+    padding: 6px 12px;
+  }
+
+  .button-row {
+    gap: 6px;
+  }
+
+  #startScanBtn,
+  #generateReportBtn,
+  #joinBtn {
+    padding: 8px 14px;
+    font-size: 0.82rem;
+  }
+
+  #muteBtn,
+  #leaveBtn {
+    padding: 8px 12px;
+    font-size: 0.8rem;
   }
 }
 
@@ -2142,11 +2190,20 @@ body[data-role="viewer"] #settings-uid-wrapper {
   display: block;
 }
 
+@media (max-width: 1400px) {
+  .floating-self-view {
+    width: 320px;
+    height: 205px;
+    left: calc(50% - 90px);
+  }
+}
+
 @media (max-width: 768px) {
   .floating-self-view {
     width: 300px;
     height: 190px;
     bottom: 24px;
+    left: 50%;
   }
 }
 
@@ -2155,6 +2212,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
     width: 90vw;
     height: calc(90vw / 1.56);
     bottom: 20px;
+    left: 50%;
   }
 }
 

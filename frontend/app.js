@@ -1723,6 +1723,13 @@ async function leaveCall() {
     localMicBtn.disabled = true;
     muteBtn.disabled = false;
     updateCallExaminationControls(false);
+    try {
+      if (!isNavigatingBackInProgress && window.history && window.history.state && window.history.state.inCall) {
+        window.history.back();
+      } else if (window.history && window.history.replaceState) {
+        window.history.replaceState({ torusScreen: "app-dashboard", inCall: false }, "", window.location.href);
+      }
+    } catch (_) { }
   }
 }
 
@@ -1758,6 +1765,18 @@ function updateCallExaminationControls(isConnected) {
 
   if (isConnected) {
     if (joinBtn) joinBtn.style.display = "none";
+
+    // Track active call in browser history so browser Back navigates directly to Before-Join
+    try {
+      if (window.history && window.history.pushState) {
+        if (!window.history.state || !window.history.state.inCall) {
+          if (!window.history.state || window.history.state.torusScreen !== "app-dashboard") {
+            window.history.replaceState({ torusScreen: "app-dashboard", inCall: false }, "", window.location.href);
+          }
+          window.history.pushState({ torusScreen: "app-dashboard", inCall: true }, "", window.location.href);
+        }
+      }
+    } catch (_) { }
 
     if (isDoc) {
       // Doctor: Both Start Scan and Generate Report are visible and functional
@@ -2738,15 +2757,19 @@ function showTorusScreen(targetId, recordHistory = true) {
   // Browser history integration
   if (recordHistory && window.history && window.history.pushState) {
     try {
-      window.history.pushState({ torusScreen: targetId }, "", window.location.href);
+      window.history.pushState({ torusScreen: targetId, inCall: false }, "", window.location.href);
     } catch (e) {
       // Ignore browser restrictions on file:// or pushState
     }
+  } else if (!window.history.state && window.history && window.history.replaceState) {
+    try {
+      window.history.replaceState({ torusScreen: targetId, inCall: false }, "", window.location.href);
+    } catch (e) { }
   }
 }
 window.showTorusScreen = showTorusScreen;
 
-async function navigateBackTorus() {
+async function navigateBackTorus(isFromBrowserBack = false) {
   const currentId = getCurrentVisibleScreenId();
 
   // If on Video Consultation screen (#app-dashboard)
@@ -2779,10 +2802,14 @@ async function navigateBackTorus() {
         sessionStorage.removeItem("torus_return_from_report");
         sessionStorage.removeItem("torus_active_screen_on_load");
         window.torusReturningFromReport = false;
-        if (window.history && window.history.replaceState) {
+        if (window.history) {
           const cleanUrl = new URL(window.location.href);
           cleanUrl.searchParams.delete("rejoin");
-          window.history.replaceState(window.history.state, "", cleanUrl.toString());
+          if (!isFromBrowserBack && window.history.state && window.history.state.inCall) {
+            window.history.back();
+          } else if (window.history.replaceState) {
+            window.history.replaceState({ torusScreen: "app-dashboard", inCall: false }, "", cleanUrl.toString());
+          }
         }
       } catch (_) { }
 
@@ -3062,21 +3089,41 @@ window.addEventListener("resize", () => {
 
 if (backBtn) {
   backBtn.addEventListener("click", () => {
-    navigateBackTorus();
+    navigateBackTorus(false);
   });
 }
 
 // Listen for browser back/forward navigation to update SPA UI states seamlessly
-window.addEventListener("popstate", (event) => {
+window.addEventListener("popstate", async (event) => {
   const overlay = document.getElementById("report-generation-overlay");
   if (overlay && overlay.style.display === "block") {
     closeReportGenerationOverlay();
     return;
   }
+
+  const currentId = getCurrentVisibleScreenId();
+  const isCallActive = (leaveBtn && !leaveBtn.disabled) ||
+    (joinBtn && joinBtn.style.display === "none") ||
+    Boolean(client) ||
+    Boolean(localTracks && (localTracks.videoTrack || localTracks.audioTrack));
+
+  // When user is on Live Consultation and clicks browser Back arrow,
+  // execute the EXACT SAME navigation action as the in-app Back button:
+  // navigate directly to Before-Join page!
+  if (currentId === "app-dashboard" && isCallActive) {
+    console.log("[TORUS popstate] Browser Back clicked while in Live Consultation -> Returning to Before-Join page");
+    await navigateBackTorus(true);
+    return;
+  }
+
   if (event.state && event.state.torusScreen) {
+    if (event.state.torusScreen === currentId && currentId === "app-dashboard") {
+      // Already on Before-Join dashboard screen
+      return;
+    }
     showTorusScreen(event.state.torusScreen, false);
   } else {
-    navigateBackTorus();
+    navigateBackTorus(true);
   }
 });
 
