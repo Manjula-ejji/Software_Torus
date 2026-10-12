@@ -1279,442 +1279,440 @@ function navigateBackFromReport() {
       targetUrl.searchParams.set('rejoin', 'true');
       targetUrlStr = targetUrl.toString();
     }
+    try {
+      window.location.replace(targetUrlStr);
+    } catch (_) {
+      window.location.href = targetUrlStr;
+    }
+  }
+  window.navigateBackFromReport = navigateBackFromReport;
+
+  if (dom.backBtn) {
+    dom.backBtn.addEventListener('click', navigateBackFromReport);
   }
 
-  try {
-    window.location.replace(targetUrlStr);
-  } catch (_) {
-    window.location.href = targetUrlStr;
-  }
-}
-window.navigateBackFromReport = navigateBackFromReport;
-
-if (dom.backBtn) {
-  dom.backBtn.addEventListener('click', navigateBackFromReport);
-}
-
-dom.findingsField.addEventListener('input', () => {
-  localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
-  invalidateGeneratedReport();
-});
-
-dom.recommendationsField.addEventListener('input', () => {
-  localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
-  invalidateGeneratedReport();
-});
-
-if (dom.uploadPreviewBtn) {
-  dom.uploadPreviewBtn.addEventListener('click', () => {
-    reportState.previewAction = 'upload';
-    try { console.log('UPLOAD CLICK'); } catch (e) { }
-    promptPreviewUpload();
-  });
-}
-
-if (dom.replacePreviewBtn) {
-  dom.replacePreviewBtn.addEventListener('click', () => {
-    reportState.previewAction = 'replace';
-    try { console.log('UPLOAD CLICK'); } catch (e) { }
-    promptPreviewUpload();
-  });
-}
-
-if (dom.removePreviewBtn) {
-  dom.removePreviewBtn.addEventListener('click', () => {
-    renderReportPreview(null);
-    try { localStorage.removeItem('reportPreview'); } catch (e) { }
-    try { localStorage.removeItem(STORAGE_KEYS.reportPreview); } catch (e) { }
+  dom.findingsField.addEventListener('input', () => {
+    localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
     invalidateGeneratedReport();
-    showToast('Preview removed');
   });
-}
 
-dom.generatePreviewBtn.addEventListener('click', generateReportAction);
-dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
-dom.digitalSignBtn.addEventListener('click', function () {
-  if (reportState.digitalSignature) return;
-  reportState.digitalSignature = true;
-  updateSignatureUI();
-  invalidateGeneratedReport();
-});
+  dom.recommendationsField.addEventListener('input', () => {
+    localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
+    invalidateGeneratedReport();
+  });
 
-if (dom.closePreviewModal) {
-  dom.closePreviewModal.addEventListener('click', closePreview);
-}
-if (dom.imagePreviewModal) {
-  dom.imagePreviewModal.addEventListener('click', (event) => {
-    if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
+  if (dom.uploadPreviewBtn) {
+    dom.uploadPreviewBtn.addEventListener('click', () => {
+      reportState.previewAction = 'upload';
+      try { console.log('UPLOAD CLICK'); } catch (e) { }
+      promptPreviewUpload();
+    });
+  }
+
+  if (dom.replacePreviewBtn) {
+    dom.replacePreviewBtn.addEventListener('click', () => {
+      reportState.previewAction = 'replace';
+      try { console.log('UPLOAD CLICK'); } catch (e) { }
+      promptPreviewUpload();
+    });
+  }
+
+  if (dom.removePreviewBtn) {
+    dom.removePreviewBtn.addEventListener('click', () => {
+      renderReportPreview(null);
+      try { localStorage.removeItem('reportPreview'); } catch (e) { }
+      try { localStorage.removeItem(STORAGE_KEYS.reportPreview); } catch (e) { }
+      invalidateGeneratedReport();
+      showToast('Preview removed');
+    });
+  }
+
+  dom.generatePreviewBtn.addEventListener('click', generateReportAction);
+  dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
+  dom.digitalSignBtn.addEventListener('click', function () {
+    if (reportState.digitalSignature) return;
+    reportState.digitalSignature = true;
+    updateSignatureUI();
+    invalidateGeneratedReport();
+  });
+
+  if (dom.closePreviewModal) {
+    dom.closePreviewModal.addEventListener('click', closePreview);
+  }
+  if (dom.imagePreviewModal) {
+    dom.imagePreviewModal.addEventListener('click', (event) => {
+      if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
+        closePreview();
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
       closePreview();
     }
   });
-}
 
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
-    closePreview();
-  }
-});
+  setupSidebar();
+  initializeBuildVersion();
+  loadReportContext();
 
-setupSidebar();
-initializeBuildVersion();
-loadReportContext();
+  window.addEventListener('storage', (event) => {
+    if ([
+      STORAGE_KEYS.collage,
+      STORAGE_KEYS.selectedIds,
+      STORAGE_KEYS.generatedReport,
+      STORAGE_KEYS.context,
+      STORAGE_KEYS.reportId,
+      STORAGE_KEYS.reportPreview,
+      STORAGE_KEYS.reportDetails,
+      STORAGE_KEYS.deliveryStatus,
+      CAPTURE_STORAGE_KEYS.images,
+      CAPTURE_STORAGE_KEYS.sessionId
+    ].includes(event.key)) {
+      loadReportContext();
+    }
+  });
 
-window.addEventListener('storage', (event) => {
-  if ([
-    STORAGE_KEYS.collage,
-    STORAGE_KEYS.selectedIds,
-    STORAGE_KEYS.generatedReport,
-    STORAGE_KEYS.context,
-    STORAGE_KEYS.reportId,
-    STORAGE_KEYS.reportPreview,
-    STORAGE_KEYS.reportDetails,
-    STORAGE_KEYS.deliveryStatus,
-    CAPTURE_STORAGE_KEYS.images,
-    CAPTURE_STORAGE_KEYS.sessionId
-  ].includes(event.key)) {
-    loadReportContext();
-  }
-});
+  lucide.createIcons();
 
-lucide.createIcons();
+  // Camera capture support for Report Generation page
+  (function () {
+    let captureInProgress = false;
+    async function captureFromCamera() {
+      if (captureInProgress) return null;
+      captureInProgress = true;
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch (err) {
+        console.warn('Camera blocked or unavailable, using simulated capture fallback:', err);
+        // Create a mock image fallback
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        grad.addColorStop(0, '#0b0f19');
+        grad.addColorStop(1, '#1e293b');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-// Camera capture support for Report Generation page
-(function () {
-  let captureInProgress = false;
-  async function captureFromCamera() {
-    if (captureInProgress) return null;
-    captureInProgress = true;
-    let stream = null;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    } catch (err) {
-      console.warn('Camera blocked or unavailable, using simulated capture fallback:', err);
-      // Create a mock image fallback
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-      const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      grad.addColorStop(0, '#0b0f19');
-      grad.addColorStop(1, '#1e293b');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Draw simulated ultrasound circle
+        ctx.strokeStyle = '#00d7ff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2);
+        ctx.stroke();
 
-      // Draw simulated ultrasound circle
-      ctx.strokeStyle = '#00d7ff';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2);
-      ctx.stroke();
+        // Draw scanning grid lines
+        ctx.strokeStyle = 'rgba(0, 215, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x < canvas.width; x += 40) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+        }
+        for (let y = 0; y < canvas.height; y += 40) {
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+        }
+        ctx.stroke();
 
-      // Draw scanning grid lines
-      ctx.strokeStyle = 'rgba(0, 215, 255, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let x = 0; x < canvas.width; x += 40) {
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Simulated Scan Capture', canvas.width / 2, canvas.height / 2 - 20);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('Camera Blocked/Unavailable Fallback', canvas.width / 2, canvas.height / 2 + 30);
+        ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 60);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        captureInProgress = false;
+        return dataUrl;
       }
-      for (let y = 0; y < canvas.height; y += 40) {
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-      }
-      ctx.stroke();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 20px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Simulated Scan Capture', canvas.width / 2, canvas.height / 2 - 20);
+      try {
+        const video = document.createElement('video');
+        video.style.position = 'fixed';
+        video.style.left = '-9999px';
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;
+        document.body.appendChild(video);
+        video.srcObject = stream;
 
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '14px sans-serif';
-      ctx.fillText('Camera Blocked/Unavailable Fallback', canvas.width / 2, canvas.height / 2 + 30);
-      ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 60);
+        await new Promise((resolve, reject) => {
+          const onCan = () => { resolve(); };
+          video.addEventListener('loadedmetadata', onCan, { once: true });
+          // fallback if metadata doesn't fire
+          setTimeout(resolve, 700);
+        });
 
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      captureInProgress = false;
-      return dataUrl;
-    }
+        const w = video.videoWidth || 1280;
+        const h = video.videoHeight || 720;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
 
-    try {
-      const video = document.createElement('video');
-      video.style.position = 'fixed';
-      video.style.left = '-9999px';
-      video.autoplay = true;
-      video.playsInline = true;
-      video.muted = true;
-      document.body.appendChild(video);
-      video.srcObject = stream;
-
-      await new Promise((resolve, reject) => {
-        const onCan = () => { resolve(); };
-        video.addEventListener('loadedmetadata', onCan, { once: true });
-        // fallback if metadata doesn't fire
-        setTimeout(resolve, 700);
-      });
-
-      const w = video.videoWidth || 1280;
-      const h = video.videoHeight || 720;
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-
-      // cleanup
-      try { video.pause(); } catch (e) { }
-      try { video.srcObject = null; } catch (e) { }
-      document.body.removeChild(video);
-      stream.getTracks().forEach((t) => t.stop());
-      captureInProgress = false;
-      return dataUrl;
-    } catch (err) {
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-      captureInProgress = false;
-      showToast('Capture failed');
-      return null;
-    }
-  }
-
-  function persistCapturedImage(obj) {
-    try {
-      ensureCaptureSession();
-      const capturedImages = readCaptureImages();
-      console.log('Before save:', capturedImages.length);
-      capturedImages.push(obj);
-      console.log('After save:', capturedImages.length);
-      writeCaptureImages(capturedImages);
-      return capturedImages.length;
-    } catch (e) {
-      console.warn('Unable to persist captured image', e);
-      return 0;
-    }
-  }
-
-  async function addNewCapturedImage(dataUrl) {
-    if (!dataUrl) return;
-    const createdAt = new Date().toISOString();
-    const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
-    const item = { id, createdAt, dataUrl };
-    // Keep compatibility with normalizeImages() which expects dataUrl field
-    reportState.images = (reportState.images || []).concat([item]);
-    const count = persistCapturedImage({ id, createdAt, dataUrl });
-    console.log('Rendered Cards:', reportState.images.length);
-    if (count !== reportState.images.length) {
-      console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
-    }
-    renderCapturedImages(reportState.images);
-    invalidateGeneratedReport();
-    showToast('Image captured');
-  }
-
-  async function handlePossibleCameraClick(target) {
-    // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
-    if (!target) return false;
-    const el = target.closest('button, [role="button"], a');
-    if (!el) return false;
-    const aria = String(el.getAttribute('aria-label') || '');
-    const hasCameraLabel = /camera|capture/i.test(aria);
-    const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
-    if (!hasCameraLabel && !hasCameraIcon) return false;
-
-    // perform capture
-    const dataUrl = await captureFromCamera();
-    if (dataUrl) await addNewCapturedImage(dataUrl);
-    return true;
-  }
-
-  document.addEventListener('click', (ev) => {
-    try {
-      // check clicked element and its ancestors for camera icon/label
-      handlePossibleCameraClick(ev.target).catch(() => { });
-    } catch (e) { }
-  }, { passive: true });
-})();
-
-// Redesigned AI Analysis Logic
-(function () {
-  const runAiBtn = document.getElementById('runAiBtn');
-  const runAiBtnText = document.getElementById('runAiBtnText');
-  const aiStatusBadge = document.getElementById('aiStatusBadge');
-  const aiStatusText = document.getElementById('aiStatusText');
-  const aiProgressWrap = document.getElementById('aiProgressWrap');
-  const aiProgressStep = document.getElementById('aiProgressStep');
-  const aiProgressPercent = document.getElementById('aiProgressPercent');
-  const aiProgressFill = document.getElementById('aiProgressFill');
-  const aiSummaryCard = document.getElementById('aiSummaryCard');
-  const aiSummaryList = document.getElementById('aiSummaryList');
-  const aiDetailsPanel = document.getElementById('aiDetailsPanel');
-  const toggleAiDetails = document.getElementById('toggleAiDetails');
-
-  const detailAiStatus = document.getElementById('detailAiStatus');
-  const detailAiTime = document.getElementById('detailAiTime');
-
-  const insightEls = {
-    quality: document.getElementById('aiInsightQuality'),
-    confidence: document.getElementById('aiInsightConfidence'),
-    structures: document.getElementById('aiInsightStructures'),
-    observation: document.getElementById('aiInsightObservation'),
-    risk: document.getElementById('aiInsightRisk')
-  };
-
-  const detailEls = {
-    features: document.getElementById('aiDetailFeatures'),
-    time: document.getElementById('aiDetailTime'),
-    timestamp: document.getElementById('aiDetailTimestamp')
-  };
-
-  const STORAGE_KEY = 'torus_ai_analysis';
-
-  function resetCards() {
-    insightEls.quality.textContent = 'Pending';
-    insightEls.confidence.textContent = '--';
-    insightEls.structures.textContent = 'None';
-    insightEls.observation.textContent = 'Pending';
-    insightEls.risk.textContent = 'Unknown';
-  }
-
-  function updateAiUI(status, results = null) {
-    aiStatusBadge.className = `ai-status-badge ${status.toLowerCase()}`;
-    aiStatusText.textContent = status === 'Completed' ? 'COMPLETED' : status;
-    if (detailAiStatus) detailAiStatus.textContent = status;
-
-    if (status === 'Processing') {
-      runAiBtn.disabled = true;
-      runAiBtnText.textContent = 'Analyzing...';
-      aiProgressWrap.classList.add('active');
-      aiSummaryCard.classList.remove('active');
-      aiDetailsPanel.classList.remove('active');
-      resetCards();
-    } else if (status === 'Completed') {
-      runAiBtn.disabled = false;
-      runAiBtnText.textContent = 'Re-analyze';
-      runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
-      aiProgressWrap.classList.remove('active');
-      aiSummaryCard.classList.add('active');
-      lucide.createIcons();
-
-      if (results) {
-        insightEls.quality.textContent = results.quality;
-        insightEls.confidence.textContent = results.confidence;
-        insightEls.structures.textContent = results.structures;
-        insightEls.observation.textContent = results.observation;
-        insightEls.risk.textContent = results.risk;
-
-        aiSummaryList.innerHTML = results.summary.map(item => `<li>${item}</li>`).join('');
-
-        detailEls.features.textContent = results.detailed.features;
-        detailEls.time.textContent = results.detailed.time;
-        detailEls.timestamp.textContent = results.detailed.timestamp;
-
-        if (detailAiTime) detailAiTime.textContent = results.detailed.timestamp.split('•')[1].trim();
-      }
-    } else {
-      // Ready state
-      const hasImages = reportState.images && reportState.images.length > 0;
-      runAiBtn.disabled = !hasImages;
-      runAiBtn.innerHTML = hasImages ? '<i data-lucide="play"></i> <span>Start Analysis</span>' : '<span>No Images Available</span>';
-      aiProgressWrap.classList.remove('active');
-      aiSummaryCard.classList.remove('active');
-      resetCards();
-      lucide.createIcons();
-    }
-  }
-
-  async function runAiAnalysis() {
-    if (!reportState.images || reportState.images.length === 0) return;
-
-    updateAiUI('Processing');
-
-    const startTime = Date.now();
-    const steps = [
-      { label: 'Loading captured images...', start: 0, end: 20 },
-      { label: 'Validating image quality...', start: 20, end: 45 },
-      { label: 'Detecting structures...', start: 45, end: 70 },
-      { label: 'Generating observations...', start: 70, end: 90 },
-      { label: 'Finalizing report...', start: 90, end: 100 }
-    ];
-
-    for (const step of steps) {
-      aiProgressStep.textContent = step.label;
-      let currentProgress = step.start;
-      const duration = 800 + Math.random() * 400; // Simulated step duration
-      const interval = 50;
-      const increment = (step.end - step.start) / (duration / interval);
-
-      while (currentProgress < step.end) {
-        await new Promise(r => setTimeout(r, interval));
-        currentProgress += increment;
-        let percent = Math.min(Math.round(currentProgress), 100);
-        aiProgressPercent.textContent = `${percent}%`;
-        aiProgressFill.style.width = `${percent}%`;
+        // cleanup
+        try { video.pause(); } catch (e) { }
+        try { video.srcObject = null; } catch (e) { }
+        document.body.removeChild(video);
+        stream.getTracks().forEach((t) => t.stop());
+        captureInProgress = false;
+        return dataUrl;
+      } catch (err) {
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        captureInProgress = false;
+        showToast('Capture failed');
+        return null;
       }
     }
 
-    const endTime = Date.now();
-    const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
-    const now = new Date();
-    const results = {
-      status: 'Completed',
-      quality: 'Good',
-      confidence: '97%',
-      structures: 'Abdominal Region',
-      observation: 'No significant abnormality detected',
-      risk: 'Low',
-      summary: [
-        'Image quality acceptable',
-        'Structures recognized',
-        'No critical abnormal findings',
-        'Recommend physician verification'
-      ],
-      detailed: {
-        features: 'Abdominal Tissue',
-        clarity: 'High',
-        model: 'TORUS-AI-v1',
-        time: `${durationSeconds}s`,
-        confidence: '97%',
-        timestamp: `${now.toLocaleDateString()} • ${now.toLocaleTimeString()}`
+    function persistCapturedImage(obj) {
+      try {
+        ensureCaptureSession();
+        const capturedImages = readCaptureImages();
+        console.log('Before save:', capturedImages.length);
+        capturedImages.push(obj);
+        console.log('After save:', capturedImages.length);
+        writeCaptureImages(capturedImages);
+        return capturedImages.length;
+      } catch (e) {
+        console.warn('Unable to persist captured image', e);
+        return 0;
       }
+    }
+
+    async function addNewCapturedImage(dataUrl) {
+      if (!dataUrl) return;
+      const createdAt = new Date().toISOString();
+      const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
+      const item = { id, createdAt, dataUrl };
+      // Keep compatibility with normalizeImages() which expects dataUrl field
+      reportState.images = (reportState.images || []).concat([item]);
+      const count = persistCapturedImage({ id, createdAt, dataUrl });
+      console.log('Rendered Cards:', reportState.images.length);
+      if (count !== reportState.images.length) {
+        console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
+      }
+      renderCapturedImages(reportState.images);
+      invalidateGeneratedReport();
+      showToast('Image captured');
+    }
+
+    async function handlePossibleCameraClick(target) {
+      // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
+      if (!target) return false;
+      const el = target.closest('button, [role="button"], a');
+      if (!el) return false;
+      const aria = String(el.getAttribute('aria-label') || '');
+      const hasCameraLabel = /camera|capture/i.test(aria);
+      const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
+      if (!hasCameraLabel && !hasCameraIcon) return false;
+
+      // perform capture
+      const dataUrl = await captureFromCamera();
+      if (dataUrl) await addNewCapturedImage(dataUrl);
+      return true;
+    }
+
+    document.addEventListener('click', (ev) => {
+      try {
+        // check clicked element and its ancestors for camera icon/label
+        handlePossibleCameraClick(ev.target).catch(() => { });
+      } catch (e) { }
+    }, { passive: true });
+  })();
+
+  // Redesigned AI Analysis Logic
+  (function () {
+    const runAiBtn = document.getElementById('runAiBtn');
+    const runAiBtnText = document.getElementById('runAiBtnText');
+    const aiStatusBadge = document.getElementById('aiStatusBadge');
+    const aiStatusText = document.getElementById('aiStatusText');
+    const aiProgressWrap = document.getElementById('aiProgressWrap');
+    const aiProgressStep = document.getElementById('aiProgressStep');
+    const aiProgressPercent = document.getElementById('aiProgressPercent');
+    const aiProgressFill = document.getElementById('aiProgressFill');
+    const aiSummaryCard = document.getElementById('aiSummaryCard');
+    const aiSummaryList = document.getElementById('aiSummaryList');
+    const aiDetailsPanel = document.getElementById('aiDetailsPanel');
+    const toggleAiDetails = document.getElementById('toggleAiDetails');
+
+    const detailAiStatus = document.getElementById('detailAiStatus');
+    const detailAiTime = document.getElementById('detailAiTime');
+
+    const insightEls = {
+      quality: document.getElementById('aiInsightQuality'),
+      confidence: document.getElementById('aiInsightConfidence'),
+      structures: document.getElementById('aiInsightStructures'),
+      observation: document.getElementById('aiInsightObservation'),
+      risk: document.getElementById('aiInsightRisk')
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
-    updateAiUI('Completed', results);
-  }
+    const detailEls = {
+      features: document.getElementById('aiDetailFeatures'),
+      time: document.getElementById('aiDetailTime'),
+      timestamp: document.getElementById('aiDetailTimestamp')
+    };
 
-  function restoreAiAnalysis() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const results = JSON.parse(saved);
-        updateAiUI('Completed', results);
-      } catch (e) {
-        console.error('Failed to restore AI analysis', e);
-      }
-    } else {
-      updateAiUI('Ready');
+    const STORAGE_KEY = 'torus_ai_analysis';
+
+    function resetCards() {
+      insightEls.quality.textContent = 'Pending';
+      insightEls.confidence.textContent = '--';
+      insightEls.structures.textContent = 'None';
+      insightEls.observation.textContent = 'Pending';
+      insightEls.risk.textContent = 'Unknown';
     }
-  }
 
-  if (runAiBtn) {
-    runAiBtn.addEventListener('click', runAiAnalysis);
-  }
+    function updateAiUI(status, results = null) {
+      aiStatusBadge.className = `ai-status-badge ${status.toLowerCase()}`;
+      aiStatusText.textContent = status === 'Completed' ? 'COMPLETED' : status;
+      if (detailAiStatus) detailAiStatus.textContent = status;
 
-  if (toggleAiDetails) {
-    toggleAiDetails.addEventListener('click', () => {
-      const isActive = aiDetailsPanel.classList.toggle('active');
-      toggleAiDetails.querySelector('span') || (toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`);
+      if (status === 'Processing') {
+        runAiBtn.disabled = true;
+        runAiBtnText.textContent = 'Analyzing...';
+        aiProgressWrap.classList.add('active');
+        aiSummaryCard.classList.remove('active');
+        aiDetailsPanel.classList.remove('active');
+        resetCards();
+      } else if (status === 'Completed') {
+        runAiBtn.disabled = false;
+        runAiBtnText.textContent = 'Re-analyze';
+        runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
+        aiProgressWrap.classList.remove('active');
+        aiSummaryCard.classList.add('active');
+        lucide.createIcons();
 
-      if (isActive) {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
+        if (results) {
+          insightEls.quality.textContent = results.quality;
+          insightEls.confidence.textContent = results.confidence;
+          insightEls.structures.textContent = results.structures;
+          insightEls.observation.textContent = results.observation;
+          insightEls.risk.textContent = results.risk;
+
+          aiSummaryList.innerHTML = results.summary.map(item => `<li>${item}</li>`).join('');
+
+          detailEls.features.textContent = results.detailed.features;
+          detailEls.time.textContent = results.detailed.time;
+          detailEls.timestamp.textContent = results.detailed.timestamp;
+
+          if (detailAiTime) detailAiTime.textContent = results.detailed.timestamp.split('•')[1].trim();
+        }
+      } else {
+        // Ready state
+        const hasImages = reportState.images && reportState.images.length > 0;
+        runAiBtn.disabled = !hasImages;
+        runAiBtn.innerHTML = hasImages ? '<i data-lucide="play"></i> <span>Start Analysis</span>' : '<span>No Images Available</span>';
+        aiProgressWrap.classList.remove('active');
+        aiSummaryCard.classList.remove('active');
+        resetCards();
+        lucide.createIcons();
+      }
+    }
+
+    async function runAiAnalysis() {
+      if (!reportState.images || reportState.images.length === 0) return;
+
+      updateAiUI('Processing');
+
+      const startTime = Date.now();
+      const steps = [
+        { label: 'Loading captured images...', start: 0, end: 20 },
+        { label: 'Validating image quality...', start: 20, end: 45 },
+        { label: 'Detecting structures...', start: 45, end: 70 },
+        { label: 'Generating observations...', start: 70, end: 90 },
+        { label: 'Finalizing report...', start: 90, end: 100 }
+      ];
+
+      for (const step of steps) {
+        aiProgressStep.textContent = step.label;
+        let currentProgress = step.start;
+        const duration = 800 + Math.random() * 400; // Simulated step duration
+        const interval = 50;
+        const increment = (step.end - step.start) / (duration / interval);
+
+        while (currentProgress < step.end) {
+          await new Promise(r => setTimeout(r, interval));
+          currentProgress += increment;
+          let percent = Math.min(Math.round(currentProgress), 100);
+          aiProgressPercent.textContent = `${percent}%`;
+          aiProgressFill.style.width = `${percent}%`;
+        }
+      }
+
+      const endTime = Date.now();
+      const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
+      const now = new Date();
+      const results = {
+        status: 'Completed',
+        quality: 'Good',
+        confidence: '97%',
+        structures: 'Abdominal Region',
+        observation: 'No significant abnormality detected',
+        risk: 'Low',
+        summary: [
+          'Image quality acceptable',
+          'Structures recognized',
+          'No critical abnormal findings',
+          'Recommend physician verification'
+        ],
+        detailed: {
+          features: 'Abdominal Tissue',
+          clarity: 'High',
+          model: 'TORUS-AI-v1',
+          time: `${durationSeconds}s`,
+          confidence: '97%',
+          timestamp: `${now.toLocaleDateString()} • ${now.toLocaleTimeString()}`
+        }
+      };
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
+      updateAiUI('Completed', results);
+    }
+
+    function restoreAiAnalysis() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
           const results = JSON.parse(saved);
-          document.getElementById('aiDetailFeatures').textContent = results.detailed.features;
-          document.getElementById('aiDetailTime').textContent = results.detailed.time;
-          document.getElementById('aiDetailTimestamp').textContent = results.detailed.timestamp;
-          // Add Clarity, Model, Confidence if not present
-          const grid = aiDetailsPanel.querySelector('.ai-details-grid');
-          grid.innerHTML = `
+          updateAiUI('Completed', results);
+        } catch (e) {
+          console.error('Failed to restore AI analysis', e);
+        }
+      } else {
+        updateAiUI('Ready');
+      }
+    }
+
+    if (runAiBtn) {
+      runAiBtn.addEventListener('click', runAiAnalysis);
+    }
+
+    if (toggleAiDetails) {
+      toggleAiDetails.addEventListener('click', () => {
+        const isActive = aiDetailsPanel.classList.toggle('active');
+        toggleAiDetails.querySelector('span') || (toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`);
+
+        if (isActive) {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            const results = JSON.parse(saved);
+            document.getElementById('aiDetailFeatures').textContent = results.detailed.features;
+            document.getElementById('aiDetailTime').textContent = results.detailed.time;
+            document.getElementById('aiDetailTimestamp').textContent = results.detailed.timestamp;
+            // Add Clarity, Model, Confidence if not present
+            const grid = aiDetailsPanel.querySelector('.ai-details-grid');
+            grid.innerHTML = `
                   <div class="ai-detail-item">
                      <span class="ai-detail-label">Detected Structures</span>
                      <span class="ai-detail-value">${results.detailed.features}</span>
@@ -1740,59 +1738,59 @@ lucide.createIcons();
                      <span class="ai-detail-value">${results.detailed.timestamp}</span>
                   </div>
                 `;
+          }
         }
+        lucide.createIcons();
+      });
+    }
+
+    // Check image count for button state
+    const checkImages = () => {
+      if (aiStatusText.textContent.includes('Ready') || aiStatusText.textContent.includes('Images')) {
+        updateAiUI('Ready');
       }
+    };
+
+    // Poll or hook into renderCapturedImages
+    const originalRender = window.renderCapturedImages;
+    window.renderCapturedImages = function (...args) {
+      if (originalRender) originalRender.apply(this, args);
+      checkImages();
+    };
+
+    // Initial restore
+    restoreAiAnalysis();
+  })();
+
+  // ==================== NEW BLOCK ====================
+
+  window.addEventListener("load", () => {
+    const btn = document.getElementById("digitalSignBtn");
+    const success = document.getElementById("signatureSuccess");
+
+    if (!btn || !success) {
+      console.error("signature elements missing");
+      return;
+    }
+
+    success.style.display = "none";
+    btn.onclick = null;
+
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
       lucide.createIcons();
+      success.style.display = "flex";
+
+      console.log("signature shown");
+
+      // Internal state maintenance
+      if (typeof reportState !== 'undefined') {
+        reportState.digitalSignature = true;
+        if (typeof updateSignatureUI === 'function') updateSignatureUI();
+        if (typeof invalidateGeneratedReport === 'function') invalidateGeneratedReport();
+      }
     });
-  }
-
-  // Check image count for button state
-  const checkImages = () => {
-    if (aiStatusText.textContent.includes('Ready') || aiStatusText.textContent.includes('Images')) {
-      updateAiUI('Ready');
-    }
-  };
-
-  // Poll or hook into renderCapturedImages
-  const originalRender = window.renderCapturedImages;
-  window.renderCapturedImages = function (...args) {
-    if (originalRender) originalRender.apply(this, args);
-    checkImages();
-  };
-
-  // Initial restore
-  restoreAiAnalysis();
-})();
-
-// ==================== NEW BLOCK ====================
-
-window.addEventListener("load", () => {
-  const btn = document.getElementById("digitalSignBtn");
-  const success = document.getElementById("signatureSuccess");
-
-  if (!btn || !success) {
-    console.error("signature elements missing");
-    return;
-  }
-
-  success.style.display = "none";
-  btn.onclick = null;
-
-  btn.addEventListener("click", function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
-    lucide.createIcons();
-    success.style.display = "flex";
-
-    console.log("signature shown");
-
-    // Internal state maintenance
-    if (typeof reportState !== 'undefined') {
-      reportState.digitalSignature = true;
-      if (typeof updateSignatureUI === 'function') updateSignatureUI();
-      if (typeof invalidateGeneratedReport === 'function') invalidateGeneratedReport();
-    }
   });
-});
