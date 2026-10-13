@@ -1225,6 +1225,7 @@ async function acquireLocalTracks(role, feedType) {
 }
 
 async function joinCall() {
+  window.activeCallStartTime = Date.now();
   const startMuted = muteBtn.classList.contains("muted");
   let appId = appIdInput.value.trim();
   let channel = channelInput.value.trim();
@@ -2153,6 +2154,7 @@ function toggleUltrasoundScan(forceState = null) {
 
   // Trigger the actual hardware / backend ultrasound scanning commands
   if (nextState) {
+    window.activeScanStartTime = Date.now();
     sendControlCommand("start", true);
     console.log("[Ultrasound Scan] Scanning started. State set to RUNNING.");
   } else {
@@ -2190,14 +2192,19 @@ function navigateToReportGeneration() {
   }
   const doctorName = doctorInfo?.name
     ? (doctorInfo.name.startsWith("Dr.") ? doctorInfo.name : `Dr. ${doctorInfo.name}`)
-    : "Dr. Anderson";
-  const doctorLocation = doctorInfo?.location || "NYC Medical";
+    : "--";
+  const doctorLocation = (doctorInfo?.location && doctorInfo.location !== "NYC Medical")
+    ? doctorInfo.location
+    : (doctorInfo?.hospital || doctorInfo?.clinic || "--");
 
   // 2. Active Session & Patient Information
   let activeSession = null;
-  if (window.torusSessions && Array.isArray(window.torusSessions.active) && window.torusSessions.active.length > 0) {
+  if (window.currentActiveConsultationSessionId && window.torusSessions && Array.isArray(window.torusSessions.active)) {
+    activeSession = window.torusSessions.active.find(s => s.sessionId === window.currentActiveConsultationSessionId);
+  }
+  if (!activeSession && window.torusSessions && Array.isArray(window.torusSessions.active) && window.torusSessions.active.length > 0) {
     activeSession = window.torusSessions.active[0];
-  } else {
+  } else if (!activeSession) {
     try {
       const savedSessions = sessionStorage.getItem("torus_doctor_sessions") || localStorage.getItem("torus_doctor_sessions");
       if (savedSessions) {
@@ -2213,22 +2220,49 @@ function navigateToReportGeneration() {
     if (storedPat) patientUser = JSON.parse(storedPat);
   } catch (_) { }
 
-  const patientName = activeSession?.patientName || patientUser?.name || "Patient A";
-  const patientId = activeSession?.patientId || patientUser?.uid || patientUser?.id || "P-8821";
-  const rawScanType = activeSession?.scanType || "Abdominal";
-  const scanType = rawScanType.toLowerCase().includes("ultrasound") ? rawScanType : `${rawScanType} Ultrasound`;
-  const deviceName = activeSession?.deviceId || sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId") || "TORUS-A12";
+  let rawPatName = activeSession?.patientName || patientUser?.name || "";
+  if (rawPatName === "Patient A" || rawPatName === "Demo Patient") rawPatName = "";
+  const patientName = rawPatName || "--";
+
+  let rawPatId = activeSession?.patientId || patientUser?.uid || patientUser?.id || "";
+  if (rawPatId === "P-12345" || rawPatId === "P-8821") rawPatId = "";
+  const patientId = rawPatId || "--";
+
+  const rawScanType = activeSession?.scanType || "";
+  const scanType = rawScanType ? (rawScanType.toLowerCase().includes("ultrasound") ? rawScanType : `${rawScanType} Ultrasound`) : "Ultrasound Examination";
+  
+  let rawDevName = activeSession?.deviceId || sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId") || "";
+  if (rawDevName === "TORUS-A12") rawDevName = "";
+  const deviceName = rawDevName || "--";
+
   const sessionCode = window.activeClinicalSessionCode
     || sessionStorage.getItem("active_clinical_session_code")
     || localStorage.getItem("active_clinical_session_code")
-    || (activeSession?.sessionId || "S-001");
-  const reportId = activeSession?.reportId || `RPT-${String(sessionCode).replace(/[^0-9]/g, "") || "80517130"}`;
+    || (activeSession?.sessionId);
 
-  // 3. Format Exam Date (e.g., "March 23, 2026")
+  // 3. Format Exam Date (e.g., "October 12, 2026")
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const now = new Date();
   const examDate = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
-  const examDuration = activeSession?.duration || "18:42";
+  
+  // Calculate exam duration from actual start time if available
+  let examDuration = "--";
+  const startTime = window.activeScanStartTime || window.activeCallStartTime || window.activeSessionStartTime;
+  if (startTime) {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
+    const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
+    const secs = String(elapsedSeconds % 60).padStart(2, '0');
+    examDuration = `${mins}:${secs}`;
+  } else if (activeSession?.duration && activeSession.duration !== "18:42" && activeSession.duration !== "12:34") {
+    examDuration = activeSession.duration;
+  }
+
+  // Realistic Report ID: e.g. RPT-YYYYMMDD-XXXX (not RPT-8 or RPT-000000)
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const reportId = (activeSession?.reportId && !activeSession.reportId.startsWith("RPT-8") && activeSession.reportId !== "RPT-000000")
+    ? activeSession.reportId 
+    : `RPT-${dateStr}-${randomSuffix}`;
 
   // 4. Channel / Room identifier
   const channel = (channelInput && channelInput.value.trim()) || "torus";
@@ -2297,7 +2331,7 @@ function navigateToReportGeneration() {
     console.log("[Report Generation] Opening seamless fullscreen overlay (preserving active call):", targetUrl);
     try {
       if (window.history && window.history.pushState) {
-        window.history.pushState({ torusScreen: "report-generation", inCall: true }, "", window.location.href);
+        window.history.pushState({ torusOverlay: "report-generation", torusScreen: "app-dashboard", inCall: true }, "", window.location.href);
       }
     } catch (_) { }
     try {
@@ -2319,6 +2353,8 @@ function navigateToReportGeneration() {
 }
 window.navigateToReportGeneration = navigateToReportGeneration;
 
+let isClosingReportOverlayInProgress = false;
+
 // Function called by Report Generation page Back button to seamlessly return to After-Join-Call page
 function closeReportGenerationOverlay(fromPopstate = false) {
   const overlay = document.getElementById("report-generation-overlay");
@@ -2339,8 +2375,16 @@ function closeReportGenerationOverlay(fromPopstate = false) {
       iframe.src = "about:blank";
     }
   }
-  if (!fromPopstate && window.history && window.history.state && window.history.state.torusScreen === "report-generation") {
+
+  // Restore and maintain the Live Consultation UI with all call controls active
+  updateCallExaminationControls(true);
+
+  if (!fromPopstate && window.history && window.history.state && (window.history.state.torusOverlay === "report-generation" || window.history.state.torusScreen === "report-generation")) {
+    isClosingReportOverlayInProgress = true;
     window.history.back();
+    setTimeout(() => {
+      isClosingReportOverlayInProgress = false;
+    }, 300);
   }
 }
 window.closeReportGenerationOverlay = closeReportGenerationOverlay;
@@ -3133,9 +3177,26 @@ if (backBtn) {
 
 // Listen for browser back/forward navigation to update SPA UI states seamlessly
 window.addEventListener("popstate", async (event) => {
+  // If we just programmatically popped history from closing Report Generation overlay, do NOT leave call!
+  if (isClosingReportOverlayInProgress) {
+    isClosingReportOverlayInProgress = false;
+    console.log("[TORUS popstate] Returning from Report Generation to Live Consultation -> preserving active call");
+    updateCallExaminationControls(true);
+    return;
+  }
+
   const overlay = document.getElementById("report-generation-overlay");
   if (overlay && overlay.style.display === "block") {
+    console.log("[TORUS popstate] Browser Back pressed while in Report Generation overlay -> closing overlay and preserving call");
     closeReportGenerationOverlay(true);
+    updateCallExaminationControls(true);
+    return;
+  }
+
+  // If the target history state is an active in-call Live Consultation state, maintain the call and ensure controls are visible
+  if (event.state && event.state.torusScreen === "app-dashboard" && event.state.inCall) {
+    console.log("[TORUS popstate] Navigated into active Live Consultation state -> maintaining call");
+    updateCallExaminationControls(true);
     return;
   }
 
@@ -3145,10 +3206,8 @@ window.addEventListener("popstate", async (event) => {
     Boolean(client) ||
     Boolean(localTracks && (localTracks.videoTrack || localTracks.audioTrack));
 
-  // 1. When user is on Live Consultation and clicks browser Back arrow,
-  // execute the EXACT SAME navigation action as the in-app Back button:
-  // navigate directly to Before-Join page!
-  if (currentId === "app-dashboard" && isCallActive) {
+  // 1. When user is on Live Consultation and clicks browser Back arrow to leave call (navigating to Before-Join where inCall is false or not present)
+  if (currentId === "app-dashboard" && isCallActive && (!event.state || !event.state.inCall)) {
     console.log("[TORUS popstate] Browser Back clicked while in Live Consultation -> Returning to Before-Join page");
     await navigateBackTorus(true);
     return;
@@ -3165,13 +3224,13 @@ window.addEventListener("popstate", async (event) => {
   }
 
   // 3. Screen navigation based on history state
-  if (event.state && event.state.torusScreen) {
+  if (event.state && event.state.torusScreen && event.state.torusScreen !== "report-generation") {
     if (event.state.torusScreen === currentId && currentId === "app-dashboard") {
       // Already on Before-Join dashboard screen
       return;
     }
     showTorusScreen(event.state.torusScreen, false);
-  } else {
+  } else if (!event.state || (!event.state.torusOverlay && !event.state.inCall)) {
     navigateBackTorus(true);
   }
 });
@@ -4788,12 +4847,12 @@ window.torusSessions = {
   active: [
     {
       sessionId: "S-001",
-      patientId: "P-12345",
-      patientName: "Patient A",
-      deviceId: "TORUS-A12",
+      patientId: "--",
+      patientName: "--",
+      deviceId: "--",
       scanType: "Abdominal",
-      duration: "12:34",
-      diagnosticCenter: "Apex Diagnostic Center",
+      duration: "--",
+      diagnosticCenter: "--",
       scheduledTime: "10:30 AM",
       status: "active", // "active" | "disconnected" | "completed"
       doctorConnectionState: "not_joined", // "not_joined" | "connected" | "disconnected"
@@ -6752,6 +6811,7 @@ function joinClinicalSession(sessionId) {
   session.doctorConnectionState = "connected";
   session.status = "active";
   window.currentActiveConsultationSessionId = session.sessionId;
+  window.activeSessionStartTime = Date.now();
   saveTorusSessions();
 
   // Bind physical Haptic Pad telemetry exclusively to this active consultation session

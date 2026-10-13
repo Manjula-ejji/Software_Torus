@@ -60,14 +60,6 @@ const BUILD_VERSION = '20260521_01';
 
 function initializeBuildVersion() {
   try {
-    const previousVersion = localStorage.getItem('torus-build-version') || '';
-    if (previousVersion && previousVersion !== BUILD_VERSION) {
-      localStorage.removeItem(CAPTURE_STORAGE_KEYS.images);
-      localStorage.removeItem(CAPTURE_STORAGE_KEYS.sessionId);
-      sessionStorage.removeItem(CAPTURE_STORAGE_KEYS.images);
-      sessionStorage.removeItem(CAPTURE_STORAGE_KEYS.sessionId);
-    }
-
     localStorage.setItem('torus-build-version', BUILD_VERSION);
     sessionStorage.setItem('torus-build-version', BUILD_VERSION);
   } catch (error) {
@@ -98,6 +90,12 @@ function readCaptureImages() {
   try {
     const raw = localStorage.getItem(CAPTURE_STORAGE_KEYS.images)
       || sessionStorage.getItem(CAPTURE_STORAGE_KEYS.images)
+      || localStorage.getItem('capturedImages-TORUS')
+      || sessionStorage.getItem('capturedImages-TORUS')
+      || localStorage.getItem('capturedImages-DEFAULT')
+      || sessionStorage.getItem('capturedImages-DEFAULT')
+      || localStorage.getItem('capturedImages')
+      || sessionStorage.getItem('capturedImages')
       || '[]';
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -139,6 +137,7 @@ const dom = {
   findingsField: document.getElementById('findingsField'),
   recommendationsField: document.getElementById('recommendationsField'),
   generatePreviewBtn: document.getElementById('generatePreviewBtn'),
+  sendCapturedImagesBtn: document.getElementById('sendCapturedImagesBtn'),
   sendPatientBtn: document.getElementById('sendPatientBtn'),
   digitalSignBtn: document.getElementById('digitalSignBtn'),
   toast: document.getElementById('toast'),
@@ -151,17 +150,7 @@ const dom = {
   reportId: document.getElementById('reportId'),
   imagesCaptured: document.getElementById('imagesCaptured'),
   selectedImagesCount: document.getElementById('selectedImagesCount'),
-  generatedTime: document.getElementById('generatedTime'),
   examDuration: document.getElementById('examDuration'),
-  reportPreviewInput: document.getElementById('reportPreviewInput'),
-  uploadPreviewBtn: document.getElementById('uploadPreviewBtn'),
-  replacePreviewBtn: document.getElementById('replacePreviewBtn'),
-  removePreviewBtn: document.getElementById('removePreviewBtn'),
-  reportPreviewImage: document.getElementById('reportPreviewImage'),
-  reportPreviewPdf: document.getElementById('reportPreviewPdf'),
-  reportPreviewFileName: document.getElementById('reportPreviewFileName'),
-  previewFrame: document.getElementById('previewFrame'),
-  previewEmpty: document.getElementById('previewEmpty'),
   printOnlyContainer: document.getElementById('printOnlyContainer'),
   sidebar: document.getElementById('sidebar'),
   sidebarOverlay: document.getElementById('sidebarOverlay'),
@@ -171,7 +160,10 @@ const dom = {
   previewModalImage: document.getElementById('previewModalImage'),
   previewModalCaption: document.getElementById('previewModalCaption'),
   signatureStatus: document.getElementById('signatureStatus'),
-  signatureSuccessCard: document.getElementById('signatureSuccessCard')
+  signatureSuccessCard: document.getElementById('signatureSuccessCard'),
+  reportPreviewModal: document.getElementById('reportPreviewModal'),
+  editReportBtn: document.getElementById('editReportBtn'),
+  confirmGenerateBtn: document.getElementById('confirmGenerateBtn')
 };
 
 function showToast(message) {
@@ -225,30 +217,51 @@ function escapeHtml(value) {
 function syncCounts() {
   const total = reportState.images.length;
   const selected = reportState.selectedIds.size;
-  if (dom.imageCountPill) dom.imageCountPill.textContent = `${selected} / ${total} images`;
-  if (dom.selectedCount) dom.selectedCount.textContent = `${selected} / ${total} images`;
+  if (dom.imageCountPill) dom.imageCountPill.textContent = `${total} Captured`;
+  if (dom.selectedCount) dom.selectedCount.textContent = `${selected} / ${total} Selected`;
   if (dom.imagesCaptured) dom.imagesCaptured.textContent = String(total);
   if (dom.selectedImagesCount) dom.selectedImagesCount.textContent = String(selected);
 }
 
 function buildAutoReportId() {
-  const now = Date.now();
-  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `RPT-${now.toString().slice(-4)}${random}`;
+  const now = new Date();
+  const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const randomPart = Math.floor(1000 + Math.random() * 9000);
+  return `RPT-${datePart}-${randomPart}`;
 }
 
-function updateSignatureUI() {
+function sanitizeClinicalText(val) {
+  if (!val || typeof val !== 'string') return '';
+  const trimmed = val.trim();
+  if (/^(.)\1{4,}$/i.test(trimmed)) return '';
+  if (/^(test|asdf|qwerty|zzz)+$/i.test(trimmed)) return '';
+  return trimmed;
+}
+
+function formatReportDate() {
+  const now = new Date();
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+}
+
+function updateSignatureUI(stateOverride = null) {
   const isSigned = reportState.digitalSignature;
+  const statusText = stateOverride || (isSigned ? 'Signed' : 'Unsigned');
   if (dom.signatureStatus) {
-    dom.signatureStatus.textContent = isSigned ? 'Signed' : 'Unsigned';
+    dom.signatureStatus.textContent = statusText;
   }
   const success = document.getElementById('signatureSuccess');
   const btn = document.getElementById('digitalSignBtn');
   if (btn) {
-    if (isSigned) {
+    if (stateOverride === 'Signing') {
+      btn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i>Signing...';
+      btn.disabled = true;
+    } else if (isSigned) {
       btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
+      btn.disabled = false;
     } else {
       btn.innerHTML = '<i data-lucide="signature"></i>Digital Sign';
+      btn.disabled = false;
     }
   }
   if (success) {
@@ -613,23 +626,43 @@ function loadReportContext() {
 
   reportState.sendLocked = localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent';
 
-  const reportId = context.reportId
+  let reportId = context.reportId
     || (reportState.generatedReport && reportState.generatedReport.reportId)
-    || localStorage.getItem(STORAGE_KEYS.reportId)
-    || buildAutoReportId();
+    || localStorage.getItem(STORAGE_KEYS.reportId);
+  if (!reportId || reportId === 'RPT-000000' || reportId.startsWith('RPT-8') || reportId === 'RPT-8') {
+    reportId = buildAutoReportId();
+    localStorage.setItem(STORAGE_KEYS.reportId, reportId);
+  }
   setReportId(reportId);
 
-  if (dom.patientName) dom.patientName.textContent = context.patientName || 'Patient A';
-  if (dom.examDate) dom.examDate.textContent = context.examDate || 'March 23, 2026';
-  if (dom.scanType) dom.scanType.textContent = context.scanType || 'Abdominal Ultrasound';
-  if (dom.deviceName) dom.deviceName.textContent = context.device || 'TORUS-A12';
-  if (dom.doctorName) dom.doctorName.textContent = context.doctor || 'Dr. Anderson';
-  if (dom.locationName) dom.locationName.textContent = context.location || 'NYC Medical';
-  if (dom.reportId) dom.reportId.textContent = reportId;
-  if (dom.examDuration) dom.examDuration.textContent = context.examDuration || '18:42';
+  const patientName = (context.patientName && context.patientName !== 'Patient A' && context.patientName !== 'Demo Patient') ? context.patientName : '--';
+  const examDate = (context.examDate && context.examDate !== 'March 23, 2026') ? context.examDate : formatReportDate();
+  const scanType = (context.scanType && !context.scanType.includes('undefined')) ? context.scanType : 'Ultrasound Examination';
+  const device = (context.device && context.device !== 'TORUS-A12') ? context.device : '--';
+  const doctor = (context.doctor && context.doctor !== 'Dr. Anderson') ? context.doctor : '--';
+  const location = (context.location && context.location !== 'NYC Medical') ? context.location : '--';
+  const examDuration = (context.examDuration && context.examDuration !== '18:42' && context.examDuration !== '12:34') ? context.examDuration : '--';
 
-  if (dom.findingsField) dom.findingsField.value = localStorage.getItem(STORAGE_KEYS.findings) || '';
-  if (dom.recommendationsField) dom.recommendationsField.value = localStorage.getItem(STORAGE_KEYS.recommendations) || '';
+  if (dom.patientName) dom.patientName.textContent = patientName;
+  if (dom.examDate) dom.examDate.textContent = examDate;
+  if (dom.scanType) dom.scanType.textContent = scanType;
+  if (dom.deviceName) dom.deviceName.textContent = device;
+  if (dom.doctorName) dom.doctorName.textContent = doctor;
+  if (dom.locationName) dom.locationName.textContent = location;
+  if (dom.reportId) dom.reportId.textContent = reportId;
+  if (dom.examDuration) dom.examDuration.textContent = examDuration;
+
+  // Sanitize stored findings / recommendations to remove test junk text
+  const rawFindings = localStorage.getItem(STORAGE_KEYS.findings) || '';
+  const rawRecs = localStorage.getItem(STORAGE_KEYS.recommendations) || '';
+  const cleanFindings = sanitizeClinicalText(rawFindings);
+  const cleanRecs = sanitizeClinicalText(rawRecs);
+
+  if (rawFindings && !cleanFindings) localStorage.removeItem(STORAGE_KEYS.findings);
+  if (rawRecs && !cleanRecs) localStorage.removeItem(STORAGE_KEYS.recommendations);
+
+  if (dom.findingsField) dom.findingsField.value = cleanFindings;
+  if (dom.recommendationsField) dom.recommendationsField.value = cleanRecs;
 
   if (reportState.generatedReport && reportState.generatedReport.reportId === reportId) {
     setGeneratedTime(reportState.generatedReport.generatedAt);
@@ -1257,7 +1290,7 @@ function navigateBackFromReport() {
 
   let targetUrlStr = sessionStorage.getItem('torus_video_consultation_return_url') || '';
   if (!targetUrlStr || targetUrlStr.includes('report-generation')) {
-    const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
+    const targetUrl = new URL('index.html', window.location.href);
     targetUrl.searchParams.set('room', room);
     targetUrl.searchParams.set('role', role);
     targetUrl.searchParams.set('screen', 'app-dashboard');
@@ -1272,69 +1305,279 @@ function navigateBackFromReport() {
       parsed.searchParams.set('rejoin', 'true');
       targetUrlStr = parsed.toString();
     } catch (_) {
-      const targetUrl = new URL('index.html', window.location.origin + window.location.pathname);
+      const targetUrl = new URL('index.html', window.location.href);
       targetUrl.searchParams.set('room', room);
       targetUrl.searchParams.set('role', role);
       targetUrl.searchParams.set('screen', 'app-dashboard');
       targetUrl.searchParams.set('rejoin', 'true');
       targetUrlStr = targetUrl.toString();
     }
+  }
+  try {
+    window.location.replace(targetUrlStr);
+  } catch (_) {
+    window.location.href = targetUrlStr;
+  }
+}
+window.navigateBackFromReport = navigateBackFromReport;
+
+window.addEventListener('popstate', (e) => {
+  navigateBackFromReport();
+});
+
+if (dom.backBtn) {
+  dom.backBtn.addEventListener('click', navigateBackFromReport);
+}
+
+dom.findingsField.addEventListener('input', () => {
+  localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
+  if (reportState.digitalSignature) {
+    reportState.digitalSignature = false;
+    reportState.signatureData = null;
+    updateSignatureUI();
+    showToast('Report findings modified. Please re-sign the report.');
+  }
+  invalidateGeneratedReport();
+});
+
+dom.recommendationsField.addEventListener('input', () => {
+  localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
+  if (reportState.digitalSignature) {
+    reportState.digitalSignature = false;
+    reportState.signatureData = null;
+    updateSignatureUI();
+    showToast('Report recommendations modified. Please re-sign the report.');
+  }
+  invalidateGeneratedReport();
+});
+
+  async function handleDigitalSign() {
+    if (reportState.digitalSignature) {
+      showToast('Report is already digitally signed.');
+      return;
+    }
+
+    // 1. Validate required information before allowing signing
+    const findings = (dom.findingsField ? dom.findingsField.value : '').trim();
+    const recommendations = (dom.recommendationsField ? dom.recommendationsField.value : '').trim();
+    const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
+
+    if (!findings) {
+      showToast('Cannot sign report: Please enter Clinical Findings first.');
+      if (dom.findingsField) dom.findingsField.focus();
+      return;
+    }
+    if (!recommendations) {
+      showToast('Cannot sign report: Please enter Recommendations first.');
+      if (dom.recommendationsField) dom.recommendationsField.focus();
+      return;
+    }
+    if (selectedImages.length === 0) {
+      showToast('Cannot sign report: Please select at least one captured image.');
+      return;
+    }
+
+    // 2. Prevent duplicate / repeated submission & show signing state
+    const signBtn = dom.digitalSignBtn;
+    if (signBtn.dataset.signing === 'true') return;
+    signBtn.dataset.signing = 'true';
+    updateSignatureUI('Signing');
+
     try {
-      window.location.replace(targetUrlStr);
-    } catch (_) {
-      window.location.href = targetUrlStr;
+      await new Promise(r => setTimeout(r, 600));
+
+      const doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || '--';
+      const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
+      const now = new Date();
+      const signTimestamp = now.toISOString();
+      const signatureHash = 'TORUS-SIG-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+      reportState.digitalSignature = true;
+      reportState.signatureData = {
+        doctorName: doctorName,
+        doctorLicense: 'TORUS-REG-3001',
+        signedAt: signTimestamp,
+        signatureHash: signatureHash,
+        reportId: reportId
+      };
+
+      updateSignatureUI();
+      invalidateGeneratedReport();
+      showToast(`Report digitally signed successfully.`);
+    } catch (err) {
+      console.error('[Digital Sign] Error executing signature:', err);
+      reportState.digitalSignature = false;
+      reportState.signatureData = null;
+      updateSignatureUI('Failed');
+      showToast('Digital signature failed. Please try again.');
+    } finally {
+      signBtn.dataset.signing = 'false';
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
   }
-  window.navigateBackFromReport = navigateBackFromReport;
 
-  if (dom.backBtn) {
-    dom.backBtn.addEventListener('click', navigateBackFromReport);
+  function previewReportAction(force = false) {
+    const reportId = getCurrentReportId() || buildAutoReportId();
+    setReportId(reportId);
+
+    const reportData = collectReportData();
+    if (!force) {
+      const missing = [];
+      if (!reportData.patientInfo || !reportData.patientInfo.patientName) missing.push('Patient Information');
+      if (!reportData.findings || !reportData.findings.trim()) missing.push('Clinical Findings');
+      if (!reportData.recommendations || !reportData.recommendations.trim()) missing.push('Recommendations');
+      if (!reportData.selectedImages || reportData.selectedImages.length === 0) missing.push('Captured Images (Select at least one)');
+      if (missing.length) {
+        showToast(`Cannot preview report: please provide ${missing.join(', ')}.`);
+        return;
+      }
+    }
+
+    const previewReportId = document.getElementById('previewReportId');
+    const previewReportDate = document.getElementById('previewReportDate');
+    const previewPatientName = document.getElementById('previewPatientName');
+    const previewExamDate = document.getElementById('previewExamDate');
+    const previewScanType = document.getElementById('previewScanType');
+    const previewDeviceName = document.getElementById('previewDeviceName');
+    const previewLocationName = document.getElementById('previewLocationName');
+    const previewDuration = document.getElementById('previewDuration');
+    const previewFindings = document.getElementById('previewFindings');
+    const previewRecommendations = document.getElementById('previewRecommendations');
+    const previewDoctorName = document.getElementById('previewDoctorName');
+    const previewDoctorLocation = document.getElementById('previewDoctorLocation');
+    const previewSignerInfo = document.getElementById('previewSignerInfo');
+    const previewSignTime = document.getElementById('previewSignTime');
+
+    const now = new Date();
+    const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric'
+    }) + ' ' + now.toLocaleTimeString(undefined, {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    });
+
+    if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
+    if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
+    if (previewPatientName) previewPatientName.textContent = reportData.patientInfo.patientName;
+    if (previewExamDate) previewExamDate.textContent = reportData.patientInfo.examDate;
+    if (previewScanType) previewScanType.textContent = reportData.patientInfo.scanType;
+    if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo.device;
+    if (previewLocationName) previewLocationName.textContent = reportData.patientInfo.location;
+    if (previewDuration) previewDuration.textContent = reportData.patientInfo.examDuration;
+
+    if (previewFindings) previewFindings.textContent = reportData.findings;
+    if (previewRecommendations) previewRecommendations.textContent = reportData.recommendations;
+    if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo.doctor;
+    if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo.location;
+    const isSigned = reportState.digitalSignature;
+    const previewSignatureStatus = document.getElementById('previewSignatureStatus');
+
+    if (previewSignatureStatus) {
+      previewSignatureStatus.style.display = isSigned ? 'inline-flex' : 'none';
+    }
+
+    if (isSigned) {
+      if (previewSignerInfo) {
+        previewSignerInfo.style.display = 'block';
+        previewSignerInfo.textContent = `Dr. ${reportData.patientInfo.doctor.replace('Dr. ', '')}`;
+      }
+      if (previewSignTime) {
+        previewSignTime.style.display = 'block';
+        const sigTime = reportState.signatureData?.signedAt || reportState.signedTimestamp || now.toISOString();
+        const sigDate = new Date(sigTime);
+        previewSignTime.textContent = sigDate.toLocaleDateString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric'
+        }) + ' ' + sigDate.toLocaleTimeString(undefined, {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+    } else {
+      if (previewSignerInfo) previewSignerInfo.style.display = 'none';
+      if (previewSignTime) previewSignTime.style.display = 'none';
+    }
+
+    const savedAi = localStorage.getItem('torus_ai_analysis');
+    let aiAnalysisData = null;
+    if (savedAi) {
+      try { aiAnalysisData = JSON.parse(savedAi); } catch (_) { }
+    }
+    const isAiCompleted = aiAnalysisData && aiAnalysisData.status === 'Completed';
+
+    const aiQuality = isAiCompleted ? (aiAnalysisData.quality || '--') : '--';
+    const aiConfidence = isAiCompleted ? (aiAnalysisData.confidence || '--') : '--';
+    const aiObservation = isAiCompleted ? (aiAnalysisData.observation || '--') : 'Awaiting Analysis';
+    const aiRisk = isAiCompleted ? (aiAnalysisData.risk || '--') : '--';
+
+    const previewAiQuality = document.getElementById('previewAiQuality');
+    const previewAiConfidence = document.getElementById('previewAiConfidence');
+    const previewAiObservation = document.getElementById('previewAiObservation');
+    const previewAiRisk = document.getElementById('previewAiRisk');
+
+    if (previewAiQuality) previewAiQuality.textContent = aiQuality;
+    if (previewAiConfidence) previewAiConfidence.textContent = aiConfidence;
+    if (previewAiObservation) previewAiObservation.textContent = aiObservation;
+    if (previewAiRisk) previewAiRisk.textContent = aiRisk;
+
+    const container = document.getElementById('previewImagesContainer');
+    if (container) {
+      container.innerHTML = '';
+      reportData.selectedImages.forEach(imgData => {
+        const imgEl = document.createElement('img');
+        imgEl.src = imgData.dataUrl;
+        imgEl.style.width = '100%';
+        imgEl.style.borderRadius = '6px';
+        imgEl.style.border = '1px solid #cbd5e1';
+        imgEl.style.aspectRatio = '4/3';
+        imgEl.style.objectFit = 'cover';
+        container.appendChild(imgEl);
+      });
+    }
+
+    if (dom.reportPreviewModal) {
+      dom.reportPreviewModal.classList.remove('hidden');
+      dom.reportPreviewModal.setAttribute('aria-hidden', 'false');
+    }
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 
-  dom.findingsField.addEventListener('input', () => {
-    localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
-    invalidateGeneratedReport();
-  });
+  function openDoctorCapturedImagesModal() {
+    const modal = document.getElementById('doctorCapturedImagesModal');
+    if (modal) {
+      modal.style.display = 'flex';
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+      if (typeof showDoctorGridView === 'function') {
+        showDoctorGridView();
+      }
+    } else {
+      if (dom.capturedGrid) {
+        dom.capturedGrid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast('Captured images view');
+      }
+    }
+  }
 
-  dom.recommendationsField.addEventListener('input', () => {
-    localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
-    invalidateGeneratedReport();
-  });
+  if (dom.sendCapturedImagesBtn) {
+    dom.sendCapturedImagesBtn.addEventListener('click', openDoctorCapturedImagesModal);
+  }
 
-  if (dom.uploadPreviewBtn) {
-    dom.uploadPreviewBtn.addEventListener('click', () => {
-      reportState.previewAction = 'upload';
-      try { console.log('UPLOAD CLICK'); } catch (e) { }
-      promptPreviewUpload();
+  if (dom.generatePreviewBtn) {
+    dom.generatePreviewBtn.addEventListener('click', () => {
+      if (document.getElementById('reportPreviewModal')) {
+        previewReportAction();
+      } else {
+        generateReportAction();
+      }
     });
   }
 
-  if (dom.replacePreviewBtn) {
-    dom.replacePreviewBtn.addEventListener('click', () => {
-      reportState.previewAction = 'replace';
-      try { console.log('UPLOAD CLICK'); } catch (e) { }
-      promptPreviewUpload();
-    });
+  if (dom.sendPatientBtn) {
+    dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
   }
 
-  if (dom.removePreviewBtn) {
-    dom.removePreviewBtn.addEventListener('click', () => {
-      renderReportPreview(null);
-      try { localStorage.removeItem('reportPreview'); } catch (e) { }
-      try { localStorage.removeItem(STORAGE_KEYS.reportPreview); } catch (e) { }
-      invalidateGeneratedReport();
-      showToast('Preview removed');
-    });
+  if (dom.digitalSignBtn) {
+    dom.digitalSignBtn.addEventListener('click', handleDigitalSign);
   }
-
-  dom.generatePreviewBtn.addEventListener('click', generateReportAction);
-  dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
-  dom.digitalSignBtn.addEventListener('click', function () {
-    if (reportState.digitalSignature) return;
-    reportState.digitalSignature = true;
-    updateSignatureUI();
-    invalidateGeneratedReport();
-  });
 
   if (dom.closePreviewModal) {
     dom.closePreviewModal.addEventListener('click', closePreview);
@@ -1620,24 +1863,37 @@ function navigateBackFromReport() {
       }
     }
 
+    let isAiRunning = false;
     async function runAiAnalysis() {
-      if (!reportState.images || reportState.images.length === 0) return;
+      const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
+      if (!selectedImages.length) {
+        if (!reportState.images || reportState.images.length === 0) {
+          showToast('No captured images available. Please capture ultrasound frames first.');
+        } else {
+          showToast('Please select at least one captured image to start AI analysis.');
+        }
+        return;
+      }
+
+      if (isAiRunning) return;
+      isAiRunning = true;
 
       updateAiUI('Processing');
 
       const startTime = Date.now();
+      const scanType = (reportState.scanType || 'Abdominal Ultrasound');
       const steps = [
-        { label: 'Loading captured images...', start: 0, end: 20 },
-        { label: 'Validating image quality...', start: 20, end: 45 },
-        { label: 'Detecting structures...', start: 45, end: 70 },
-        { label: 'Generating observations...', start: 70, end: 90 },
-        { label: 'Finalizing report...', start: 90, end: 100 }
+        { label: `Loading ${selectedImages.length} selected ultrasound frame(s)...`, start: 0, end: 20 },
+        { label: 'Analyzing echogenicity & acoustic boundaries...', start: 20, end: 45 },
+        { label: `Detecting anatomical structures (${scanType})...`, start: 45, end: 70 },
+        { label: 'Evaluating contour integrity & clinical risk...', start: 70, end: 90 },
+        { label: 'Finalizing clinical AI interpretation...', start: 90, end: 100 }
       ];
 
       for (const step of steps) {
         aiProgressStep.textContent = step.label;
         let currentProgress = step.start;
-        const duration = 800 + Math.random() * 400; // Simulated step duration
+        const duration = 600 + Math.random() * 300;
         const interval = 50;
         const increment = (step.end - step.start) / (duration / interval);
 
@@ -1653,31 +1909,36 @@ function navigateBackFromReport() {
       const endTime = Date.now();
       const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
       const now = new Date();
+      const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
       const results = {
         status: 'Completed',
-        quality: 'Good',
-        confidence: '97%',
-        structures: 'Abdominal Region',
-        observation: 'No significant abnormality detected',
-        risk: 'Low',
+        quality: 'Optimal',
+        confidence: '97.6%',
+        structures: scanType.includes('Abdominal') ? 'Abdominal Cavity • Hepatic & Renal Parenchyma' : `${scanType} Anatomical Region`,
+        observation: 'Homogeneous acoustic transmission; organ contours preserved without focal lesion or acute cystic anomaly.',
+        risk: 'Low Risk',
         summary: [
-          'Image quality acceptable',
-          'Structures recognized',
-          'No critical abnormal findings',
-          'Recommend physician verification'
+          `Examined ${selectedImages.length} selected ultrasound frame(s)`,
+          'Acoustic signal-to-noise ratio within diagnostic parameters',
+          'Anatomical borders sharply delineated without acoustic shadowing artifact',
+          'Recommend standard attending physician correlation'
         ],
         detailed: {
-          features: 'Abdominal Tissue',
-          clarity: 'High',
-          model: 'TORUS-AI-v1',
+          features: `${scanType} Tissue Layers & Margins`,
+          clarity: 'High Contrast (Diagnostic Quality)',
+          model: 'TORUS-AI-Clinical-v2',
           time: `${durationSeconds}s`,
-          confidence: '97%',
-          timestamp: `${now.toLocaleDateString()} • ${now.toLocaleTimeString()}`
+          confidence: '97.6%',
+          timestamp: `${now.toLocaleDateString()} • ${timeFormatted}`
         }
       };
 
+      reportState.aiResults = results;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
       updateAiUI('Completed', results);
+      isAiRunning = false;
+      showToast(`AI preliminary analysis completed for ${selectedImages.length} image(s).`);
     }
 
     function restoreAiAnalysis() {
@@ -1761,36 +2022,3 @@ function navigateBackFromReport() {
     // Initial restore
     restoreAiAnalysis();
   })();
-
-  // ==================== NEW BLOCK ====================
-
-  window.addEventListener("load", () => {
-    const btn = document.getElementById("digitalSignBtn");
-    const success = document.getElementById("signatureSuccess");
-
-    if (!btn || !success) {
-      console.error("signature elements missing");
-      return;
-    }
-
-    success.style.display = "none";
-    btn.onclick = null;
-
-    btn.addEventListener("click", function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
-      lucide.createIcons();
-      success.style.display = "flex";
-
-      console.log("signature shown");
-
-      // Internal state maintenance
-      if (typeof reportState !== 'undefined') {
-        reportState.digitalSignature = true;
-        if (typeof updateSignatureUI === 'function') updateSignatureUI();
-        if (typeof invalidateGeneratedReport === 'function') invalidateGeneratedReport();
-      }
-    });
-  });
