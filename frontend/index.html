@@ -2509,7 +2509,7 @@
                 <div class="dact-header-stats">
                   <div class="dact-stat-pill">
                     <span class="dact-stat-num" id="patRepTotalCount">10</span>
-                    <span class="dact-stat-lbl">Active Stations</span>
+                    <span class="dact-stat-lbl">Total Stations</span>
                   </div>
                   <div class="dact-stat-pill">
                     <span class="dact-stat-num cyan" id="patRepFinalizedCount">6</span>
@@ -2518,6 +2518,18 @@
                   <div class="dact-stat-pill">
                     <span class="dact-stat-num purple" id="patRepStandbyCount">3</span>
                     <span class="dact-stat-lbl">Standby</span>
+                  </div>
+                  <div class="dact-stat-pill">
+                    <span class="dact-stat-num red" id="patRepOfflineCount">1</span>
+                    <span class="dact-stat-lbl">Offline</span>
+                  </div>
+                  <div class="dact-stat-pill">
+                    <span class="dact-stat-num cyan" id="patRepTotalPatientsCount">23</span>
+                    <span class="dact-stat-lbl">Total Patients</span>
+                  </div>
+                  <div class="dact-stat-pill">
+                    <span class="dact-stat-num emerald" id="patRepActiveConsultCount">6</span>
+                    <span class="dact-stat-lbl">Active Consultations</span>
                   </div>
                   <button type="button" id="patRepCollapseToggleBtn" class="drep-collapse-btn"
                     onclick="toggleDiagnosticReportsSummaryView('patientDiagnosticReportsHeaderCard', 'patRepCollapseToggleBtn')"
@@ -2566,6 +2578,29 @@
                     <option value="online">Online</option>
                     <option value="standby">Standby</option>
                     <option value="offline">Offline</option>
+                  </select>
+                </div>
+
+                <div class="drep-type-select-wrap">
+                  <select id="patRepStationScanFilter" class="drep-filter-select"
+                    aria-label="Filter stations by scan type">
+                    <option value="all">All Scan Types</option>
+                    <option value="Cardiac">Cardiac</option>
+                    <option value="Thyroid">Thyroid</option>
+                    <option value="Abdominal">Abdominal</option>
+                    <option value="Pelvic">Pelvic</option>
+                    <option value="Vascular">Vascular</option>
+                  </select>
+                </div>
+
+                <div class="drep-type-select-wrap">
+                  <select id="tstaStationSort" class="drep-filter-select" aria-label="Sort stations">
+                    <option value="id-asc">Sort by ID (A-Z)</option>
+                    <option value="id-desc">Sort by ID (Z-A)</option>
+                    <option value="patients-desc">Most Patients</option>
+                    <option value="latency-asc">Lowest Latency</option>
+                    <option value="signal-desc">Highest Signal</option>
+                    <option value="status">Status</option>
                   </select>
                 </div>
 
@@ -2659,6 +2694,34 @@
                     <option value="Pelvic">Pelvic</option>
                     <option value="Vascular">Vascular</option>
                   </select>
+                </div>
+
+                <div class="drep-type-select-wrap">
+                  <select id="tstaPatientStatusFilter" class="drep-filter-select"
+                    aria-label="Filter patients by status">
+                    <option value="all">All Statuses</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Pending Review">Pending Review</option>
+                    <option value="Scheduled">Scheduled</option>
+                  </select>
+                </div>
+
+                <div class="drep-type-select-wrap">
+                  <select id="tstaPatientDoctorFilter" class="drep-filter-select"
+                    aria-label="Filter patients by doctor">
+                    <option value="all">All Doctors</option>
+                  </select>
+                </div>
+
+                <div class="dact-actions">
+                  <button type="button" id="tstaPatientRefreshBtn" class="dact-btn-icon" title="Refresh Patients List">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </button>
                 </div>
               </div>
 
@@ -4377,7 +4440,7 @@
             <label id="settings-token-wrapper" class="full-width">
               <span>Token</span>
               <input id="token" type="text" placeholder="Enter Agora Token"
-                value="007eJxTYFAwXCOh4n1AKPfBvxubtEXEZ8qWtTT2scs1PyqqCs068laBIck8ydIiycg0xcTY0iTJ1MDC0tg42dI0xSDZ0Dgp2cTi6KazWQ2BjAxe501ZGBkgEMRnZSjJLyotZmAAAOK8Hrk="
+                value="007eJxTYJi+2i6UU6J+mnVjz2Q3kbS5f3v0pp1Qfr3a/M71v8L7Ww8pMJiaJhsamyalGBsYG5okpaQlWiQaWyQlpxhYmhiaGlpYTDY9n9UQyMhwq8aIhZEBAkF8VoaS/KLSYgYGAG+vIE4="
                 spellcheck="false" autocomplete="off" />
             </label>
 

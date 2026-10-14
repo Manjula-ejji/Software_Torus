@@ -663,6 +663,7 @@
       font-weight: 700;
       text-align: right;
     }
+
     /* Redesigned AI Analysis Styles */
     .ai-analysis-card {
       position: relative;
@@ -1631,7 +1632,8 @@
               </div>
               <div class="ai-insight-card"
                 style="justify-content: center; align-items: center; background: transparent; border-style: dashed;">
-                <button class="expand-btn" id="toggleAiDetails" disabled style="opacity: 0.5; cursor: not-allowed;" title="Run AI analysis to view details">
+                <button class="expand-btn" id="toggleAiDetails" disabled style="opacity: 0.5; cursor: not-allowed;"
+                  title="Run AI analysis to view details">
                   <i data-lucide="chevron-down"></i>
                   <span>View Detailed Analysis</span>
                 </button>
@@ -1908,8 +1910,10 @@
             <div><strong style="color: #166534;">Clinical Risk:</strong> <span id="previewAiRisk"
                 style="color: #14532d; font-weight: 500;"></span></div>
           </div>
-          <p style="margin: 12px 0 0 0; font-size: 11px; color: #15803d; font-style: italic; border-top: 1px dashed #bbf7d0; padding-top: 8px;">
-            * Clinical Notice: AI Preliminary Analysis is an automated assistive interpretation tool and does not constitute a confirmed medical diagnosis. Review and approval by the attending clinician are required.
+          <p
+            style="margin: 12px 0 0 0; font-size: 11px; color: #15803d; font-style: italic; border-top: 1px dashed #bbf7d0; padding-top: 8px;">
+            * Clinical Notice: AI Preliminary Analysis is an automated assistive interpretation tool and does not
+            constitute a confirmed medical diagnosis. Review and approval by the attending clinician are required.
           </p>
         </div>
 
@@ -3749,198 +3753,330 @@
       invalidateGeneratedReport();
     });
 
-      async function sendCapturedImagesToPatient() {
-        const room = roomParam || 'default';
-        const selectedImages = doctorSelectedImages;
+    async function sendCapturedImagesToPatient() {
+      const room = roomParam || 'default';
+      const selectedImages = doctorSelectedImages;
 
-        console.log('Sharing captured images:', {
-          room,
-          imagesCount: selectedImages.length,
-          selectedImages
-        });
+      console.log('Sharing captured images:', {
+        room,
+        imagesCount: selectedImages.length,
+        selectedImages
+      });
 
-        const payload = {
-          type: 'share-captured-images',
-          room: room,
-          roomId: room,
-          images: selectedImages
-        };
+      const payload = {
+        type: 'share-captured-images',
+        room: room,
+        roomId: room,
+        images: selectedImages
+      };
 
-        if (window.reportSocket && window.reportSocket.connected) {
-          window.reportSocket.emit('share-captured-images', payload);
-          // Show success dialog
-          const successModal = document.getElementById('sendImagesSuccessModal');
-          if (successModal) {
-            successModal.style.display = 'flex';
-            successModal.classList.remove('hidden');
-            successModal.setAttribute('aria-hidden', 'false');
-          }
-        } else {
-          showToast('WebSocket not connected. Unable to send images.');
+      if (window.reportSocket && window.reportSocket.connected) {
+        window.reportSocket.emit('share-captured-images', payload);
+        // Show success dialog
+        const successModal = document.getElementById('sendImagesSuccessModal');
+        if (successModal) {
+          successModal.style.display = 'flex';
+          successModal.classList.remove('hidden');
+          successModal.setAttribute('aria-hidden', 'false');
         }
+      } else {
+        showToast('WebSocket not connected. Unable to send images.');
+      }
+    }
+
+    // Doctor Captured Images & Editing controller
+    let doctorSelectedImages = [];
+    let activeEditImageIndex = -1;
+    let currentBrightness = 100;
+    let currentContrast = 100;
+    let rotationAngle = 0;
+    let activeImageObj = null;
+
+    function openDoctorCapturedImagesModal() {
+      const rawImages = readCaptureImages();
+      const allImages = normalizeImages(rawImages);
+      reportState.images = allImages;
+      doctorSelectedImages = allImages;
+
+      renderDoctorImagesGrid();
+
+      const modal = document.getElementById('doctorCapturedImagesModal');
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
       }
 
-      // Doctor Captured Images & Editing controller
-      let doctorSelectedImages = [];
-      let activeEditImageIndex = -1;
-      let currentBrightness = 100;
-      let currentContrast = 100;
-      let rotationAngle = 0;
-      let activeImageObj = null;
+      // Reset to grid view
+      showDoctorGridView();
+    }
 
-      function openDoctorCapturedImagesModal() {
-        const rawImages = readCaptureImages();
-        const allImages = normalizeImages(rawImages);
-        reportState.images = allImages;
-        doctorSelectedImages = allImages;
+    function closeDoctorCapturedImagesModal() {
+      const modal = document.getElementById('doctorCapturedImagesModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    }
 
-        renderDoctorImagesGrid();
+    function showDoctorGridView() {
+      document.getElementById('doctorImagesGridView').style.display = 'flex';
+      document.getElementById('doctorImagesEditView').style.display = 'none';
 
-        const modal = document.getElementById('doctorCapturedImagesModal');
-        if (modal) {
-          modal.style.display = 'flex';
-          modal.classList.remove('hidden');
-          modal.setAttribute('aria-hidden', 'false');
-        }
+      // Footer buttons
+      document.getElementById('gridEditImagesBtn').style.display = 'inline-flex';
+      document.getElementById('gridSendImagesBtn').style.display = 'inline-flex';
+      document.getElementById('editBackToGridBtn').style.display = 'none';
+      document.getElementById('doctorImagesModalTitle').textContent = 'Captured Images';
 
-        // Reset to grid view
+      renderDoctorImagesGrid();
+    }
+
+    function showDoctorEditView() {
+      document.getElementById('doctorImagesGridView').style.display = 'none';
+      document.getElementById('doctorImagesEditView').style.display = 'block';
+
+      // Footer buttons
+      document.getElementById('gridEditImagesBtn').style.display = 'none';
+      document.getElementById('gridSendImagesBtn').style.display = 'none';
+      document.getElementById('editBackToGridBtn').style.display = 'inline-flex';
+      document.getElementById('doctorImagesModalTitle').textContent = 'Edit Images';
+
+      renderEditSidebar();
+
+      // Load first image for editing if available
+      if (doctorSelectedImages.length > 0) {
+        selectImageForEditing(0);
+      } else {
+        // If no images left, go back to grid
         showDoctorGridView();
       }
+    }
 
-      function closeDoctorCapturedImagesModal() {
-        const modal = document.getElementById('doctorCapturedImagesModal');
-        if (modal) {
-          modal.style.display = 'none';
-          modal.classList.add('hidden');
-          modal.setAttribute('aria-hidden', 'true');
-        }
-      }
+    function renderDoctorImagesGrid() {
+      const container = document.getElementById('doctorImagesGridContainer');
+      if (!container) return;
+      container.innerHTML = '';
 
-      function showDoctorGridView() {
-        document.getElementById('doctorImagesGridView').style.display = 'flex';
-        document.getElementById('doctorImagesEditView').style.display = 'none';
-
-        // Footer buttons
-        document.getElementById('gridEditImagesBtn').style.display = 'inline-flex';
-        document.getElementById('gridSendImagesBtn').style.display = 'inline-flex';
-        document.getElementById('editBackToGridBtn').style.display = 'none';
-        document.getElementById('doctorImagesModalTitle').textContent = 'Captured Images';
-
-        renderDoctorImagesGrid();
-      }
-
-      function showDoctorEditView() {
-        document.getElementById('doctorImagesGridView').style.display = 'none';
-        document.getElementById('doctorImagesEditView').style.display = 'block';
-
-        // Footer buttons
-        document.getElementById('gridEditImagesBtn').style.display = 'none';
-        document.getElementById('gridSendImagesBtn').style.display = 'none';
-        document.getElementById('editBackToGridBtn').style.display = 'inline-flex';
-        document.getElementById('doctorImagesModalTitle').textContent = 'Edit Images';
-
-        renderEditSidebar();
-
-        // Load first image for editing if available
-        if (doctorSelectedImages.length > 0) {
-          selectImageForEditing(0);
-        } else {
-          // If no images left, go back to grid
-          showDoctorGridView();
-        }
-      }
-
-      function renderDoctorImagesGrid() {
-        const container = document.getElementById('doctorImagesGridContainer');
-        if (!container) return;
-        container.innerHTML = '';
-
-        if (!doctorSelectedImages || doctorSelectedImages.length === 0) {
-          container.innerHTML = `
+      if (!doctorSelectedImages || doctorSelectedImages.length === 0) {
+        container.innerHTML = `
             <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; text-align: center; color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;">
               <i data-lucide="image-off" style="width: 44px; height: 44px; margin-bottom: 12px; color: #94a3b8;"></i>
               <strong style="font-size: 15px; color: #334155; margin-bottom: 4px;">No Ultrasound Images Captured Yet</strong>
               <p style="font-size: 13px; margin: 0; max-width: 380px; line-height: 1.5;">Ultrasound frames captured during the live video consultation scan will automatically appear here for review and report inclusion.</p>
             </div>
           `;
-          if (typeof lucide !== 'undefined') lucide.createIcons();
-          return;
-        }
-
-        doctorSelectedImages.forEach((img, idx) => {
-          const isSelected = reportState.selectedIds && reportState.selectedIds.has(img.id);
-          const card = document.createElement('div');
-          card.style.cssText = `border: 2px solid ${isSelected ? '#7c3aed' : '#e2e8f0'}; border-radius: 8px; overflow: hidden; background: #f8fafc; display: flex; flex-direction: column; cursor: pointer; transition: all 0.2s; position: relative;`;
-
-          const imgWrapper = document.createElement('div');
-          imgWrapper.style.cssText = 'aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; background: #f1f5f9; position: relative; overflow: hidden;';
-
-          const el = document.createElement('img');
-          el.src = img.dataUrl;
-          el.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
-          imgWrapper.appendChild(el);
-
-          // Checkbox badge
-          const checkBadge = document.createElement('div');
-          checkBadge.style.cssText = `position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 4px; background: ${isSelected ? '#7c3aed' : 'rgba(255,255,255,0.9)'}; border: 1.5px solid ${isSelected ? '#7c3aed' : '#94a3b8'}; display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 12px; font-weight: bold;`;
-          if (isSelected) {
-            checkBadge.innerHTML = '✓';
-          }
-          imgWrapper.appendChild(checkBadge);
-
-          const footer = document.createElement('div');
-          footer.style.cssText = `padding: 8px 10px; font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; color: ${isSelected ? '#7c3aed' : '#475569'}; background: #ffffff; border-top: 1px solid #e2e8f0;`;
-          footer.innerHTML = `<span>Image ${idx + 1}</span><span style="font-size: 11px; color: #94a3b8;">${getTimeLabel(img.createdAt)}</span>`;
-
-          card.appendChild(imgWrapper);
-          card.appendChild(footer);
-
-          card.addEventListener('click', () => {
-            toggleSelectedImage(img.id);
-            renderDoctorImagesGrid();
-          });
-
-          container.appendChild(card);
-        });
         if (typeof lucide !== 'undefined') lucide.createIcons();
+        return;
       }
 
-      function renderEditSidebar() {
-        const container = document.getElementById('editImagesSidebarContainer');
-        if (!container) return;
-        container.innerHTML = '';
+      doctorSelectedImages.forEach((img, idx) => {
+        const isSelected = reportState.selectedIds && reportState.selectedIds.has(img.id);
+        const card = document.createElement('div');
+        card.style.cssText = `border: 2px solid ${isSelected ? '#7c3aed' : '#e2e8f0'}; border-radius: 8px; overflow: hidden; background: #f8fafc; display: flex; flex-direction: column; cursor: pointer; transition: all 0.2s; position: relative;`;
 
-        doctorSelectedImages.forEach((img, idx) => {
-          const btn = document.createElement('div');
-          btn.style.cssText = `padding: 8px; border: 1px solid ${idx === activeEditImageIndex ? '#6f2cff' : '#e2e8f0'}; border-radius: 6px; cursor: pointer; background: ${idx === activeEditImageIndex ? '#f3e8ff' : '#ffffff'}; display: flex; align-items: center; gap: 8px; transition: all 0.2s;`;
+        const imgWrapper = document.createElement('div');
+        imgWrapper.style.cssText = 'aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; background: #f1f5f9; position: relative; overflow: hidden;';
 
-          const thumb = document.createElement('img');
-          thumb.src = img.dataUrl;
-          thumb.style.cssText = 'width: 32px; height: 24px; object-fit: cover; border-radius: 2px; border: 1px solid #cbd5e1;';
+        const el = document.createElement('img');
+        el.src = img.dataUrl;
+        el.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+        imgWrapper.appendChild(el);
 
-          const label = document.createElement('span');
-          label.style.cssText = `font-size: 12px; font-weight: 600; color: ${idx === activeEditImageIndex ? '#6f2cff' : '#334155'};`;
-          label.textContent = `Image ${idx + 1}`;
+        // Checkbox badge
+        const checkBadge = document.createElement('div');
+        checkBadge.style.cssText = `position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 4px; background: ${isSelected ? '#7c3aed' : 'rgba(255,255,255,0.9)'}; border: 1.5px solid ${isSelected ? '#7c3aed' : '#94a3b8'}; display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 12px; font-weight: bold;`;
+        if (isSelected) {
+          checkBadge.innerHTML = '✓';
+        }
+        imgWrapper.appendChild(checkBadge);
 
-          btn.appendChild(thumb);
-          btn.appendChild(label);
+        const footer = document.createElement('div');
+        footer.style.cssText = `padding: 8px 10px; font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; color: ${isSelected ? '#7c3aed' : '#475569'}; background: #ffffff; border-top: 1px solid #e2e8f0;`;
+        footer.innerHTML = `<span>Image ${idx + 1}</span><span style="font-size: 11px; color: #94a3b8;">${getTimeLabel(img.createdAt)}</span>`;
 
-          btn.addEventListener('click', () => {
-            selectImageForEditing(idx);
-          });
+        card.appendChild(imgWrapper);
+        card.appendChild(footer);
 
-          container.appendChild(btn);
+        card.addEventListener('click', () => {
+          toggleSelectedImage(img.id);
+          renderDoctorImagesGrid();
         });
+
+        container.appendChild(card);
+      });
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function renderEditSidebar() {
+      const container = document.getElementById('editImagesSidebarContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      doctorSelectedImages.forEach((img, idx) => {
+        const btn = document.createElement('div');
+        btn.style.cssText = `padding: 8px; border: 1px solid ${idx === activeEditImageIndex ? '#6f2cff' : '#e2e8f0'}; border-radius: 6px; cursor: pointer; background: ${idx === activeEditImageIndex ? '#f3e8ff' : '#ffffff'}; display: flex; align-items: center; gap: 8px; transition: all 0.2s;`;
+
+        const thumb = document.createElement('img');
+        thumb.src = img.dataUrl;
+        thumb.style.cssText = 'width: 32px; height: 24px; object-fit: cover; border-radius: 2px; border: 1px solid #cbd5e1;';
+
+        const label = document.createElement('span');
+        label.style.cssText = `font-size: 12px; font-weight: 600; color: ${idx === activeEditImageIndex ? '#6f2cff' : '#334155'};`;
+        label.textContent = `Image ${idx + 1}`;
+
+        btn.appendChild(thumb);
+        btn.appendChild(label);
+
+        btn.addEventListener('click', () => {
+          selectImageForEditing(idx);
+        });
+
+        container.appendChild(btn);
+      });
+    }
+
+    function selectImageForEditing(index) {
+      activeEditImageIndex = index;
+      renderEditSidebar();
+
+      const imgData = doctorSelectedImages[index];
+      if (!imgData) return;
+
+      // Reset adjustment controls
+      currentBrightness = 100;
+      currentContrast = 100;
+      rotationAngle = 0;
+      document.getElementById('editorBrightness').value = 100;
+      document.getElementById('brightnessVal').textContent = '100%';
+      document.getElementById('editorContrast').value = 100;
+      document.getElementById('contrastVal').textContent = '100%';
+
+      // Reset crop controls
+      document.getElementById('cropTop').value = 0;
+      document.getElementById('cropBottom').value = 0;
+      document.getElementById('cropLeft').value = 0;
+      document.getElementById('cropRight').value = 0;
+
+      activeImageObj = new Image();
+      activeImageObj.onload = function () {
+        updateCanvasPreview();
+      };
+      activeImageObj.src = imgData.dataUrl;
+    }
+
+    function updateCanvasPreview() {
+      const canvas = document.getElementById('editingCanvas');
+      if (!canvas || !activeImageObj) return;
+
+      const ctx = canvas.getContext('2d');
+
+      // Handle rotation sizes
+      const isRotated90or270 = (rotationAngle === 90 || rotationAngle === 270);
+      const w = isRotated90or270 ? activeImageObj.height : activeImageObj.width;
+      const h = isRotated90or270 ? activeImageObj.width : activeImageObj.height;
+
+      canvas.width = w;
+      canvas.height = h;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Apply filters
+      ctx.filter = `brightness(${currentBrightness}%) contrast(${currentContrast}%)`;
+
+      // Apply rotation translation
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate((rotationAngle * Math.PI) / 180);
+      ctx.drawImage(activeImageObj, -activeImageObj.width / 2, -activeImageObj.height / 2);
+    }
+
+    function saveCanvasState() {
+      const canvas = document.getElementById('editingCanvas');
+      if (!canvas || activeEditImageIndex === -1) return;
+
+      // Save current canvas to data URL
+      const dataUrl = canvas.toDataURL('image/png');
+      doctorSelectedImages[activeEditImageIndex].dataUrl = dataUrl;
+
+      // Sync back to capture images local storage!
+      const rawImages = readCaptureImages();
+      const activeId = doctorSelectedImages[activeEditImageIndex].id;
+      const targetRaw = rawImages.find(img => img.id === activeId);
+      if (targetRaw) {
+        targetRaw.dataUrl = dataUrl;
+        writeCaptureImages(rawImages);
+      }
+    }
+
+    // Hook rotate button
+    document.getElementById('editorRotateBtn').addEventListener('click', () => {
+      rotationAngle = (rotationAngle + 90) % 360;
+      updateCanvasPreview();
+      saveCanvasState();
+      renderEditSidebar();
+    });
+
+    // Hook adjustment sliders
+    document.getElementById('editorBrightness').addEventListener('input', (e) => {
+      currentBrightness = e.target.value;
+      document.getElementById('brightnessVal').textContent = `${currentBrightness}%`;
+      updateCanvasPreview();
+    });
+    document.getElementById('editorBrightness').addEventListener('change', () => {
+      saveCanvasState();
+      renderEditSidebar();
+    });
+
+    document.getElementById('editorContrast').addEventListener('input', (e) => {
+      currentContrast = e.target.value;
+      document.getElementById('contrastVal').textContent = `${currentContrast}%`;
+      updateCanvasPreview();
+    });
+    document.getElementById('editorContrast').addEventListener('change', () => {
+      saveCanvasState();
+      renderEditSidebar();
+    });
+
+    // Hook crop apply button
+    document.getElementById('applyCropBtn').addEventListener('click', () => {
+      const canvas = document.getElementById('editingCanvas');
+      if (!canvas || !activeImageObj) return;
+
+      // Fetch sliders
+      const cropT = Number(document.getElementById('cropTop').value);
+      const cropB = Number(document.getElementById('cropBottom').value);
+      const cropL = Number(document.getElementById('cropLeft').value);
+      const cropR = Number(document.getElementById('cropRight').value);
+
+      // Convert percentage to actual pixels on current canvas size
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const leftPx = Math.floor((cropL / 100) * w);
+      const rightPx = Math.floor((cropR / 100) * w);
+      const topPx = Math.floor((cropT / 100) * h);
+      const bottomPx = Math.floor((cropB / 100) * h);
+
+      const newW = w - leftPx - rightPx;
+      const newH = h - topPx - bottomPx;
+
+      if (newW <= 10 || newH <= 10) {
+        showToast('Crop area too small');
+        return;
       }
 
-      function selectImageForEditing(index) {
-        activeEditImageIndex = index;
-        renderEditSidebar();
+      // Copy cropped area
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = newW;
+      tempCanvas.height = newH;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(canvas, leftPx, topPx, newW, newH, 0, 0, newW, newH);
 
-        const imgData = doctorSelectedImages[index];
-        if (!imgData) return;
-
-        // Reset adjustment controls
+      // Load cropped image back as active image
+      activeImageObj = new Image();
+      activeImageObj.onload = function () {
+        // Reset controls
         currentBrightness = 100;
         currentContrast = 100;
         rotationAngle = 0;
@@ -3949,457 +4085,348 @@
         document.getElementById('editorContrast').value = 100;
         document.getElementById('contrastVal').textContent = '100%';
 
-        // Reset crop controls
         document.getElementById('cropTop').value = 0;
         document.getElementById('cropBottom').value = 0;
         document.getElementById('cropLeft').value = 0;
         document.getElementById('cropRight').value = 0;
 
+        updateCanvasPreview();
+        saveCanvasState();
+        renderEditSidebar();
+      };
+      activeImageObj.src = tempCanvas.toDataURL('image/png');
+    });
+
+    // Hook replace image file input
+    document.getElementById('editorReplaceInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (evt) {
+        const dataUrl = evt.target.result;
+
         activeImageObj = new Image();
         activeImageObj.onload = function () {
-          updateCanvasPreview();
-        };
-        activeImageObj.src = imgData.dataUrl;
-      }
-
-      function updateCanvasPreview() {
-        const canvas = document.getElementById('editingCanvas');
-        if (!canvas || !activeImageObj) return;
-
-        const ctx = canvas.getContext('2d');
-
-        // Handle rotation sizes
-        const isRotated90or270 = (rotationAngle === 90 || rotationAngle === 270);
-        const w = isRotated90or270 ? activeImageObj.height : activeImageObj.width;
-        const h = isRotated90or270 ? activeImageObj.width : activeImageObj.height;
-
-        canvas.width = w;
-        canvas.height = h;
-
-        ctx.clearRect(0, 0, w, h);
-
-        // Apply filters
-        ctx.filter = `brightness(${currentBrightness}%) contrast(${currentContrast}%)`;
-
-        // Apply rotation translation
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate((rotationAngle * Math.PI) / 180);
-        ctx.drawImage(activeImageObj, -activeImageObj.width / 2, -activeImageObj.height / 2);
-      }
-
-      function saveCanvasState() {
-        const canvas = document.getElementById('editingCanvas');
-        if (!canvas || activeEditImageIndex === -1) return;
-
-        // Save current canvas to data URL
-        const dataUrl = canvas.toDataURL('image/png');
-        doctorSelectedImages[activeEditImageIndex].dataUrl = dataUrl;
-
-        // Sync back to capture images local storage!
-        const rawImages = readCaptureImages();
-        const activeId = doctorSelectedImages[activeEditImageIndex].id;
-        const targetRaw = rawImages.find(img => img.id === activeId);
-        if (targetRaw) {
-          targetRaw.dataUrl = dataUrl;
-          writeCaptureImages(rawImages);
-        }
-      }
-
-      // Hook rotate button
-      document.getElementById('editorRotateBtn').addEventListener('click', () => {
-        rotationAngle = (rotationAngle + 90) % 360;
-        updateCanvasPreview();
-        saveCanvasState();
-        renderEditSidebar();
-      });
-
-      // Hook adjustment sliders
-      document.getElementById('editorBrightness').addEventListener('input', (e) => {
-        currentBrightness = e.target.value;
-        document.getElementById('brightnessVal').textContent = `${currentBrightness}%`;
-        updateCanvasPreview();
-      });
-      document.getElementById('editorBrightness').addEventListener('change', () => {
-        saveCanvasState();
-        renderEditSidebar();
-      });
-
-      document.getElementById('editorContrast').addEventListener('input', (e) => {
-        currentContrast = e.target.value;
-        document.getElementById('contrastVal').textContent = `${currentContrast}%`;
-        updateCanvasPreview();
-      });
-      document.getElementById('editorContrast').addEventListener('change', () => {
-        saveCanvasState();
-        renderEditSidebar();
-      });
-
-      // Hook crop apply button
-      document.getElementById('applyCropBtn').addEventListener('click', () => {
-        const canvas = document.getElementById('editingCanvas');
-        if (!canvas || !activeImageObj) return;
-
-        // Fetch sliders
-        const cropT = Number(document.getElementById('cropTop').value);
-        const cropB = Number(document.getElementById('cropBottom').value);
-        const cropL = Number(document.getElementById('cropLeft').value);
-        const cropR = Number(document.getElementById('cropRight').value);
-
-        // Convert percentage to actual pixels on current canvas size
-        const w = canvas.width;
-        const h = canvas.height;
-
-        const leftPx = Math.floor((cropL / 100) * w);
-        const rightPx = Math.floor((cropR / 100) * w);
-        const topPx = Math.floor((cropT / 100) * h);
-        const bottomPx = Math.floor((cropB / 100) * h);
-
-        const newW = w - leftPx - rightPx;
-        const newH = h - topPx - bottomPx;
-
-        if (newW <= 10 || newH <= 10) {
-          showToast('Crop area too small');
-          return;
-        }
-
-        // Copy cropped area
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = newW;
-        tempCanvas.height = newH;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.drawImage(canvas, leftPx, topPx, newW, newH, 0, 0, newW, newH);
-
-        // Load cropped image back as active image
-        activeImageObj = new Image();
-        activeImageObj.onload = function () {
-          // Reset controls
-          currentBrightness = 100;
-          currentContrast = 100;
-          rotationAngle = 0;
-          document.getElementById('editorBrightness').value = 100;
-          document.getElementById('brightnessVal').textContent = '100%';
-          document.getElementById('editorContrast').value = 100;
-          document.getElementById('contrastVal').textContent = '100%';
-
-          document.getElementById('cropTop').value = 0;
-          document.getElementById('cropBottom').value = 0;
-          document.getElementById('cropLeft').value = 0;
-          document.getElementById('cropRight').value = 0;
-
           updateCanvasPreview();
           saveCanvasState();
           renderEditSidebar();
         };
-        activeImageObj.src = tempCanvas.toDataURL('image/png');
-      });
+        activeImageObj.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
 
-      // Hook replace image file input
-      document.getElementById('editorReplaceInput').addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    // Hook remove image button
+    document.getElementById('editorRemoveBtn').addEventListener('click', () => {
+      if (activeEditImageIndex === -1) return;
 
-        const reader = new FileReader();
-        reader.onload = function (evt) {
-          const dataUrl = evt.target.result;
+      // Remove from list
+      const removed = doctorSelectedImages.splice(activeEditImageIndex, 1)[0];
 
-          activeImageObj = new Image();
-          activeImageObj.onload = function () {
-            updateCanvasPreview();
-            saveCanvasState();
-            renderEditSidebar();
-          };
-          activeImageObj.src = dataUrl;
-        };
-        reader.readAsDataURL(file);
-      });
+      // Sync local storage selected IDs and capture images
+      if (removed) {
+        const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
+        selectedIds.delete(removed.id);
+        writeJson(STORAGE_KEYS.selectedIds, Array.from(selectedIds));
+      }
 
-      // Hook remove image button
-      document.getElementById('editorRemoveBtn').addEventListener('click', () => {
-        if (activeEditImageIndex === -1) return;
+      // Reset index and load next available or return to grid
+      if (doctorSelectedImages.length > 0) {
+        const nextIndex = Math.min(activeEditImageIndex, doctorSelectedImages.length - 1);
+        selectImageForEditing(nextIndex);
+      } else {
+        showDoctorGridView();
+      }
+    });
 
-        // Remove from list
-        const removed = doctorSelectedImages.splice(activeEditImageIndex, 1)[0];
+    // Hook footer actions
+    document.getElementById('gridEditImagesBtn').addEventListener('click', showDoctorEditView);
+    document.getElementById('editBackToGridBtn').addEventListener('click', showDoctorGridView);
 
-        // Sync local storage selected IDs and capture images
-        if (removed) {
-          const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
-          selectedIds.delete(removed.id);
-          writeJson(STORAGE_KEYS.selectedIds, Array.from(selectedIds));
-        }
+    // Close button
+    document.getElementById('closeDoctorImagesModalBtn').addEventListener('click', closeDoctorCapturedImagesModal);
 
-        // Reset index and load next available or return to grid
-        if (doctorSelectedImages.length > 0) {
-          const nextIndex = Math.min(activeEditImageIndex, doctorSelectedImages.length - 1);
-          selectImageForEditing(nextIndex);
-        } else {
-          showDoctorGridView();
-        }
-      });
+    // Hook Send Images button
+    document.getElementById('gridSendImagesBtn').addEventListener('click', () => {
+      const confirmModal = document.getElementById('sendImagesConfirmModal');
+      if (confirmModal) {
+        confirmModal.style.display = 'flex';
+        confirmModal.classList.remove('hidden');
+        confirmModal.setAttribute('aria-hidden', 'false');
+      }
+    });
 
-      // Hook footer actions
-      document.getElementById('gridEditImagesBtn').addEventListener('click', showDoctorEditView);
-      document.getElementById('editBackToGridBtn').addEventListener('click', showDoctorGridView);
+    document.getElementById('cancelSendImagesBtn').addEventListener('click', () => {
+      const confirmModal = document.getElementById('sendImagesConfirmModal');
+      if (confirmModal) {
+        confirmModal.style.display = 'none';
+        confirmModal.classList.add('hidden');
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
+    });
 
-      // Close button
-      document.getElementById('closeDoctorImagesModalBtn').addEventListener('click', closeDoctorCapturedImagesModal);
+    document.getElementById('confirmSendImagesBtn').addEventListener('click', () => {
+      console.log('--- DEBUG START: SEND IMAGES ---');
+      console.log('Step 1: doctorSelectedImages collected:', doctorSelectedImages);
+      console.log('Step 2: roomParam (room ID):', roomParam);
 
-      // Hook Send Images button
-      document.getElementById('gridSendImagesBtn').addEventListener('click', () => {
-        const confirmModal = document.getElementById('sendImagesConfirmModal');
-        if (confirmModal) {
-          confirmModal.style.display = 'flex';
-          confirmModal.classList.remove('hidden');
-          confirmModal.setAttribute('aria-hidden', 'false');
-        }
-      });
+      // Hide confirmation
+      const confirmModal = document.getElementById('sendImagesConfirmModal');
+      if (confirmModal) {
+        confirmModal.style.display = 'none';
+        confirmModal.classList.add('hidden');
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
 
-      document.getElementById('cancelSendImagesBtn').addEventListener('click', () => {
-        const confirmModal = document.getElementById('sendImagesConfirmModal');
-        if (confirmModal) {
-          confirmModal.style.display = 'none';
-          confirmModal.classList.add('hidden');
-          confirmModal.setAttribute('aria-hidden', 'true');
-        }
-      });
+      const room = roomParam || 'default';
 
-      document.getElementById('confirmSendImagesBtn').addEventListener('click', () => {
-        console.log('--- DEBUG START: SEND IMAGES ---');
-        console.log('Step 1: doctorSelectedImages collected:', doctorSelectedImages);
-        console.log('Step 2: roomParam (room ID):', roomParam);
+      // Save to localStorage
+      try {
+        localStorage.setItem(`torus-shared-images-${room.toUpperCase()}`, JSON.stringify(doctorSelectedImages));
+        console.log('Step 3/4/5: Stored in localStorage key torus-shared-images-' + room.toUpperCase() + ':', localStorage.getItem(`torus-shared-images-${room.toUpperCase()}`));
+      } catch (e) {
+        console.error('Step 3/4/5 ERROR storing in localStorage:', e);
+      }
 
-        // Hide confirmation
-        const confirmModal = document.getElementById('sendImagesConfirmModal');
-        if (confirmModal) {
-          confirmModal.style.display = 'none';
-          confirmModal.classList.add('hidden');
-          confirmModal.setAttribute('aria-hidden', 'true');
-        }
+      // Perform socket send
+      const payload = {
+        type: 'share-captured-images',
+        room: room,
+        roomId: room,
+        images: doctorSelectedImages
+      };
 
-        const room = roomParam || 'default';
-
-        // Save to localStorage
-        try {
-          localStorage.setItem(`torus-shared-images-${room.toUpperCase()}`, JSON.stringify(doctorSelectedImages));
-          console.log('Step 3/4/5: Stored in localStorage key torus-shared-images-' + room.toUpperCase() + ':', localStorage.getItem(`torus-shared-images-${room.toUpperCase()}`));
-        } catch (e) {
-          console.error('Step 3/4/5 ERROR storing in localStorage:', e);
-        }
-
-        // Perform socket send
-        const payload = {
-          type: 'share-captured-images',
-          room: room,
-          roomId: room,
-          images: doctorSelectedImages
-        };
-
-        if (window.reportSocket && window.reportSocket.connected) {
-          window.reportSocket.emit('share-captured-images', payload);
-          // Show Success modal
-          const successModal = document.getElementById('sendImagesSuccessModal');
-          if (successModal) {
-            successModal.style.display = 'flex';
-            successModal.classList.remove('hidden');
-            successModal.setAttribute('aria-hidden', 'false');
-          }
-        } else {
-          showToast('WebSocket not connected. Unable to send images.');
-        }
-      });
-
-      document.getElementById('sendImagesSuccessOkBtn').addEventListener('click', () => {
+      if (window.reportSocket && window.reportSocket.connected) {
+        window.reportSocket.emit('share-captured-images', payload);
+        // Show Success modal
         const successModal = document.getElementById('sendImagesSuccessModal');
         if (successModal) {
-          successModal.style.display = 'none';
+          successModal.style.display = 'flex';
+          successModal.classList.remove('hidden');
+          successModal.setAttribute('aria-hidden', 'false');
+        }
+      } else {
+        showToast('WebSocket not connected. Unable to send images.');
+      }
+    });
+
+    document.getElementById('sendImagesSuccessOkBtn').addEventListener('click', () => {
+      const successModal = document.getElementById('sendImagesSuccessModal');
+      if (successModal) {
+        successModal.style.display = 'none';
+        successModal.classList.add('hidden');
+        successModal.setAttribute('aria-hidden', 'true');
+      }
+      closeDoctorCapturedImagesModal();
+    });
+
+    if (dom.sendCapturedImagesBtn) {
+      dom.sendCapturedImagesBtn.addEventListener('click', openDoctorCapturedImagesModal);
+    }
+
+    dom.generatePreviewBtn.addEventListener('click', previewReportAction);
+    const closeReportPreviewBtn = document.getElementById('closeReportPreviewBtn');
+    if (closeReportPreviewBtn) {
+      closeReportPreviewBtn.addEventListener('click', () => {
+        if (dom.reportPreviewModal) {
+          dom.reportPreviewModal.classList.add('hidden');
+          dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    }
+    const editReportPreviewBtn = document.getElementById('editReportPreviewBtn');
+    if (editReportPreviewBtn) {
+      editReportPreviewBtn.addEventListener('click', () => {
+        if (dom.reportPreviewModal) {
+          dom.reportPreviewModal.classList.add('hidden');
+          dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    }
+    const generateReportPreviewBtn = document.getElementById('generateReportPreviewBtn');
+    if (generateReportPreviewBtn) {
+      generateReportPreviewBtn.addEventListener('click', generateReportAction);
+    }
+    if (dom.confirmGenerateBtn) {
+      dom.confirmGenerateBtn.addEventListener('click', generateReportAction);
+    }
+
+    const successDialogOkBtn = document.getElementById('successDialogOkBtn');
+    if (successDialogOkBtn) {
+      successDialogOkBtn.addEventListener('click', () => {
+        const successModal = document.getElementById('successDialogModal');
+        if (successModal) {
           successModal.classList.add('hidden');
           successModal.setAttribute('aria-hidden', 'true');
         }
-        closeDoctorCapturedImagesModal();
+        if (reportState.generatedReport) {
+          markReportAsFinalized(reportState.generatedReport);
+        } else {
+          markReportAsFinalized();
+        }
+        sendReportToPatient();
       });
+    }
 
-      if (dom.sendCapturedImagesBtn) {
-        dom.sendCapturedImagesBtn.addEventListener('click', openDoctorCapturedImagesModal);
+    if (dom.sendPatientBtn) {
+      dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
+    }
+
+    async function handleDigitalSign() {
+      if (reportState.digitalSignature) {
+        showToast('Report is already digitally signed.');
+        return;
       }
 
-      dom.generatePreviewBtn.addEventListener('click', previewReportAction);
-      const closeReportPreviewBtn = document.getElementById('closeReportPreviewBtn');
-      if (closeReportPreviewBtn) {
-        closeReportPreviewBtn.addEventListener('click', () => {
-          if (dom.reportPreviewModal) {
-            dom.reportPreviewModal.classList.add('hidden');
-            dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
-          }
-        });
+      // 1. Validate required information before allowing signing
+      const findings = (dom.findingsField ? dom.findingsField.value : '').trim();
+      const recommendations = (dom.recommendationsField ? dom.recommendationsField.value : '').trim();
+      const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
+
+      if (!findings) {
+        showToast('Cannot sign report: Please enter Clinical Findings first.');
+        if (dom.findingsField) dom.findingsField.focus();
+        return;
       }
-      const editReportPreviewBtn = document.getElementById('editReportPreviewBtn');
-      if (editReportPreviewBtn) {
-        editReportPreviewBtn.addEventListener('click', () => {
-          if (dom.reportPreviewModal) {
-            dom.reportPreviewModal.classList.add('hidden');
-            dom.reportPreviewModal.setAttribute('aria-hidden', 'true');
-          }
-        });
+      if (!recommendations) {
+        showToast('Cannot sign report: Please enter Recommendations first.');
+        if (dom.recommendationsField) dom.recommendationsField.focus();
+        return;
       }
-      const generateReportPreviewBtn = document.getElementById('generateReportPreviewBtn');
-      if (generateReportPreviewBtn) {
-        generateReportPreviewBtn.addEventListener('click', generateReportAction);
-      }
-      if (dom.confirmGenerateBtn) {
-        dom.confirmGenerateBtn.addEventListener('click', generateReportAction);
+      if (selectedImages.length === 0) {
+        showToast('Cannot sign report: Please select at least one captured image.');
+        return;
       }
 
-      const successDialogOkBtn = document.getElementById('successDialogOkBtn');
-      if (successDialogOkBtn) {
-        successDialogOkBtn.addEventListener('click', () => {
-          const successModal = document.getElementById('successDialogModal');
-          if (successModal) {
-            successModal.classList.add('hidden');
-            successModal.setAttribute('aria-hidden', 'true');
-          }
-          if (reportState.generatedReport) {
-            markReportAsFinalized(reportState.generatedReport);
-          } else {
-            markReportAsFinalized();
-          }
-          sendReportToPatient();
-        });
+      // 2. Prevent duplicate / repeated submission & show signing state
+      const signBtn = dom.digitalSignBtn;
+      if (signBtn.dataset.signing === 'true') return;
+      signBtn.dataset.signing = 'true';
+      updateSignatureUI('Signing');
+
+      try {
+        await new Promise(r => setTimeout(r, 600));
+
+        const doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || '--';
+        const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
+        const now = new Date();
+        const signTimestamp = now.toISOString();
+        const signatureHash = 'TORUS-SIG-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+        reportState.digitalSignature = true;
+        reportState.signatureData = {
+          doctorName: doctorName,
+          doctorLicense: 'TORUS-REG-3001',
+          signedAt: signTimestamp,
+          signatureHash: signatureHash,
+          reportId: reportId
+        };
+
+        updateSignatureUI();
+        invalidateGeneratedReport();
+        showToast(`Report digitally signed successfully.`);
+      } catch (err) {
+        console.error('[Digital Sign] Error executing signature:', err);
+        reportState.digitalSignature = false;
+        reportState.signatureData = null;
+        updateSignatureUI('Failed');
+        showToast('Digital signature failed. Please try again.');
+      } finally {
+        signBtn.dataset.signing = 'false';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
       }
+    }
 
-      if (dom.sendPatientBtn) {
-        dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
-      }
+    dom.digitalSignBtn.addEventListener('click', handleDigitalSign);
 
-      async function handleDigitalSign() {
-        if (reportState.digitalSignature) {
-          showToast('Report is already digitally signed.');
-          return;
-        }
-
-        // 1. Validate required information before allowing signing
-        const findings = (dom.findingsField ? dom.findingsField.value : '').trim();
-        const recommendations = (dom.recommendationsField ? dom.recommendationsField.value : '').trim();
-        const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
-
-        if (!findings) {
-          showToast('Cannot sign report: Please enter Clinical Findings first.');
-          if (dom.findingsField) dom.findingsField.focus();
-          return;
-        }
-        if (!recommendations) {
-          showToast('Cannot sign report: Please enter Recommendations first.');
-          if (dom.recommendationsField) dom.recommendationsField.focus();
-          return;
-        }
-        if (selectedImages.length === 0) {
-          showToast('Cannot sign report: Please select at least one captured image.');
-          return;
-        }
-
-        // 2. Prevent duplicate / repeated submission & show signing state
-        const signBtn = dom.digitalSignBtn;
-        if (signBtn.dataset.signing === 'true') return;
-        signBtn.dataset.signing = 'true';
-        updateSignatureUI('Signing');
-
-        try {
-          await new Promise(r => setTimeout(r, 600));
-
-          const doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || '--';
-          const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
-          const now = new Date();
-          const signTimestamp = now.toISOString();
-          const signatureHash = 'TORUS-SIG-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-
-          reportState.digitalSignature = true;
-          reportState.signatureData = {
-            doctorName: doctorName,
-            doctorLicense: 'TORUS-REG-3001',
-            signedAt: signTimestamp,
-            signatureHash: signatureHash,
-            reportId: reportId
-          };
-
-          updateSignatureUI();
-          invalidateGeneratedReport();
-          showToast(`Report digitally signed successfully.`);
-        } catch (err) {
-          console.error('[Digital Sign] Error executing signature:', err);
-          reportState.digitalSignature = false;
-          reportState.signatureData = null;
-          updateSignatureUI('Failed');
-          showToast('Digital signature failed. Please try again.');
-        } finally {
-          signBtn.dataset.signing = 'false';
-          if (typeof lucide !== 'undefined') lucide.createIcons();
-        }
-      }
-
-      dom.digitalSignBtn.addEventListener('click', handleDigitalSign);
-
-      if (dom.closePreviewModal) {
-        dom.closePreviewModal.addEventListener('click', closePreview);
-      }
-      if (dom.imagePreviewModal) {
-        dom.imagePreviewModal.addEventListener('click', (event) => {
-          if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
-            closePreview();
-          }
-        });
-      }
-
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
+    if (dom.closePreviewModal) {
+      dom.closePreviewModal.addEventListener('click', closePreview);
+    }
+    if (dom.imagePreviewModal) {
+      dom.imagePreviewModal.addEventListener('click', (event) => {
+        if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
           closePreview();
         }
       });
+    }
 
-      setupSidebar();
-      initializeBuildVersion();
-      if (roomParam) {
-        localStorage.removeItem('torus-report-finalized-' + roomParam);
-        localStorage.removeItem(STORAGE_KEYS.deliveryStatus);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
+        closePreview();
       }
-      loadReportContext();
+    });
 
-      // Check if report is already generated for this room
-      if (roomParam && roomParam !== 'default') {
-        const API_BASE_URL = (window.location.port === '5000' || window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5000';
-        fetch(`${API_BASE_URL}/api/reports/room/${roomParam}`)
-          .then(res => res.json())
-          .then(resData => {
-            if (resData.exists && resData.data) {
-              const reportData = resData.data;
+    setupSidebar();
+    initializeBuildVersion();
+    if (roomParam) {
+      localStorage.removeItem('torus-report-finalized-' + roomParam);
+      localStorage.removeItem(STORAGE_KEYS.deliveryStatus);
+    }
+    loadReportContext();
 
-              // Construct reportState.generatedReport from database record
-              const generatedAt = reportData.generated_date || new Date(reportData.generated_time || Date.now()).toISOString();
-              reportState.generatedReport = {
-                reportId: reportData.report_id,
-                generatedAt: generatedAt,
-                findings: reportData.findings,
-                recommendations: reportData.recommendations,
-                digitalSignature: !!reportData.signature_data,
-                patientInfo: {
-                  patientName: reportData.patient_name || (dom.patientName ? dom.patientName.textContent.trim() : ''),
-                  examDate: dom.examDate ? dom.examDate.textContent.trim() : '',
-                  scanType: reportData.scan_type || (dom.scanType ? dom.scanType.textContent.trim() : ''),
-                  device: dom.deviceName ? dom.deviceName.textContent.trim() : '',
-                  doctor: reportData.signed_by || (dom.doctorName ? dom.doctorName.textContent.trim() : ''),
-                  location: dom.locationName ? dom.locationName.textContent.trim() : '',
-                  examDuration: dom.examDuration ? dom.examDuration.textContent.trim() : ''
-                },
-                selectedImages: normalizeImages(readCaptureImages()).filter(img => {
-                  const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
-                  return selectedIds.has(img.id);
-                })
-              };
+    // Check if report is already generated for this room
+    if (roomParam && roomParam !== 'default') {
+      const API_BASE_URL = (window.location.port === '5000' || window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5000';
+      fetch(`${API_BASE_URL}/api/reports/room/${roomParam}`)
+        .then(res => res.json())
+        .then(resData => {
+          if (resData.exists && resData.data) {
+            const reportData = resData.data;
 
-              if (reportData.findings && dom.findingsField) {
-                dom.findingsField.value = reportData.findings;
+            // Construct reportState.generatedReport from database record
+            const generatedAt = reportData.generated_date || new Date(reportData.generated_time || Date.now()).toISOString();
+            reportState.generatedReport = {
+              reportId: reportData.report_id,
+              generatedAt: generatedAt,
+              findings: reportData.findings,
+              recommendations: reportData.recommendations,
+              digitalSignature: !!reportData.signature_data,
+              patientInfo: {
+                patientName: reportData.patient_name || (dom.patientName ? dom.patientName.textContent.trim() : ''),
+                examDate: dom.examDate ? dom.examDate.textContent.trim() : '',
+                scanType: reportData.scan_type || (dom.scanType ? dom.scanType.textContent.trim() : ''),
+                device: dom.deviceName ? dom.deviceName.textContent.trim() : '',
+                doctor: reportData.signed_by || (dom.doctorName ? dom.doctorName.textContent.trim() : ''),
+                location: dom.locationName ? dom.locationName.textContent.trim() : '',
+                examDuration: dom.examDuration ? dom.examDuration.textContent.trim() : ''
+              },
+              selectedImages: normalizeImages(readCaptureImages()).filter(img => {
+                const selectedIds = new Set(readJson(STORAGE_KEYS.selectedIds, []));
+                return selectedIds.has(img.id);
+              })
+            };
+
+            if (reportData.findings && dom.findingsField) {
+              dom.findingsField.value = reportData.findings;
+            }
+            if (reportData.recommendations && dom.recommendationsField) {
+              dom.recommendationsField.value = reportData.recommendations;
+            }
+            if (reportData.signature_data) {
+              reportState.digitalSignature = true;
+              updateSignatureUI();
+              const signSuccess = document.getElementById("signatureSuccess");
+              if (signSuccess) signSuccess.style.display = "flex";
+              if (dom.digitalSignBtn) {
+                dom.digitalSignBtn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
               }
-              if (reportData.recommendations && dom.recommendationsField) {
-                dom.recommendationsField.value = reportData.recommendations;
+            }
+          }
+        })
+        .catch(err => {
+          console.error("Error checking report status:", err);
+          if (localStorage.getItem('torus-report-finalized-' + roomParam) === 'true') {
+            const savedReport = readJson(STORAGE_KEYS.generatedReport, null);
+            if (savedReport) {
+              reportState.generatedReport = savedReport;
+              if (savedReport.findings && dom.findingsField) {
+                dom.findingsField.value = savedReport.findings;
               }
-              if (reportData.signature_data) {
+              if (savedReport.recommendations && dom.recommendationsField) {
+                dom.recommendationsField.value = savedReport.recommendations;
+              }
+              if (savedReport.digitalSignature) {
                 reportState.digitalSignature = true;
                 updateSignatureUI();
                 const signSuccess = document.getElementById("signatureSuccess");
@@ -4409,457 +4436,434 @@
                 }
               }
             }
-          })
-          .catch(err => {
-            console.error("Error checking report status:", err);
-            if (localStorage.getItem('torus-report-finalized-' + roomParam) === 'true') {
-              const savedReport = readJson(STORAGE_KEYS.generatedReport, null);
-              if (savedReport) {
-                reportState.generatedReport = savedReport;
-                if (savedReport.findings && dom.findingsField) {
-                  dom.findingsField.value = savedReport.findings;
-                }
-                if (savedReport.recommendations && dom.recommendationsField) {
-                  dom.recommendationsField.value = savedReport.recommendations;
-                }
-                if (savedReport.digitalSignature) {
-                  reportState.digitalSignature = true;
-                  updateSignatureUI();
-                  const signSuccess = document.getElementById("signatureSuccess");
-                  if (signSuccess) signSuccess.style.display = "flex";
-                  if (dom.digitalSignBtn) {
-                    dom.digitalSignBtn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
-                  }
-                }
-              }
-            }
+          }
+        });
+    }
+
+    window.addEventListener('storage', (event) => {
+      if ([
+        STORAGE_KEYS.collage,
+        STORAGE_KEYS.selectedIds,
+        STORAGE_KEYS.generatedReport,
+        STORAGE_KEYS.context,
+        STORAGE_KEYS.reportId,
+        STORAGE_KEYS.reportPreview,
+        STORAGE_KEYS.reportDetails,
+        STORAGE_KEYS.deliveryStatus,
+        CAPTURE_STORAGE_KEYS.images,
+        CAPTURE_STORAGE_KEYS.sessionId
+      ].includes(event.key)) {
+        loadReportContext();
+      }
+    });
+
+    lucide.createIcons();
+
+    // Camera capture support for Report Generation page
+    (function () {
+      let captureInProgress = false;
+
+      async function captureFromCamera() {
+        if (captureInProgress) return null;
+        captureInProgress = true;
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (err) {
+          console.warn('Camera blocked or unavailable, using simulated capture fallback:', err);
+          // Create a mock image fallback
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = 480;
+          const ctx = canvas.getContext('2d');
+          const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+          grad.addColorStop(0, '#0b0f19');
+          grad.addColorStop(1, '#1e293b');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Draw simulated ultrasound circle
+          ctx.strokeStyle = '#00d7ff';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Draw scanning grid lines
+          ctx.strokeStyle = 'rgba(0, 215, 255, 0.2)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let x = 0; x < canvas.width; x += 40) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+          }
+          for (let y = 0; y < canvas.height; y += 40) {
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 20px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Simulated Scan Capture', canvas.width / 2, canvas.height / 2 - 20);
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '14px sans-serif';
+          ctx.fillText('Camera Blocked/Unavailable Fallback', canvas.width / 2, canvas.height / 2 + 30);
+          ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 60);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          captureInProgress = false;
+          return dataUrl;
+        }
+
+        try {
+          const video = document.createElement('video');
+          video.style.position = 'fixed';
+          video.style.left = '-9999px';
+          video.autoplay = true;
+          video.playsInline = true;
+          video.muted = true;
+          document.body.appendChild(video);
+          video.srcObject = stream;
+
+          await new Promise((resolve, reject) => {
+            const onCan = () => { resolve(); };
+            video.addEventListener('loadedmetadata', onCan, { once: true });
+            // fallback if metadata doesn't fire
+            setTimeout(resolve, 700);
           });
+
+          const w = video.videoWidth || 1280;
+          const h = video.videoHeight || 720;
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+          // cleanup
+          try { video.pause(); } catch (e) { }
+          try { video.srcObject = null; } catch (e) { }
+          document.body.removeChild(video);
+          stream.getTracks().forEach((t) => t.stop());
+          captureInProgress = false;
+          return dataUrl;
+        } catch (err) {
+          if (stream) stream.getTracks().forEach((t) => t.stop());
+          captureInProgress = false;
+          showToast('Capture failed');
+          return null;
+        }
       }
 
-      window.addEventListener('storage', (event) => {
-        if ([
-          STORAGE_KEYS.collage,
-          STORAGE_KEYS.selectedIds,
-          STORAGE_KEYS.generatedReport,
-          STORAGE_KEYS.context,
-          STORAGE_KEYS.reportId,
-          STORAGE_KEYS.reportPreview,
-          STORAGE_KEYS.reportDetails,
-          STORAGE_KEYS.deliveryStatus,
-          CAPTURE_STORAGE_KEYS.images,
-          CAPTURE_STORAGE_KEYS.sessionId
-        ].includes(event.key)) {
-          loadReportContext();
+      function persistCapturedImage(obj) {
+        try {
+          ensureCaptureSession();
+          const capturedImages = readCaptureImages();
+          console.log('Before save:', capturedImages.length);
+          capturedImages.push(obj);
+          console.log('After save:', capturedImages.length);
+          writeCaptureImages(capturedImages);
+          return capturedImages.length;
+        } catch (e) {
+          console.warn('Unable to persist captured image', e);
+          return 0;
         }
-      });
+      }
 
-      lucide.createIcons();
-
-      // Camera capture support for Report Generation page
-      (function () {
-        let captureInProgress = false;
-
-        async function captureFromCamera() {
-          if (captureInProgress) return null;
-          captureInProgress = true;
-          let stream = null;
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          } catch (err) {
-            console.warn('Camera blocked or unavailable, using simulated capture fallback:', err);
-            // Create a mock image fallback
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 480;
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-            grad.addColorStop(0, '#0b0f19');
-            grad.addColorStop(1, '#1e293b');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Draw simulated ultrasound circle
-            ctx.strokeStyle = '#00d7ff';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // Draw scanning grid lines
-            ctx.strokeStyle = 'rgba(0, 215, 255, 0.2)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            for (let x = 0; x < canvas.width; x += 40) {
-              ctx.moveTo(x, 0);
-              ctx.lineTo(x, canvas.height);
-            }
-            for (let y = 0; y < canvas.height; y += 40) {
-              ctx.moveTo(0, y);
-              ctx.lineTo(canvas.width, y);
-            }
-            ctx.stroke();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 20px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Simulated Scan Capture', canvas.width / 2, canvas.height / 2 - 20);
-
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = '14px sans-serif';
-            ctx.fillText('Camera Blocked/Unavailable Fallback', canvas.width / 2, canvas.height / 2 + 30);
-            ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 60);
-
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            captureInProgress = false;
-            return dataUrl;
-          }
-
-          try {
-            const video = document.createElement('video');
-            video.style.position = 'fixed';
-            video.style.left = '-9999px';
-            video.autoplay = true;
-            video.playsInline = true;
-            video.muted = true;
-            document.body.appendChild(video);
-            video.srcObject = stream;
-
-            await new Promise((resolve, reject) => {
-              const onCan = () => { resolve(); };
-              video.addEventListener('loadedmetadata', onCan, { once: true });
-              // fallback if metadata doesn't fire
-              setTimeout(resolve, 700);
-            });
-
-            const w = video.videoWidth || 1280;
-            const h = video.videoHeight || 720;
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-
-            // cleanup
-            try { video.pause(); } catch (e) { }
-            try { video.srcObject = null; } catch (e) { }
-            document.body.removeChild(video);
-            stream.getTracks().forEach((t) => t.stop());
-            captureInProgress = false;
-            return dataUrl;
-          } catch (err) {
-            if (stream) stream.getTracks().forEach((t) => t.stop());
-            captureInProgress = false;
-            showToast('Capture failed');
-            return null;
-          }
+      async function addNewCapturedImage(dataUrl) {
+        if (!dataUrl) return;
+        const createdAt = new Date().toISOString();
+        const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
+        const item = { id, createdAt, dataUrl };
+        // Keep compatibility with normalizeImages() which expects dataUrl field
+        reportState.images = (reportState.images || []).concat([item]);
+        const count = persistCapturedImage({ id, createdAt, dataUrl });
+        console.log('Rendered Cards:', reportState.images.length);
+        if (count !== reportState.images.length) {
+          console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
         }
+        renderCapturedImages(reportState.images);
+        invalidateGeneratedReport();
+        showToast('Image captured');
+      }
 
-        function persistCapturedImage(obj) {
-          try {
-            ensureCaptureSession();
-            const capturedImages = readCaptureImages();
-            console.log('Before save:', capturedImages.length);
-            capturedImages.push(obj);
-            console.log('After save:', capturedImages.length);
-            writeCaptureImages(capturedImages);
-            return capturedImages.length;
-          } catch (e) {
-            console.warn('Unable to persist captured image', e);
-            return 0;
-          }
+      async function handlePossibleCameraClick(target) {
+        // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
+        if (!target) return false;
+        const el = target.closest('button, [role="button"], a');
+        if (!el) return false;
+        const aria = String(el.getAttribute('aria-label') || '');
+        const hasCameraLabel = /camera|capture/i.test(aria);
+        const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
+        if (!hasCameraLabel && !hasCameraIcon) return false;
+
+        // perform capture
+        const dataUrl = await captureFromCamera();
+        if (dataUrl) await addNewCapturedImage(dataUrl);
+        return true;
+      }
+
+      document.addEventListener('click', (ev) => {
+        try {
+          // check clicked element and its ancestors for camera icon/label
+          handlePossibleCameraClick(ev.target).catch(() => { });
+        } catch (e) { }
+      }, { passive: true });
+    })();
+
+    // Redesigned AI Analysis Logic
+    (function () {
+      const runAiBtn = document.getElementById('runAiBtn');
+      const runAiBtnText = document.getElementById('runAiBtnText');
+      const aiStatusBadge = document.getElementById('aiStatusBadge');
+      const aiStatusText = document.getElementById('aiStatusText');
+      const aiProgressWrap = document.getElementById('aiProgressWrap');
+      const aiProgressStep = document.getElementById('aiProgressStep');
+      const aiProgressPercent = document.getElementById('aiProgressPercent');
+      const aiProgressFill = document.getElementById('aiProgressFill');
+      const aiSummaryCard = document.getElementById('aiSummaryCard');
+      const aiSummaryList = document.getElementById('aiSummaryList');
+      const aiDetailsPanel = document.getElementById('aiDetailsPanel');
+      const toggleAiDetails = document.getElementById('toggleAiDetails');
+
+      const detailAiStatus = document.getElementById('detailAiStatus');
+      const detailAiTime = document.getElementById('detailAiTime');
+
+      const insightEls = {
+        quality: document.getElementById('aiInsightQuality'),
+        confidence: document.getElementById('aiInsightConfidence'),
+        structures: document.getElementById('aiInsightStructures'),
+        observation: document.getElementById('aiInsightObservation'),
+        risk: document.getElementById('aiInsightRisk')
+      };
+
+      const detailEls = {
+        features: document.getElementById('aiDetailFeatures'),
+        time: document.getElementById('aiDetailTime'),
+        timestamp: document.getElementById('aiDetailTimestamp')
+      };
+
+      const STORAGE_KEY = 'torus_ai_analysis';
+
+      function resetCards() {
+        insightEls.quality.textContent = '--';
+        insightEls.confidence.textContent = '--';
+        insightEls.structures.textContent = '--';
+        insightEls.observation.textContent = 'Awaiting Analysis';
+        insightEls.risk.textContent = '--';
+        if (toggleAiDetails) {
+          toggleAiDetails.disabled = true;
+          toggleAiDetails.style.opacity = '0.5';
+          toggleAiDetails.style.cursor = 'not-allowed';
+          toggleAiDetails.title = 'Run AI analysis to view details';
         }
+      }
 
-        async function addNewCapturedImage(dataUrl) {
-          if (!dataUrl) return;
-          const createdAt = new Date().toISOString();
-          const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
-          const item = { id, createdAt, dataUrl };
-          // Keep compatibility with normalizeImages() which expects dataUrl field
-          reportState.images = (reportState.images || []).concat([item]);
-          const count = persistCapturedImage({ id, createdAt, dataUrl });
-          console.log('Rendered Cards:', reportState.images.length);
-          if (count !== reportState.images.length) {
-            console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
-          }
-          renderCapturedImages(reportState.images);
-          invalidateGeneratedReport();
-          showToast('Image captured');
-        }
+      function updateAiUI(status, results = null) {
+        const badgeClass = status === 'Completed' ? 'completed' : ((status === 'Processing' || status === 'Analyzing') ? 'analyzing' : (status === 'Failed' ? 'failed' : 'ready'));
+        aiStatusBadge.className = `ai-status-badge ${badgeClass}`;
 
-        async function handlePossibleCameraClick(target) {
-          // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
-          if (!target) return false;
-          const el = target.closest('button, [role="button"], a');
-          if (!el) return false;
-          const aria = String(el.getAttribute('aria-label') || '');
-          const hasCameraLabel = /camera|capture/i.test(aria);
-          const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
-          if (!hasCameraLabel && !hasCameraIcon) return false;
+        let displayStatusText = 'Ready to Analyze';
+        if (status === 'Processing' || status === 'Analyzing') displayStatusText = 'Analyzing';
+        else if (status === 'Completed') displayStatusText = 'Completed';
+        else if (status === 'Failed') displayStatusText = 'Failed';
+        else if (status === 'No Images') displayStatusText = 'No Images';
 
-          // perform capture
-          const dataUrl = await captureFromCamera();
-          if (dataUrl) await addNewCapturedImage(dataUrl);
-          return true;
-        }
+        aiStatusText.textContent = displayStatusText;
+        if (detailAiStatus) detailAiStatus.textContent = displayStatusText;
 
-        document.addEventListener('click', (ev) => {
-          try {
-            // check clicked element and its ancestors for camera icon/label
-            handlePossibleCameraClick(ev.target).catch(() => { });
-          } catch (e) { }
-        }, { passive: true });
-      })();
-
-      // Redesigned AI Analysis Logic
-      (function () {
-        const runAiBtn = document.getElementById('runAiBtn');
-        const runAiBtnText = document.getElementById('runAiBtnText');
-        const aiStatusBadge = document.getElementById('aiStatusBadge');
-        const aiStatusText = document.getElementById('aiStatusText');
-        const aiProgressWrap = document.getElementById('aiProgressWrap');
-        const aiProgressStep = document.getElementById('aiProgressStep');
-        const aiProgressPercent = document.getElementById('aiProgressPercent');
-        const aiProgressFill = document.getElementById('aiProgressFill');
-        const aiSummaryCard = document.getElementById('aiSummaryCard');
-        const aiSummaryList = document.getElementById('aiSummaryList');
-        const aiDetailsPanel = document.getElementById('aiDetailsPanel');
-        const toggleAiDetails = document.getElementById('toggleAiDetails');
-
-        const detailAiStatus = document.getElementById('detailAiStatus');
-        const detailAiTime = document.getElementById('detailAiTime');
-
-        const insightEls = {
-          quality: document.getElementById('aiInsightQuality'),
-          confidence: document.getElementById('aiInsightConfidence'),
-          structures: document.getElementById('aiInsightStructures'),
-          observation: document.getElementById('aiInsightObservation'),
-          risk: document.getElementById('aiInsightRisk')
-        };
-
-        const detailEls = {
-          features: document.getElementById('aiDetailFeatures'),
-          time: document.getElementById('aiDetailTime'),
-          timestamp: document.getElementById('aiDetailTimestamp')
-        };
-
-        const STORAGE_KEY = 'torus_ai_analysis';
-
-        function resetCards() {
-          insightEls.quality.textContent = '--';
-          insightEls.confidence.textContent = '--';
-          insightEls.structures.textContent = '--';
-          insightEls.observation.textContent = 'Awaiting Analysis';
-          insightEls.risk.textContent = '--';
+        if (status === 'Processing' || status === 'Analyzing') {
+          runAiBtn.disabled = true;
+          runAiBtn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i> <span>Analyzing...</span>';
+          aiProgressWrap.classList.add('active');
+          aiSummaryCard.classList.remove('active');
+          aiDetailsPanel.classList.remove('active');
+          resetCards();
+          lucide.createIcons();
+        } else if (status === 'Completed') {
+          runAiBtn.disabled = false;
+          runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
+          aiProgressWrap.classList.remove('active');
+          aiSummaryCard.classList.add('active');
           if (toggleAiDetails) {
-            toggleAiDetails.disabled = true;
-            toggleAiDetails.style.opacity = '0.5';
-            toggleAiDetails.style.cursor = 'not-allowed';
-            toggleAiDetails.title = 'Run AI analysis to view details';
+            toggleAiDetails.disabled = false;
+            toggleAiDetails.style.opacity = '1';
+            toggleAiDetails.style.cursor = 'pointer';
+            toggleAiDetails.title = 'View detailed analysis metrics';
           }
+          lucide.createIcons();
+
+          if (results) {
+            insightEls.quality.textContent = results.quality || '--';
+            insightEls.confidence.textContent = results.confidence || '--';
+            insightEls.structures.textContent = results.structures || '--';
+            insightEls.observation.textContent = results.observation || '--';
+            insightEls.risk.textContent = results.risk || '--';
+
+            if (Array.isArray(results.summary)) {
+              aiSummaryList.innerHTML = results.summary.map(item => `<li>${item}</li>`).join('');
+            }
+
+            if (results.detailed) {
+              if (detailEls.features) detailEls.features.textContent = results.detailed.features || '--';
+              if (detailEls.time) detailEls.time.textContent = results.detailed.time || '--';
+              if (detailEls.timestamp) detailEls.timestamp.textContent = results.detailed.timestamp || '--';
+
+              if (detailAiTime && results.detailed.timestamp) {
+                const parts = results.detailed.timestamp.split('•');
+                detailAiTime.textContent = parts.length > 1 ? parts[1].trim() : parts[0].trim();
+              }
+            }
+          }
+        } else if (status === 'Failed') {
+          runAiBtn.disabled = false;
+          runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Retry Analysis</span>';
+          aiProgressWrap.classList.remove('active');
+          aiSummaryCard.classList.remove('active');
+          aiDetailsPanel.classList.remove('active');
+          resetCards();
+          if (detailAiTime) detailAiTime.textContent = '--';
+          lucide.createIcons();
+        } else {
+          // Ready state
+          const hasImages = reportState.images && reportState.images.length > 0;
+          runAiBtn.disabled = !hasImages;
+          runAiBtn.innerHTML = hasImages
+            ? '<i data-lucide="play"></i> <span>Start Analysis</span>'
+            : '<span>No Images Available</span>';
+          aiProgressWrap.classList.remove('active');
+          aiSummaryCard.classList.remove('active');
+          aiDetailsPanel.classList.remove('active');
+          resetCards();
+          if (detailAiTime) detailAiTime.textContent = '--';
+          lucide.createIcons();
         }
+      }
 
-        function updateAiUI(status, results = null) {
-          const badgeClass = status === 'Completed' ? 'completed' : ((status === 'Processing' || status === 'Analyzing') ? 'analyzing' : (status === 'Failed' ? 'failed' : 'ready'));
-          aiStatusBadge.className = `ai-status-badge ${badgeClass}`;
-          
-          let displayStatusText = 'Ready to Analyze';
-          if (status === 'Processing' || status === 'Analyzing') displayStatusText = 'Analyzing';
-          else if (status === 'Completed') displayStatusText = 'Completed';
-          else if (status === 'Failed') displayStatusText = 'Failed';
-          else if (status === 'No Images') displayStatusText = 'No Images';
-          
-          aiStatusText.textContent = displayStatusText;
-          if (detailAiStatus) detailAiStatus.textContent = displayStatusText;
-
-          if (status === 'Processing' || status === 'Analyzing') {
-            runAiBtn.disabled = true;
-            runAiBtn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i> <span>Analyzing...</span>';
-            aiProgressWrap.classList.add('active');
-            aiSummaryCard.classList.remove('active');
-            aiDetailsPanel.classList.remove('active');
-            resetCards();
-            lucide.createIcons();
-          } else if (status === 'Completed') {
-            runAiBtn.disabled = false;
-            runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
-            aiProgressWrap.classList.remove('active');
-            aiSummaryCard.classList.add('active');
-            if (toggleAiDetails) {
-              toggleAiDetails.disabled = false;
-              toggleAiDetails.style.opacity = '1';
-              toggleAiDetails.style.cursor = 'pointer';
-              toggleAiDetails.title = 'View detailed analysis metrics';
-            }
-            lucide.createIcons();
-
-            if (results) {
-              insightEls.quality.textContent = results.quality || '--';
-              insightEls.confidence.textContent = results.confidence || '--';
-              insightEls.structures.textContent = results.structures || '--';
-              insightEls.observation.textContent = results.observation || '--';
-              insightEls.risk.textContent = results.risk || '--';
-
-              if (Array.isArray(results.summary)) {
-                aiSummaryList.innerHTML = results.summary.map(item => `<li>${item}</li>`).join('');
-              }
-
-              if (results.detailed) {
-                if (detailEls.features) detailEls.features.textContent = results.detailed.features || '--';
-                if (detailEls.time) detailEls.time.textContent = results.detailed.time || '--';
-                if (detailEls.timestamp) detailEls.timestamp.textContent = results.detailed.timestamp || '--';
-
-                if (detailAiTime && results.detailed.timestamp) {
-                  const parts = results.detailed.timestamp.split('•');
-                  detailAiTime.textContent = parts.length > 1 ? parts[1].trim() : parts[0].trim();
-                }
-              }
-            }
-          } else if (status === 'Failed') {
-            runAiBtn.disabled = false;
-            runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Retry Analysis</span>';
-            aiProgressWrap.classList.remove('active');
-            aiSummaryCard.classList.remove('active');
-            aiDetailsPanel.classList.remove('active');
-            resetCards();
-            if (detailAiTime) detailAiTime.textContent = '--';
-            lucide.createIcons();
+      let isAiRunning = false;
+      async function runAiAnalysis() {
+        const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
+        if (!selectedImages.length) {
+          if (!reportState.images || reportState.images.length === 0) {
+            showToast('No captured images available. Please capture ultrasound frames first.');
           } else {
-            // Ready state
-            const hasImages = reportState.images && reportState.images.length > 0;
-            runAiBtn.disabled = !hasImages;
-            runAiBtn.innerHTML = hasImages 
-              ? '<i data-lucide="play"></i> <span>Start Analysis</span>' 
-              : '<span>No Images Available</span>';
-            aiProgressWrap.classList.remove('active');
-            aiSummaryCard.classList.remove('active');
-            aiDetailsPanel.classList.remove('active');
-            resetCards();
-            if (detailAiTime) detailAiTime.textContent = '--';
-            lucide.createIcons();
+            showToast('Please select at least one captured image to start AI analysis.');
           }
+          return;
         }
 
-        let isAiRunning = false;
-        async function runAiAnalysis() {
-          const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
-          if (!selectedImages.length) {
-            if (!reportState.images || reportState.images.length === 0) {
-              showToast('No captured images available. Please capture ultrasound frames first.');
-            } else {
-              showToast('Please select at least one captured image to start AI analysis.');
+        if (isAiRunning) return;
+        isAiRunning = true;
+
+        updateAiUI('Analyzing');
+
+        try {
+          const startTime = Date.now();
+          const scanType = (dom.scanType ? dom.scanType.textContent.trim() : '') || 'Ultrasound Examination';
+          const steps = [
+            { label: `Loading ${selectedImages.length} selected ultrasound frame(s)...`, start: 0, end: 20 },
+            { label: 'Analyzing echogenicity & acoustic boundaries...', start: 20, end: 45 },
+            { label: `Detecting anatomical structures (${scanType})...`, start: 45, end: 70 },
+            { label: 'Evaluating contour integrity & clinical risk...', start: 70, end: 90 },
+            { label: 'Finalizing clinical AI interpretation...', start: 90, end: 100 }
+          ];
+
+          for (const step of steps) {
+            aiProgressStep.textContent = step.label;
+            let currentProgress = step.start;
+            const duration = 500 + Math.random() * 250;
+            const interval = 50;
+            const increment = (step.end - step.start) / (duration / interval);
+
+            while (currentProgress < step.end) {
+              await new Promise(r => setTimeout(r, interval));
+              currentProgress += increment;
+              let percent = Math.min(Math.round(currentProgress), 100);
+              aiProgressPercent.textContent = `${percent}%`;
+              aiProgressFill.style.width = `${percent}%`;
             }
-            return;
           }
 
-          if (isAiRunning) return;
-          isAiRunning = true;
+          const endTime = Date.now();
+          const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
+          const now = new Date();
+          const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-          updateAiUI('Analyzing');
-
-          try {
-            const startTime = Date.now();
-            const scanType = (dom.scanType ? dom.scanType.textContent.trim() : '') || 'Ultrasound Examination';
-            const steps = [
-              { label: `Loading ${selectedImages.length} selected ultrasound frame(s)...`, start: 0, end: 20 },
-              { label: 'Analyzing echogenicity & acoustic boundaries...', start: 20, end: 45 },
-              { label: `Detecting anatomical structures (${scanType})...`, start: 45, end: 70 },
-              { label: 'Evaluating contour integrity & clinical risk...', start: 70, end: 90 },
-              { label: 'Finalizing clinical AI interpretation...', start: 90, end: 100 }
-            ];
-
-            for (const step of steps) {
-              aiProgressStep.textContent = step.label;
-              let currentProgress = step.start;
-              const duration = 500 + Math.random() * 250;
-              const interval = 50;
-              const increment = (step.end - step.start) / (duration / interval);
-
-              while (currentProgress < step.end) {
-                await new Promise(r => setTimeout(r, interval));
-                currentProgress += increment;
-                let percent = Math.min(Math.round(currentProgress), 100);
-                aiProgressPercent.textContent = `${percent}%`;
-                aiProgressFill.style.width = `${percent}%`;
-              }
-            }
-
-            const endTime = Date.now();
-            const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
-            const now = new Date();
-            const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-            const results = {
-              status: 'Completed',
-              quality: 'Diagnostic Quality',
+          const results = {
+            status: 'Completed',
+            quality: 'Diagnostic Quality',
+            confidence: '97.4%',
+            structures: scanType.includes('Abdominal') ? 'Abdominal Cavity • Hepatic & Renal Margins' : `${scanType} Anatomical Region`,
+            observation: 'Homogeneous acoustic transmission; organ contours delineated without focal lesion or acute acoustic artifact.',
+            risk: 'Low Clinical Risk',
+            summary: [
+              `Analyzed ${selectedImages.length} selected ultrasound examination frame(s)`,
+              'Acoustic signal-to-noise ratio within diagnostic parameters',
+              'Anatomical borders sharply delineated without acoustic shadowing artifact',
+              'Preliminary assistive AI analysis: Attending clinician review and correlation recommended'
+            ],
+            detailed: {
+              features: `${scanType} Tissue Layers & Margins`,
+              clarity: 'High Contrast (Diagnostic Quality)',
+              model: 'TORUS-Vision-Clinical-v2',
+              time: `${durationSeconds}s`,
               confidence: '97.4%',
-              structures: scanType.includes('Abdominal') ? 'Abdominal Cavity • Hepatic & Renal Margins' : `${scanType} Anatomical Region`,
-              observation: 'Homogeneous acoustic transmission; organ contours delineated without focal lesion or acute acoustic artifact.',
-              risk: 'Low Clinical Risk',
-              summary: [
-                `Analyzed ${selectedImages.length} selected ultrasound examination frame(s)`,
-                'Acoustic signal-to-noise ratio within diagnostic parameters',
-                'Anatomical borders sharply delineated without acoustic shadowing artifact',
-                'Preliminary assistive AI analysis: Attending clinician review and correlation recommended'
-              ],
-              detailed: {
-                features: `${scanType} Tissue Layers & Margins`,
-                clarity: 'High Contrast (Diagnostic Quality)',
-                model: 'TORUS-Vision-Clinical-v2',
-                time: `${durationSeconds}s`,
-                confidence: '97.4%',
-                timestamp: `${now.toLocaleDateString()} • ${timeFormatted}`
-              }
-            };
-
-            reportState.aiResults = results;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
-            updateAiUI('Completed', results);
-            showToast(`AI preliminary analysis completed for ${selectedImages.length} image(s).`);
-          } catch (err) {
-            console.error('[AI Analysis] Error during analysis:', err);
-            updateAiUI('Failed');
-            showToast('AI preliminary analysis encountered an error. Please try again.');
-          } finally {
-            isAiRunning = false;
-          }
-        }
-
-        function restoreAiAnalysis() {
-          const saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            try {
-              const results = JSON.parse(saved);
-              updateAiUI('Completed', results);
-            } catch (e) {
-              console.error('Failed to restore AI analysis', e);
-              updateAiUI('Ready');
+              timestamp: `${now.toLocaleDateString()} • ${timeFormatted}`
             }
-          } else {
+          };
+
+          reportState.aiResults = results;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
+          updateAiUI('Completed', results);
+          showToast(`AI preliminary analysis completed for ${selectedImages.length} image(s).`);
+        } catch (err) {
+          console.error('[AI Analysis] Error during analysis:', err);
+          updateAiUI('Failed');
+          showToast('AI preliminary analysis encountered an error. Please try again.');
+        } finally {
+          isAiRunning = false;
+        }
+      }
+
+      function restoreAiAnalysis() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const results = JSON.parse(saved);
+            updateAiUI('Completed', results);
+          } catch (e) {
+            console.error('Failed to restore AI analysis', e);
             updateAiUI('Ready');
           }
+        } else {
+          updateAiUI('Ready');
         }
+      }
 
-        if (runAiBtn) {
-          runAiBtn.addEventListener('click', runAiAnalysis);
-        }
+      if (runAiBtn) {
+        runAiBtn.addEventListener('click', runAiAnalysis);
+      }
 
-        if (toggleAiDetails) {
-          toggleAiDetails.addEventListener('click', () => {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (!saved) {
-              showToast('Please run AI analysis first to view detailed metrics.');
-              return;
-            }
-            const isActive = aiDetailsPanel.classList.toggle('active');
-            toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`;
+      if (toggleAiDetails) {
+        toggleAiDetails.addEventListener('click', () => {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (!saved) {
+            showToast('Please run AI analysis first to view detailed metrics.');
+            return;
+          }
+          const isActive = aiDetailsPanel.classList.toggle('active');
+          toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`;
 
-            if (isActive) {
-              try {
-                const results = JSON.parse(saved);
-                const grid = aiDetailsPanel.querySelector('.ai-details-grid');
-                if (grid && results && results.detailed) {
-                  grid.innerHTML = `
+          if (isActive) {
+            try {
+              const results = JSON.parse(saved);
+              const grid = aiDetailsPanel.querySelector('.ai-details-grid');
+              if (grid && results && results.detailed) {
+                grid.innerHTML = `
                     <div class="ai-detail-item">
                        <span class="ai-detail-label">Detected Structures</span>
                        <span class="ai-detail-value">${results.detailed.features || '--'}</span>
@@ -4885,29 +4889,29 @@
                        <span class="ai-detail-value">${results.detailed.timestamp || '--'}</span>
                     </div>
                   `;
-                }
-              } catch (_) { }
-            }
-            lucide.createIcons();
-          });
-        }
-
-        // Check image count for button state
-        const checkImages = () => {
-          if (aiStatusText.textContent.includes('Ready') || aiStatusText.textContent.includes('Images')) {
-            updateAiUI('Ready');
+              }
+            } catch (_) { }
           }
-        };
+          lucide.createIcons();
+        });
+      }
 
-        // Poll or hook into renderCapturedImages
-        const originalRender = window.renderCapturedImages;
-        window.renderCapturedImages = function (...args) {
-          if (originalRender) originalRender.apply(this, args);
-          checkImages();
-        };
+      // Check image count for button state
+      const checkImages = () => {
+        if (aiStatusText.textContent.includes('Ready') || aiStatusText.textContent.includes('Images')) {
+          updateAiUI('Ready');
+        }
+      };
 
-        // Initial restore
-      })();
+      // Poll or hook into renderCapturedImages
+      const originalRender = window.renderCapturedImages;
+      window.renderCapturedImages = function (...args) {
+        if (originalRender) originalRender.apply(this, args);
+        checkImages();
+      };
+
+      // Initial restore
+    })();
   </script>
 </body>
 

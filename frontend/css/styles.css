@@ -10909,6 +10909,149 @@ button.drep-collapse-btn:focus-visible,
   margin: 0;
 }
 
+/* Consultation Event Timeline Stepper */
+.tsta-timeline-card {
+  background: rgba(14, 22, 50, 0.55);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-top: 14px;
+}
+
+.tsta-timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #a78bfa;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+}
+
+.tsta-timeline-stepper {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  position: relative;
+  gap: 12px;
+}
+
+.tsta-timeline-step {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.tsta-timeline-step::before {
+  content: "";
+  position: absolute;
+  top: 11px;
+  left: 24px;
+  right: -12px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 1;
+}
+
+.tsta-timeline-step:last-child::before {
+  display: none;
+}
+
+.tsta-timeline-step.completed::before {
+  background: linear-gradient(90deg, #10b981 0%, #06b6d4 100%);
+}
+
+.tsta-timeline-step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+  position: relative;
+}
+
+.tsta-timeline-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: #1e293b;
+  color: #64748b;
+  border: 2px solid #334155;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.tsta-timeline-step.completed .tsta-timeline-dot {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border-color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+}
+
+.tsta-timeline-step.active .tsta-timeline-dot {
+  background: rgba(6, 182, 212, 0.25);
+  color: #22d3ee;
+  border-color: #22d3ee;
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.5);
+  animation: pulse 2s infinite;
+}
+
+.tsta-timeline-step-content {
+  margin-top: 8px;
+  padding-left: 2px;
+}
+
+.tsta-timeline-step-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 2px 0;
+}
+
+.tsta-timeline-step-time {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.tsta-loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: #a78bfa;
+  gap: 14px;
+}
+
+.tsta-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(139, 92, 246, 0.2);
+  border-top-color: #22d3ee;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 860px) {
+  .tsta-timeline-stepper {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .tsta-timeline-step::before {
+    display: none;
+  }
+}
+
 @media (max-width: 992px) {
 
   .tsta-patients-table-head,

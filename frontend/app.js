@@ -6474,10 +6474,15 @@ let torusStationsState = {
   stationSearchQuery: "",
   stationLocationQuery: "",
   stationStatusFilter: "all",
+  stationScanFilter: "all",
+  stationSort: "id-asc",
   patientSearchQuery: "",
   patientScanFilter: "all",
+  patientStatusFilter: "all",
+  patientDoctorFilter: "all",
   historySearchQuery: "",
-  historyTab: "all"
+  historyTab: "all",
+  isLoading: false
 };
 
 /**
@@ -6585,19 +6590,54 @@ function renderTorusStationsGrid() {
   const totalCountEl = document.getElementById("patRepTotalCount");
   const finalizedCountEl = document.getElementById("patRepFinalizedCount");
   const standbyCountEl = document.getElementById("patRepStandbyCount");
+  const offlineCountEl = document.getElementById("patRepOfflineCount");
+  const totalPatientsCountEl = document.getElementById("patRepTotalPatientsCount");
+  const activeConsultCountEl = document.getElementById("patRepActiveConsultCount");
+
+  // Calculate live counts across all station records
+  let allPatientsCount = 0;
+  let activeConsultationsCount = 0;
+  Object.values(TORUS_STATION_PATIENTS_DATABASE).forEach(pats => {
+    allPatientsCount += pats.length;
+    pats.forEach(p => {
+      // Consultations with recent dates or completed/active records
+      if (p.status === "Completed" || p.status === "Pending Review" || p.status === "Scheduled") {
+        activeConsultationsCount++;
+      }
+    });
+  });
 
   const q = (torusStationsState.stationSearchQuery || "").trim().toLowerCase();
   const locQ = (torusStationsState.stationLocationQuery || "").trim().toLowerCase();
-  const filter = torusStationsState.stationStatusFilter || "all";
+  const statusFilter = torusStationsState.stationStatusFilter || "all";
+  const scanFilter = torusStationsState.stationScanFilter || "all";
+  const sortBy = torusStationsState.stationSort || "id-asc";
 
-  const filtered = TORUS_DASHBOARD_STATIONS.filter(st => {
-    if (filter !== "all" && st.status.toLowerCase() !== filter.toLowerCase()) return false;
+  let filtered = TORUS_DASHBOARD_STATIONS.filter(st => {
+    if (statusFilter !== "all" && st.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+    const stPatients = TORUS_STATION_PATIENTS_DATABASE[st.id] || [];
+
+    if (scanFilter !== "all") {
+      const matchScan = stPatients.some(p => p.scanType && p.scanType.toLowerCase() === scanFilter.toLowerCase());
+      if (!matchScan) return false;
+    }
+
     if (q) {
-      const match = st.id.toLowerCase().includes(q) ||
+      // Advanced search checks station ID, hospital name, location, or city
+      // plus also matches patient names/IDs or doctors associated with the station
+      const matchPatient = stPatients.some(p =>
+        (p.patientName && p.patientName.toLowerCase().includes(q)) ||
+        (p.patientId && p.patientId.toLowerCase().includes(q)) ||
+        (p.doctorName && p.doctorName.toLowerCase().includes(q)) ||
+        (p.scanType && p.scanType.toLowerCase().includes(q))
+      );
+
+      const matchStation = st.id.toLowerCase().includes(q) ||
         st.hospital.toLowerCase().includes(q) ||
         st.location.toLowerCase().includes(q) ||
         st.city.toLowerCase().includes(q);
-      if (!match) return false;
+
+      if (!matchStation && !matchPatient) return false;
     }
     if (locQ) {
       const matchLoc = st.location.toLowerCase().includes(locQ) ||
@@ -6608,11 +6648,51 @@ function renderTorusStationsGrid() {
     return true;
   });
 
+  // Station Sorting Engine
+  filtered.sort((a, b) => {
+    const aPats = (TORUS_STATION_PATIENTS_DATABASE[a.id] || []).length;
+    const bPats = (TORUS_STATION_PATIENTS_DATABASE[b.id] || []).length;
+    const aLat = parseInt(a.latency) || 999;
+    const bLat = parseInt(b.latency) || 999;
+    const aSig = parseInt(a.signal) || 0;
+    const bSig = parseInt(b.signal) || 0;
+
+    switch (sortBy) {
+      case "id-desc":
+        return b.id.localeCompare(a.id);
+      case "patients-desc":
+        return bPats - aPats;
+      case "latency-asc":
+        return aLat - bLat;
+      case "signal-desc":
+        return bSig - aSig;
+      case "status":
+        return a.status.localeCompare(b.status);
+      case "id-asc":
+      default:
+        return a.id.localeCompare(b.id);
+    }
+  });
+
   if (totalCountEl) totalCountEl.textContent = String(filtered.length);
   if (finalizedCountEl) finalizedCountEl.textContent = String(filtered.filter(s => s.status === "online").length);
   if (standbyCountEl) standbyCountEl.textContent = String(filtered.filter(s => s.status === "standby").length);
+  if (offlineCountEl) offlineCountEl.textContent = String(filtered.filter(s => s.status === "offline").length);
+  if (totalPatientsCountEl) totalPatientsCountEl.textContent = String(allPatientsCount);
+  if (activeConsultCountEl) activeConsultCountEl.textContent = String(activeConsultationsCount);
 
   if (!container) return;
+
+  if (torusStationsState.isLoading) {
+    container.innerHTML = `
+      <div class="tsta-loading-indicator" style="grid-column: 1 / -1;">
+        <div class="tsta-spinner"></div>
+        <p style="margin: 0; font-size: 13.5px; font-weight: 600; color: #cbd5e1;">Updating TORUS telemetry & active stations...</p>
+      </div>
+    `;
+    if (emptyEl) emptyEl.style.display = "none";
+    return;
+  }
 
   if (filtered.length === 0) {
     container.innerHTML = "";
@@ -6746,11 +6826,24 @@ function renderStationPatients(stationId) {
   const allPatients = TORUS_STATION_PATIENTS_DATABASE[stationId] || [];
   if (bannerPatientCount) bannerPatientCount.textContent = `${allPatients.length} Patients`;
 
+  // Dynamically populate doctor filter options based on doctors available at this station
+  const docFilterSelect = document.getElementById("tstaPatientDoctorFilter");
+  if (docFilterSelect) {
+    const currentVal = torusStationsState.patientDoctorFilter || "all";
+    const uniqueDocs = Array.from(new Set(allPatients.map(p => p.doctorName).filter(Boolean)));
+    docFilterSelect.innerHTML = `<option value="all">All Doctors</option>` +
+      uniqueDocs.map(doc => `<option value="${doc}" ${doc === currentVal ? "selected" : ""}>${doc}</option>`).join("");
+  }
+
   const q = (torusStationsState.patientSearchQuery || "").trim().toLowerCase();
   const scanFilter = torusStationsState.patientScanFilter || "all";
+  const statusFilter = torusStationsState.patientStatusFilter || "all";
+  const doctorFilter = torusStationsState.patientDoctorFilter || "all";
 
   const filtered = allPatients.filter(pat => {
     if (scanFilter !== "all" && pat.scanType.toLowerCase() !== scanFilter.toLowerCase()) return false;
+    if (statusFilter !== "all" && pat.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+    if (doctorFilter !== "all" && pat.doctorName.toLowerCase() !== doctorFilter.toLowerCase()) return false;
     if (q) {
       const match = pat.patientName.toLowerCase().includes(q) ||
         pat.patientId.toLowerCase().includes(q) ||
@@ -6765,6 +6858,17 @@ function renderStationPatients(stationId) {
   const emptyEl = document.getElementById("tstaPatientsEmptyState");
 
   if (!listEl) return;
+
+  if (torusStationsState.isLoading) {
+    listEl.innerHTML = `
+      <div class="tsta-loading-indicator">
+        <div class="tsta-spinner"></div>
+        <p style="margin: 0; font-size: 13px; font-weight: 600; color: #cbd5e1;">Loading patient records...</p>
+      </div>
+    `;
+    if (emptyEl) emptyEl.style.display = "none";
+    return;
+  }
 
   if (filtered.length === 0) {
     listEl.innerHTML = "";
@@ -6999,6 +7103,58 @@ function renderPatientDetailedHistory(stationId, patientId) {
             <p class="tsta-hist-findings-text" style="color: #e0f2fe; font-weight: 500;">${rec.impression}</p>
           </div>
         ` : ""}
+
+        <!-- Consultation Event Timeline Stepper -->
+        <div class="tsta-timeline-card">
+          <div class="tsta-timeline-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>Consultation & Telemetry Lifecycle Timeline</span>
+          </div>
+          <div class="tsta-timeline-stepper">
+            <div class="tsta-timeline-step completed">
+              <div class="tsta-timeline-step-header">
+                <div class="tsta-timeline-dot">✓</div>
+                <h4 class="tsta-timeline-step-title">Consultation Started</h4>
+              </div>
+              <div class="tsta-timeline-step-content">
+                <p class="tsta-timeline-step-time">${rec.date} • ${rec.time}</p>
+              </div>
+            </div>
+
+            <div class="tsta-timeline-step completed">
+              <div class="tsta-timeline-step-header">
+                <div class="tsta-timeline-dot">✓</div>
+                <h4 class="tsta-timeline-step-title">Scan Completed</h4>
+              </div>
+              <div class="tsta-timeline-step-content">
+                <p class="tsta-timeline-step-time">${rec.duration || '20:00'} tele-robotic session</p>
+              </div>
+            </div>
+
+            <div class="tsta-timeline-step ${isReport ? (rec.status === 'ready' ? 'completed' : 'active') : 'completed'}">
+              <div class="tsta-timeline-step-header">
+                <div class="tsta-timeline-dot">${isReport && rec.status === 'pending' ? '⋯' : '✓'}</div>
+                <h4 class="tsta-timeline-step-title">Report Generated</h4>
+              </div>
+              <div class="tsta-timeline-step-content">
+                <p class="tsta-timeline-step-time">${isReport ? (rec.status === 'ready' ? 'Verified by Attending MD' : 'Pending Countersignature') : 'Clinical Findings Documented'}</p>
+              </div>
+            </div>
+
+            <div class="tsta-timeline-step ${isReport && rec.status === 'ready' ? 'completed' : (isReport ? '' : 'completed')}">
+              <div class="tsta-timeline-step-header">
+                <div class="tsta-timeline-dot">${isReport && rec.status !== 'ready' ? '○' : '✓'}</div>
+                <h4 class="tsta-timeline-step-title">Report Sent to Portal</h4>
+              </div>
+              <div class="tsta-timeline-step-content">
+                <p class="tsta-timeline-step-time">${isReport && rec.status !== 'ready' ? 'Awaiting Final Approval' : 'Available in Patient Portal'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     `;
   }).join("");
@@ -7455,12 +7611,32 @@ function initPatientControls() {
       renderTorusStationsGrid();
     };
   }
+  const repScanFilter = document.getElementById("patRepStationScanFilter");
+  if (repScanFilter) {
+    repScanFilter.onchange = () => {
+      torusStationsState.stationScanFilter = repScanFilter.value;
+      renderTorusStationsGrid();
+    };
+  }
+  const repSort = document.getElementById("tstaStationSort");
+  if (repSort) {
+    repSort.onchange = () => {
+      torusStationsState.stationSort = repSort.value;
+      renderTorusStationsGrid();
+    };
+  }
+
   if (repRefresh) {
     repRefresh.onclick = () => {
       repRefresh.classList.add("dact-refreshing");
+      torusStationsState.isLoading = true;
       renderTorusStationsGrid();
-      if (typeof showToastAlert === "function") showToastAlert("TORUS Stations & telemetry updated.", "info");
-      setTimeout(() => repRefresh.classList.remove("dact-refreshing"), 600);
+      setTimeout(() => {
+        torusStationsState.isLoading = false;
+        renderTorusStationsGrid();
+        repRefresh.classList.remove("dact-refreshing");
+        if (typeof showToastAlert === "function") showToastAlert("TORUS Stations & telemetry updated.", "info");
+      }, 450);
     };
   }
 
@@ -7468,6 +7644,9 @@ function initPatientControls() {
   const patSearch = document.getElementById("tstaPatientSearchInput");
   const patClear = document.getElementById("tstaPatientSearchClearBtn");
   const patFilter = document.getElementById("tstaPatientScanFilter");
+  const patStatusFilter = document.getElementById("tstaPatientStatusFilter");
+  const patDocFilter = document.getElementById("tstaPatientDoctorFilter");
+  const patRefresh = document.getElementById("tstaPatientRefreshBtn");
 
   if (patSearch) {
     patSearch.oninput = () => {
@@ -7494,6 +7673,39 @@ function initPatientControls() {
       if (torusStationsState.selectedStationId) {
         renderStationPatients(torusStationsState.selectedStationId);
       }
+    };
+  }
+  if (patStatusFilter) {
+    patStatusFilter.onchange = () => {
+      torusStationsState.patientStatusFilter = patStatusFilter.value;
+      if (torusStationsState.selectedStationId) {
+        renderStationPatients(torusStationsState.selectedStationId);
+      }
+    };
+  }
+  if (patDocFilter) {
+    patDocFilter.onchange = () => {
+      torusStationsState.patientDoctorFilter = patDocFilter.value;
+      if (torusStationsState.selectedStationId) {
+        renderStationPatients(torusStationsState.selectedStationId);
+      }
+    };
+  }
+  if (patRefresh) {
+    patRefresh.onclick = () => {
+      patRefresh.classList.add("dact-refreshing");
+      torusStationsState.isLoading = true;
+      if (torusStationsState.selectedStationId) {
+        renderStationPatients(torusStationsState.selectedStationId);
+      }
+      setTimeout(() => {
+        torusStationsState.isLoading = false;
+        if (torusStationsState.selectedStationId) {
+          renderStationPatients(torusStationsState.selectedStationId);
+        }
+        patRefresh.classList.remove("dact-refreshing");
+        if (typeof showToastAlert === "function") showToastAlert("Station patients list refreshed.", "info");
+      }, 400);
     };
   }
 
