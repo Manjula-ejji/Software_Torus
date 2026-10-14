@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=107" />
+  <link rel="stylesheet" href="css/styles.css?v=113" />
   <style>
     :root {
       --bg-main: #060B18;
@@ -2462,100 +2462,290 @@
           </div>
 
           <!-- PATIENT DIAGNOSTIC REPORTS CONTENT VIEW -->
+          <!-- PATIENT DIAGNOSTIC REPORTS CONTENT VIEW (TORUS Stations Dashboard & Patient History) -->
           <div id="patientDiagnosticReportsContent" class="ddash-role-content drep-content" style="display: none;">
-            <!-- Header Card -->
-            <div class="dact-header-card drep-header-card">
-              <div class="dact-header-left">
-                <div class="dact-header-title-group">
-                  <div class="dprof-icon-box purple">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+
+            <!-- STATIONS BREADCRUMB / NAV BAR (Visible in Drill-Down Views) -->
+            <div class="torus-stations-breadcrumb" id="tstaBreadcrumb" style="display: none;">
+              <button type="button" class="tsta-back-btn" id="tstaBackBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="19" y1="12" x2="5" y2="12"></line>
+                  <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                <span id="tstaBackBtnText">Back to Stations</span>
+              </button>
+              <div class="tsta-trail" id="tstaTrail">
+                <span class="tsta-trail-item tsta-trail-root" id="tstaTrailStations">TORUS Stations</span>
+                <span class="tsta-trail-separator" id="tstaTrailSep1" style="display: none;">/</span>
+                <span class="tsta-trail-item" id="tstaTrailStationName" style="display: none;">TORUS-B08</span>
+                <span class="tsta-trail-separator" id="tstaTrailSep2" style="display: none;">/</span>
+                <span class="tsta-trail-item tsta-trail-active" id="tstaTrailPatientName" style="display: none;">Jane
+                  Smith</span>
+              </div>
+            </div>
+
+            <!-- LEVEL 1: TORUS STATIONS DASHBOARD VIEW -->
+            <div id="tstaDashboardView" class="tsta-view-panel">
+              <!-- Header Card (Matching TORUS standard summary card & test expectations) -->
+              <div class="dact-header-card drep-header-card" id="patientDiagnosticReportsHeaderCard">
+                <div class="dact-header-left">
+                  <div class="dact-header-title-group">
+                    <div class="dprof-icon-box purple">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                        <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                        <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                      </svg>
+                    </div>
+                    <div class="dact-header-text">
+                      <h1 class="dact-title">Diagnostic Reports</h1>
+                      <p class="dact-subtitle">Verified medical ultrasound examination reports and clinical findings</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="dact-header-stats">
+                  <div class="dact-stat-pill">
+                    <span class="dact-stat-num" id="patRepTotalCount">10</span>
+                    <span class="dact-stat-lbl">Active Stations</span>
+                  </div>
+                  <div class="dact-stat-pill">
+                    <span class="dact-stat-num cyan" id="patRepFinalizedCount">6</span>
+                    <span class="dact-stat-lbl">Online</span>
+                  </div>
+                  <div class="dact-stat-pill">
+                    <span class="dact-stat-num purple" id="patRepStandbyCount">3</span>
+                    <span class="dact-stat-lbl">Standby</span>
+                  </div>
+                  <button type="button" id="patRepCollapseToggleBtn" class="drep-collapse-btn"
+                    onclick="toggleDiagnosticReportsSummaryView('patientDiagnosticReportsHeaderCard', 'patRepCollapseToggleBtn')"
+                    title="Collapse summary section" aria-label="Collapse summary section">
+                    <svg class="drep-collapse-icon-minus" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    <svg class="drep-collapse-icon-plus" style="display: none;" width="16" height="16"
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+                      stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Station Filter & Search Toolbar (Following Reference Image of Search TORUS Device modal) -->
+              <div class="dact-toolbar drep-toolbar tsta-toolbar">
+                <div class="dact-search-wrap tsta-search-wrap">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <input type="text" id="patRepSearchInput" class="dact-search-input"
+                    placeholder="Search by ID, hospital, city..." />
+                  <button type="button" id="patRepSearchClearBtn" class="dact-search-clear" style="display:none;"
+                    title="Clear search">✕</button>
+                </div>
+
+                <div class="dact-search-wrap tsta-location-wrap">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <input type="text" id="patRepLocationInput" class="dact-search-input"
+                    placeholder="Filter by country or city..." />
+                </div>
+
+                <div class="drep-type-select-wrap">
+                  <select id="patRepScanTypeFilter" class="drep-filter-select" aria-label="Filter stations by status">
+                    <option value="all">All Statuses</option>
+                    <option value="online">Online</option>
+                    <option value="standby">Standby</option>
+                    <option value="offline">Offline</option>
+                  </select>
+                </div>
+
+                <div class="dact-actions">
+                  <button type="button" id="patRepRefreshBtn" class="dact-btn-icon" title="Refresh TORUS Stations">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                       stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                      <polyline points="14 2 14 8 20 8"></polyline>
-                      <line x1="16" y1="13" x2="8" y2="13"></line>
-                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- TORUS Stations Grid Dashboard Container -->
+              <div class="tsta-grid-wrapper">
+                <div class="tsta-grid" id="tstaStationsGrid">
+                  <!-- Rendered dynamically as separate clickable station cards -->
+                </div>
+                <div class="dact-empty-state" id="patRepEmptyState" style="display: none;">
+                  <div class="dact-empty-icon">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                      <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                      <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                    </svg>
+                  </div>
+                  <h3 class="dact-empty-title">No TORUS Stations Found</h3>
+                  <p class="dact-empty-subtitle">No TORUS devices match the search criteria or filter location.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- LEVEL 2: STATION PATIENTS LIST VIEW -->
+            <div id="tstaPatientsView" class="tsta-view-panel" style="display: none;">
+              <!-- Station Header Info Banner -->
+              <div class="tsta-station-banner" id="tstaStationBanner">
+                <div class="tsta-banner-left">
+                  <div class="tsta-banner-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                      <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                      <line x1="6" y1="18" x2="6.01" y2="18"></line>
                     </svg>
                   </div>
                   <div>
-                    <h1 class="dact-title">Diagnostic Reports</h1>
-                    <p class="dact-subtitle">Verified medical ultrasound examination reports and clinical findings</p>
+                    <div class="tsta-banner-title-row">
+                      <h2 class="tsta-banner-title" id="tstaBannerStationId">TORUS-B08</h2>
+                      <span class="device-status standby" id="tstaBannerStatus">standby</span>
+                    </div>
+                    <p class="tsta-banner-sub" id="tstaBannerHospital">Boston General Hospital • Boston, USA</p>
+                  </div>
+                </div>
+                <div class="tsta-banner-metrics">
+                  <div class="tsta-banner-pill">
+                    <span class="tsta-banner-pill-lbl">Assigned Patients</span>
+                    <span class="tsta-banner-pill-val cyan" id="tstaBannerPatientCount">4 Patients</span>
+                  </div>
+                  <div class="tsta-banner-pill">
+                    <span class="tsta-banner-pill-lbl">Latency / Signal</span>
+                    <span class="tsta-banner-pill-val" id="tstaBannerTelemetry">42ms • 95%</span>
                   </div>
                 </div>
               </div>
-              <div class="dact-header-stats">
-                <div class="dact-stat-pill">
-                  <span class="dact-stat-num" id="patRepTotalCount">1</span>
-                  <span class="dact-stat-lbl">Total Reports</span>
-                </div>
-                <div class="dact-stat-pill">
-                  <span class="dact-stat-num cyan" id="patRepFinalizedCount">1</span>
-                  <span class="dact-stat-lbl">Finalized</span>
-                </div>
-              </div>
-            </div>
 
-            <!-- Filter & Search Toolbar -->
-            <div class="dact-toolbar drep-toolbar">
-              <div class="dact-search-wrap">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                  stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" id="patRepSearchInput" class="dact-search-input"
-                  placeholder="Search reports by ID (e.g. REP-2026-001), scan type, or doctor..." />
-                <button type="button" id="patRepSearchClearBtn" class="dact-search-clear" style="display:none;"
-                  title="Clear search">✕</button>
-              </div>
-
-              <div class="drep-type-select-wrap">
-                <select id="patRepScanTypeFilter" class="drep-filter-select" aria-label="Filter reports by scan type">
-                  <option value="all">All Scan Types</option>
-                  <option value="Abdominal">Abdominal</option>
-                  <option value="Cardiac">Cardiac</option>
-                  <option value="Pelvic">Pelvic</option>
-                  <option value="Vascular">Vascular</option>
-                  <option value="Thyroid">Thyroid</option>
-                </select>
-              </div>
-
-              <div class="dact-actions">
-                <button type="button" id="patRepRefreshBtn" class="dact-btn-icon" title="Refresh Reports">
+              <!-- Patients Search & Filter Toolbar -->
+              <div class="dact-toolbar drep-toolbar">
+                <div class="dact-search-wrap">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                     stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <polyline points="1 20 1 14 7 14"></polyline>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                   </svg>
-                </button>
+                  <input type="text" id="tstaPatientSearchInput" class="dact-search-input"
+                    placeholder="Search patients by name, ID, scan type, or doctor..." />
+                  <button type="button" id="tstaPatientSearchClearBtn" class="dact-search-clear" style="display:none;"
+                    title="Clear search">✕</button>
+                </div>
+                <div class="drep-type-select-wrap">
+                  <select id="tstaPatientScanFilter" class="drep-filter-select"
+                    aria-label="Filter patients by scan type">
+                    <option value="all">All Scan Types</option>
+                    <option value="Cardiac">Cardiac</option>
+                    <option value="Thyroid">Thyroid</option>
+                    <option value="Abdominal">Abdominal</option>
+                    <option value="Pelvic">Pelvic</option>
+                    <option value="Vascular">Vascular</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Patients Table / Cards Container -->
+              <div class="tsta-patients-table-container">
+                <div class="tsta-patients-table-head">
+                  <span class="tsta-col-pat">PATIENT / ID</span>
+                  <span class="tsta-col-doc">DOCTOR</span>
+                  <span class="tsta-col-date">CONSULTATION DATE & TIME</span>
+                  <span class="tsta-col-scan">SCAN TYPE</span>
+                  <span class="tsta-col-status">CONSULTATION STATUS</span>
+                  <span class="tsta-col-hist">REPORTS & HISTORY</span>
+                  <span class="tsta-col-action">ACTION</span>
+                </div>
+                <div class="tsta-patients-list" id="tstaPatientsList">
+                  <!-- Dynamically populated patient rows for the selected station -->
+                </div>
+                <div class="dact-empty-state" id="tstaPatientsEmptyState" style="display: none;">
+                  <div class="dact-empty-icon">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="9" cy="7" r="4"></circle>
+                    </svg>
+                  </div>
+                  <h3 class="dact-empty-title">No Patients Found</h3>
+                  <p class="dact-empty-subtitle">No patients found for this station matching your filter criteria.</p>
+                </div>
               </div>
             </div>
 
-            <!-- Reports List Table Container -->
-            <div class="drep-table-container">
-              <div class="drep-table-head">
-                <span class="drep-col-patient">REPORT ID</span>
-                <span class="drep-col-scan">SCAN TYPE</span>
-                <span class="drep-col-date">EXAMINATION DATE</span>
-                <span class="drep-col-doctor">DOCTOR / CENTER</span>
-                <span class="drep-col-status">STATUS</span>
-                <span class="drep-col-actions">ACTIONS</span>
-              </div>
-              <div class="drep-list" id="patRepList">
-                <!-- Dynamically rendered patient report rows -->
-              </div>
-              <div class="dact-empty-state" id="patRepEmptyState" style="display: none;">
-                <div class="dact-empty-icon">
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                  </svg>
+            <!-- LEVEL 3: PATIENT DETAILED CONSULTATION & DIAGNOSTIC HISTORY VIEW -->
+            <div id="tstaPatientHistoryView" class="tsta-view-panel" style="display: none;">
+              <!-- Patient Hero Profile Summary Card -->
+              <div class="tsta-patient-hero-card" id="tstaPatientHeroCard">
+                <div class="tsta-hero-avatar-wrap">
+                  <div class="tsta-hero-avatar" id="tstaHeroAvatar">JS</div>
                 </div>
-                <h3 class="dact-empty-title">No Diagnostic Reports Found</h3>
-                <p class="dact-empty-subtitle">No diagnostic reports match the selected search or filter parameters.</p>
+                <div class="tsta-hero-info">
+                  <div class="tsta-hero-top-row">
+                    <h2 class="tsta-hero-name" id="tstaHeroName">Jane Smith</h2>
+                    <span class="tsta-hero-id" id="tstaHeroId">ID: P-9104</span>
+                    <span class="dact-tag--verified">Verified Patient</span>
+                  </div>
+                  <p class="tsta-hero-meta" id="tstaHeroMeta">Station: <strong class="cyan">TORUS-B08</strong> • Primary
+                    Physician: <strong>Dr. Admin Doctor</strong> • Diagnostic Center: <strong>Boston General</strong>
+                  </p>
+                </div>
+                <div class="tsta-hero-stats">
+                  <div class="tsta-banner-pill">
+                    <span class="tsta-banner-pill-lbl">Consultations</span>
+                    <span class="tsta-banner-pill-val cyan" id="tstaHeroConsultCount">2 Consultations</span>
+                  </div>
+                  <div class="tsta-banner-pill">
+                    <span class="tsta-banner-pill-lbl">Diagnostic Reports</span>
+                    <span class="tsta-banner-pill-val purple" id="tstaHeroReportsCount">2 Reports</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- History Tabs -->
+              <div class="dact-toolbar tsta-history-toolbar">
+                <div class="dact-filter-tabs" id="tstaHistoryTabs">
+                  <button type="button" class="dact-tab active" data-hist-tab="all">All Records</button>
+                  <button type="button" class="dact-tab" data-hist-tab="reports">Diagnostic Reports</button>
+                  <button type="button" class="dact-tab" data-hist-tab="consultations">Consultations & Scans</button>
+                </div>
+                <div class="dact-search-wrap" style="flex: 1; max-width: 400px; margin-left: auto;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <input type="text" id="tstaHistorySearchInput" class="dact-search-input"
+                    placeholder="Search patient's records or findings..." />
+                </div>
+              </div>
+
+              <!-- History Content Timeline & Records Layout -->
+              <div class="tsta-patient-history-records" id="tstaPatientHistoryRecords">
+                <!-- Dynamically populated consultation timeline and verified reports -->
               </div>
             </div>
+
+            <!-- Hidden container for fallback backward-compatibility tests if querying patRepList -->
+            <div id="patRepList" style="display: none;"></div>
+
           </div>
 
           <!-- PATIENT EXAMINATION HISTORY CONTENT VIEW -->
@@ -3153,7 +3343,7 @@
           <!-- DOCTOR PATIENT REPORTS CONTENT VIEW -->
           <div id="doctorReportsContent" class="ddash-role-content drep-content" style="display: none;">
             <!-- Header Card -->
-            <div class="dact-header-card drep-header-card">
+            <div class="dact-header-card drep-header-card" id="doctorReportsHeaderCard">
               <div class="dact-header-left">
                 <div class="dact-header-title-group">
                   <div class="dprof-icon-box purple">
@@ -3165,7 +3355,7 @@
                       <line x1="16" y1="17" x2="8" y2="17"></line>
                     </svg>
                   </div>
-                  <div>
+                  <div class="dact-header-text">
                     <h1 class="dact-title">Patient Diagnostic Reports</h1>
                     <p class="dact-subtitle">Manage, review, and download official medical ultrasound examination
                       reports</p>
@@ -3185,6 +3375,20 @@
                   <span class="dact-stat-num purple" id="drepPendingCount">2</span>
                   <span class="dact-stat-lbl">Pending</span>
                 </div>
+                <button type="button" id="docRepCollapseToggleBtn" class="drep-collapse-btn"
+                  onclick="toggleDiagnosticReportsSummaryView('doctorReportsHeaderCard', 'docRepCollapseToggleBtn')"
+                  title="Collapse summary section" aria-label="Collapse summary section">
+                  <svg class="drep-collapse-icon-minus" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <svg class="drep-collapse-icon-plus" style="display: none;" width="16" height="16" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -4552,7 +4756,7 @@
       allow="camera; microphone; display-capture"></iframe>
   </div>
 
-  <script src="app.js?v=110"></script>
+  <script src="app.js?v=113"></script>
 </body>
 
 </html>

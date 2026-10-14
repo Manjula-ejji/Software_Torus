@@ -193,9 +193,10 @@ class LocalHapticPadMonitor(threading.Thread):
             found_port = None
             
             for port_name in candidate_ports:
+                ser = None
                 try:
-                    ser = serial.Serial(port_name, HAPTIC_BAUD_RATE, timeout=0.3)
-                    t_end = time.time() + 1.2
+                    ser = serial.Serial(port_name, HAPTIC_BAUD_RATE, timeout=0.2)
+                    t_end = time.time() + 0.8
                     has_haptic_data = False
                     first_packet = None
                     while time.time() < t_end:
@@ -224,11 +225,17 @@ class LocalHapticPadMonitor(threading.Thread):
                         break
                     else:
                         ser.close()
+                        ser = None
                 except Exception:
+                    if ser:
+                        try:
+                            ser.close()
+                        except Exception:
+                            pass
                     continue
 
             if not found_port:
-                time.sleep(1.0)
+                time.sleep(2.5)
                 continue
 
             # Active packet reading loop

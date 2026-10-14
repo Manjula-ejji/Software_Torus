@@ -410,8 +410,8 @@ body::after {
   white-space: nowrap !important;
 }
 
-.button-row > .btn,
-.button-row > button {
+.button-row>.btn,
+.button-row>button {
   flex-shrink: 0 !important;
   white-space: nowrap !important;
 }
@@ -8702,6 +8702,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dprof-icon-box.purple {
@@ -8948,6 +8949,234 @@ body[data-role="viewer"] #settings-uid-wrapper {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(6, 182, 212, 0.1);
   gap: 20px;
   flex-wrap: wrap;
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    gap 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+button.drep-collapse-btn,
+.drep-collapse-btn {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  background: linear-gradient(135deg, rgba(14, 20, 48, 0.95) 0%, rgba(20, 16, 46, 0.9) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 12px;
+  color: #c084fc;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    0 0 12px rgba(139, 92, 246, 0.12);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+button.drep-collapse-btn:hover,
+.drep-collapse-btn:hover {
+  background: linear-gradient(135deg, rgba(24, 32, 70, 0.98) 0%, rgba(30, 22, 68, 0.98) 100%);
+  border-color: rgba(6, 182, 212, 0.75);
+  color: #22d3ee;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 4px 18px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(139, 92, 246, 0.45),
+    0 0 10px rgba(6, 182, 212, 0.35);
+  transform: translateY(-1px);
+}
+
+button.drep-collapse-btn:active,
+.drep-collapse-btn:active {
+  transform: translateY(0);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4),
+    0 0 10px rgba(6, 182, 212, 0.25);
+}
+
+button.drep-collapse-btn:focus-visible,
+.drep-collapse-btn:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
+.drep-collapse-btn svg {
+  pointer-events: none;
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.22s ease;
+}
+
+.drep-collapse-btn:hover svg {
+  transform: scale(1.08);
+}
+
+.dact-header-text {
+  display: flex;
+  flex-direction: column;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================
+   COMPACT STATE (ONE HORIZONTAL ROW)
+   ============================================================ */
+.dact-header-card.is-compact {
+  padding: 8px 22px;
+  gap: 16px;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 14px rgba(6, 182, 212, 0.1);
+  flex-wrap: nowrap;
+}
+
+.dact-header-card.is-compact .dact-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dact-header-card.is-compact .dact-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+}
+
+.dact-header-card.is-compact .dprof-icon-box {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+.dact-header-card.is-compact .dprof-icon-box svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Title and description arranged in one horizontal row */
+.dact-header-card.is-compact .dact-header-text {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  flex: 1;
+}
+
+.dact-header-card.is-compact .dact-title {
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  margin: 0;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.dact-header-card.is-compact .dact-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+/* Stats and toggle button arranged neatly on the right */
+.dact-header-card.is-compact .dact-header-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.dact-header-card.is-compact .dact-stat-pill {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 13px;
+  min-width: unset;
+  height: 32px;
+  border-radius: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dact-header-card.is-compact .dact-stat-num {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.dact-header-card.is-compact .dact-stat-lbl {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.dact-header-card.is-compact button.drep-collapse-btn,
+.dact-header-card.is-compact .drep-collapse-btn {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  border-radius: 9px !important;
+  border-color: rgba(139, 92, 246, 0.45) !important;
+  color: #c084fc !important;
+}
+
+.dact-header-card.is-compact .drep-collapse-btn svg {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+.dact-header-card.is-compact button.drep-collapse-btn:hover,
+.dact-header-card.is-compact .drep-collapse-btn:hover {
+  background: linear-gradient(135deg, rgba(24, 32, 70, 0.98) 0%, rgba(30, 22, 68, 0.98) 100%) !important;
+  border-color: rgba(6, 182, 212, 0.8) !important;
+  color: #22d3ee !important;
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.45), 0 0 8px rgba(6, 182, 212, 0.35) !important;
+}
+
+.dact-header-card.is-compact .drep-collapse-icon-minus {
+  display: none !important;
+}
+
+.dact-header-card.is-compact .drep-collapse-icon-plus {
+  display: block !important;
+}
+
+@media (max-width: 1024px) {
+  .dact-header-card.is-compact {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 18px;
+  }
+
+  .dact-header-card.is-compact .dact-header-text {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
 }
 
 .dact-header-left {
@@ -8996,6 +9225,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   align-items: center;
   min-width: 95px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dact-stat-num {
@@ -9993,6 +10223,733 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .drep-filter-select option {
   background: #0d1326;
   color: #ffffff;
+}
+
+/* ==========================================================================
+   TORUS STATIONS DASHBOARD & PATIENT HISTORY DESIGN SYSTEM
+   Matches Search TORUS Device modal reference styling, dark purple/cyan accents
+   ========================================================================== */
+
+/* Breadcrumb & Navigation */
+.torus-stations-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+  background: rgba(13, 20, 44, 0.75);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 12px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: dprofFadeIn 0.2s ease-out;
+}
+
+.tsta-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: #c084fc;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.tsta-back-btn:hover {
+  background: rgba(139, 92, 246, 0.26);
+  border-color: #a855f7;
+  color: #ffffff;
+  transform: translateX(-2px);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.35);
+}
+
+.tsta-trail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.tsta-trail-item {
+  color: #cbd5e1;
+  transition: color 0.15s ease;
+}
+
+.tsta-trail-root {
+  cursor: pointer;
+  color: #a78bfa;
+}
+
+.tsta-trail-root:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.tsta-trail-separator {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.tsta-trail-active {
+  color: #22d3ee;
+  font-weight: 700;
+}
+
+/* Stations Grid & Toolbar */
+.tsta-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tsta-search-wrap {
+  flex: 1.4;
+  min-width: 200px;
+}
+
+.tsta-location-wrap {
+  flex: 1.2;
+  min-width: 180px;
+}
+
+.tsta-grid-wrapper {
+  background: rgba(11, 17, 38, 0.65);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 16px;
+  padding: 22px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.tsta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+}
+
+/* Station Card matching Search TORUS Device modal */
+.tsta-card {
+  border: 1.5px solid rgba(139, 92, 246, 0.22);
+  border-radius: 12px;
+  background: #080c18;
+  padding: 14px 16px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  min-height: 140px;
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+
+.tsta-card:hover {
+  border-color: rgba(139, 92, 246, 0.6);
+  background: #0c1224;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(139, 92, 246, 0.25);
+}
+
+.tsta-card.active,
+.tsta-card:focus-visible {
+  border-color: #8b5cf6 !important;
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.45) !important;
+  background: #0f162e !important;
+  outline: none;
+}
+
+.tsta-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tsta-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsta-card-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #c084fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tsta-card-id {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.2;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.tsta-card-hospital {
+  margin: 6px 0 2px;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tsta-card-location {
+  margin: 0;
+  color: #64748b;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tsta-card-metrics {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tsta-metric-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tsta-metric-label {
+  margin: 0;
+  color: #64748b;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.tsta-metric-val {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.tsta-metric-val svg {
+  width: 12px;
+  height: 12px;
+  color: #22d3ee;
+  flex-shrink: 0;
+}
+
+.tsta-card-click-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a78bfa;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+/* LEVEL 2: STATION PATIENTS LIST VIEW */
+.tsta-station-banner {
+  background: linear-gradient(135deg, rgba(20, 26, 56, 0.9) 0%, rgba(10, 14, 34, 0.95) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 14px;
+  padding: 16px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(139, 92, 246, 0.12);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tsta-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tsta-banner-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1.5px solid rgba(139, 92, 246, 0.45);
+  color: #c084fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.3);
+}
+
+.tsta-banner-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tsta-banner-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.3px;
+}
+
+.tsta-banner-sub {
+  margin: 3px 0 0 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.tsta-banner-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tsta-banner-pill {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: right;
+}
+
+.tsta-banner-pill-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.tsta-banner-pill-val {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.tsta-banner-pill-val.cyan {
+  color: #22d3ee;
+}
+
+.tsta-banner-pill-val.purple {
+  color: #c084fc;
+}
+
+/* Station Patients Table */
+.tsta-patients-table-container {
+  background: rgba(11, 17, 38, 0.7);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 16px;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.tsta-patients-table-head {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.6fr 1.1fr 1.3fr 1.3fr 1.2fr;
+  padding: 14px 22px;
+  background: rgba(16, 24, 52, 0.85);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #64748b;
+  align-items: center;
+}
+
+.tsta-patient-row {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.6fr 1.1fr 1.3fr 1.3fr 1.2fr;
+  padding: 16px 22px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.18s ease, border-color 0.18s ease;
+  cursor: pointer;
+}
+
+.tsta-patient-row:hover {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.tsta-patient-row:last-child {
+  border-bottom: none;
+}
+
+.tsta-pat-avatar-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tsta-pat-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #c084fc;
+}
+
+.tsta-pat-avatar.cyan {
+  background: rgba(6, 182, 212, 0.16);
+  border-color: rgba(6, 182, 212, 0.35);
+  color: #22d3ee;
+}
+
+.tsta-pat-avatar.emerald {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.tsta-pat-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+
+.tsta-pat-id {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+.tsta-doc-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.tsta-date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tsta-date-main {
+  font-size: 12.5px;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.tsta-date-time {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.tsta-rep-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #c084fc;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.tsta-btn-view-pat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  color: #22d3ee;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tsta-btn-view-pat:hover {
+  background: rgba(6, 182, 212, 0.25);
+  border-color: #22d3ee;
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+  transform: translateY(-1px);
+}
+
+/* LEVEL 3: DETAILED PATIENT HISTORY VIEW */
+.tsta-patient-hero-card {
+  background: linear-gradient(135deg, rgba(20, 28, 60, 0.9) 0%, rgba(10, 15, 36, 0.95) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 14px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(139, 92, 246, 0.12);
+  flex-wrap: wrap;
+}
+
+.tsta-hero-avatar-wrap {
+  position: relative;
+}
+
+.tsta-hero-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.tsta-hero-info {
+  flex: 1;
+  min-width: 250px;
+}
+
+.tsta-hero-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tsta-hero-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.3px;
+}
+
+.tsta-hero-id {
+  font-size: 12px;
+  font-weight: 700;
+  color: #22d3ee;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.tsta-hero-meta {
+  margin: 6px 0 0 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.tsta-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tsta-patient-history-records {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tsta-history-card {
+  background: rgba(12, 18, 40, 0.75);
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 14px;
+  padding: 20px 24px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.tsta-history-card:hover {
+  border-color: rgba(6, 182, 212, 0.4);
+  transform: translateY(-1px);
+}
+
+.tsta-hist-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tsta-hist-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tsta-hist-card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tsta-hist-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsta-hist-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.tsta-hist-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.tsta-hist-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.tsta-hist-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.tsta-hist-val.cyan {
+  color: #22d3ee;
+}
+
+.tsta-hist-val.purple {
+  color: #c084fc;
+}
+
+.tsta-hist-findings-box {
+  background: rgba(14, 22, 48, 0.6);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tsta-hist-findings-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #22d3ee;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tsta-hist-findings-text {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 992px) {
+
+  .tsta-patients-table-head,
+  .tsta-patient-row {
+    grid-template-columns: 2fr 1.3fr 1.3fr 1fr 1fr;
+  }
+
+  .tsta-col-hist,
+  .tsta-patient-row>div:nth-child(6) {
+    display: none;
+  }
+
+  .tsta-hist-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .tsta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tsta-patients-table-head {
+    display: none;
+  }
+
+  .tsta-patient-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .tsta-hist-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tsta-hero-stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 /* ── Reports Table ── */

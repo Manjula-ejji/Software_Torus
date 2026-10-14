@@ -2230,7 +2230,7 @@ function navigateToReportGeneration() {
 
   const rawScanType = activeSession?.scanType || "";
   const scanType = rawScanType ? (rawScanType.toLowerCase().includes("ultrasound") ? rawScanType : `${rawScanType} Ultrasound`) : "Ultrasound Examination";
-  
+
   let rawDevName = activeSession?.deviceId || sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId") || "";
   if (rawDevName === "TORUS-A12") rawDevName = "";
   const deviceName = rawDevName || "--";
@@ -2244,7 +2244,7 @@ function navigateToReportGeneration() {
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const now = new Date();
   const examDate = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
-  
+
   // Calculate exam duration from actual start time if available
   let examDuration = "--";
   const startTime = window.activeScanStartTime || window.activeCallStartTime || window.activeSessionStartTime;
@@ -2261,7 +2261,7 @@ function navigateToReportGeneration() {
   const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   const reportId = (activeSession?.reportId && !activeSession.reportId.startsWith("RPT-8") && activeSession.reportId !== "RPT-000000")
-    ? activeSession.reportId 
+    ? activeSession.reportId
     : `RPT-${dateStr}-${randomSuffix}`;
 
   // 4. Channel / Room identifier
@@ -2689,14 +2689,14 @@ function getTorusScreenStack() {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch (_) {}
+  } catch (_) { }
   return ["role-selection-screen"];
 }
 
 function saveTorusScreenStack(stack) {
   try {
     sessionStorage.setItem("torus_nav_history_stack", JSON.stringify(stack));
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function pushTorusScreenToStack(screenId) {
@@ -3224,6 +3224,16 @@ window.addEventListener("popstate", async (event) => {
   }
 
   // 3. Screen navigation based on history state
+  if (event.state && event.state.torusStationsView) {
+    if (typeof navigateTorusStationView === "function") {
+      navigateTorusStationView(event.state.torusStationsView, {
+        stationId: event.state.stationId,
+        patientId: event.state.patientId
+      }, false);
+    }
+    return;
+  }
+
   if (event.state && event.state.torusScreen && event.state.torusScreen !== "report-generation") {
     if (event.state.torusScreen === currentId && currentId === "app-dashboard") {
       // Already on Before-Join dashboard screen
@@ -3231,6 +3241,17 @@ window.addEventListener("popstate", async (event) => {
     }
     showTorusScreen(event.state.torusScreen, false);
   } else if (!event.state || (!event.state.torusOverlay && !event.state.inCall)) {
+    // If on diagnostic reports station drilldown, navigate back internally
+    const patRepContent = document.getElementById("patientDiagnosticReportsContent");
+    if (patRepContent && patRepContent.style.display !== "none" && typeof torusStationsState !== "undefined") {
+      if (torusStationsState.currentView === "patient-history") {
+        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, false);
+        return;
+      } else if (torusStationsState.currentView === "patients") {
+        navigateTorusStationView("stations", {}, false);
+        return;
+      }
+    }
     navigateBackTorus(true);
   }
 });
@@ -5637,54 +5658,1111 @@ async function loadPatientBackendReports(patient) {
   }
   return { success: false };
 }
-window.loadPatientBackendReports = loadPatientBackendReports;
+// ==========================================================================
+// TORUS STATIONS & PATIENT HISTORY PORTAL MODULE
+// ==========================================================================
 
-function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all") {
-  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
-
-  let reportsSource = [];
-  if (Array.isArray(window.patientBackendDiagnosticReports) && window.patientBackendDiagnosticReports.length > 0) {
-    reportsSource = window.patientBackendDiagnosticReports.map(item => ({
-      reportId: item.report_id || item.reportId,
-      sessionId: item.session_id || item.sessionId,
-      patientId: item.patient_id || item.patientId,
-      patientName: item.patient_name || item.patientName,
-      scanType: item.scan_type || item.scanType || "General",
-      sessionDate: item.exam_date || item.examDate || item.sessionDate || "2026-09-25",
-      sessionTime: item.exam_time || item.examTime || item.sessionTime || "10:00 AM",
-      doctorName: item.doctor_name || item.doctorName || "Dr. Admin Doctor",
-      diagnosticCenter: item.diagnostic_center || item.diagnosticCenter || "Apex Diagnostic Center",
-      reportStatus: (item.report_status || item.status || "ready").toLowerCase(),
-      clinicalSummary: item.clinical_summary || item.clinicalSummary || "",
-      ultrasoundFindings: item.ultrasound_findings || item.ultrasoundFindings || "",
-      diagnosisImpression: item.diagnosis_impression || item.diagnosisImpression || ""
-    }));
-  } else {
-    const { completedList } = getPatientSessionData(current);
-    reportsSource = completedList;
+// Reuse all 10 existing TORUS stations from the Doctor Portal's Adhoc Scan Device Engine
+const TORUS_DASHBOARD_STATIONS = [
+  {
+    id: "TORUS-C15",
+    hospital: "Apollo Hospital",
+    location: "Hyderabad, India",
+    city: "Hyderabad",
+    country: "India",
+    status: "online",
+    latency: "38ms",
+    signal: "97%"
+  },
+  {
+    id: "TORUS-D22",
+    hospital: "Fortis Healthcare",
+    location: "Bangalore, India",
+    city: "Bangalore",
+    country: "India",
+    status: "standby",
+    latency: "55ms",
+    signal: "89%"
+  },
+  {
+    id: "TORUS-E18",
+    hospital: "CMC Hospital",
+    location: "Chennai, India",
+    city: "Chennai",
+    country: "India",
+    status: "online",
+    latency: "45ms",
+    signal: "92%"
+  },
+  {
+    id: "TORUS-F09",
+    hospital: "LA Medical Plaza",
+    location: "Los Angeles, USA",
+    city: "Los Angeles",
+    country: "USA",
+    status: "online",
+    latency: "48ms",
+    signal: "94%"
+  },
+  {
+    id: "TORUS-A12",
+    hospital: "NYC Medical Center",
+    location: "New York, USA",
+    city: "New York",
+    country: "USA",
+    status: "online",
+    latency: "35ms",
+    signal: "98%"
+  },
+  {
+    id: "TORUS-B08",
+    hospital: "Boston General Hospital",
+    location: "Boston, USA",
+    city: "Boston",
+    country: "USA",
+    status: "standby",
+    latency: "42ms",
+    signal: "95%"
+  },
+  {
+    id: "TORUS-G04",
+    hospital: "Manipal Hospital",
+    location: "Delhi, India",
+    city: "Delhi",
+    country: "India",
+    status: "online",
+    latency: "40ms",
+    signal: "96%"
+  },
+  {
+    id: "TORUS-H17",
+    hospital: "Mount Sinai Hospital",
+    location: "Chicago, USA",
+    city: "Chicago",
+    country: "USA",
+    status: "standby",
+    latency: "52ms",
+    signal: "90%"
+  },
+  {
+    id: "TORUS-K03",
+    hospital: "King Edward Memorial",
+    location: "Mumbai, India",
+    city: "Mumbai",
+    country: "India",
+    status: "online",
+    latency: "36ms",
+    signal: "98%"
+  },
+  {
+    id: "TORUS-Z99",
+    hospital: "St. Jude Research Center",
+    location: "San Francisco, USA",
+    city: "San Francisco",
+    country: "USA",
+    status: "offline",
+    latency: "--",
+    signal: "0%"
   }
+];
 
-  const listEl = document.getElementById("patRepList");
+// Station-wise patient records & clinical consultation histories reusing existing project patient data
+const TORUS_STATION_PATIENTS_DATABASE = {
+  "TORUS-A12": [
+    {
+      patientId: "P-12345",
+      patientName: "Patient A",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-14",
+      consultationTime: "09:15 AM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-001",
+          sessionId: "S-101",
+          date: "2026-09-14",
+          time: "09:15 AM",
+          duration: "22:15",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "NYC Medical Center",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Normal hepatobiliary sonogram. Gallbladder wall thickness normal at 2.1mm without stones or sludge. CBD calibre 4.2mm. Hepatic parenchyma homogeneous with normal echogenicity.",
+          impression: "Unremarkable upper abdominal tele-ultrasound examination."
+        }
+      ]
+    },
+    {
+      patientId: "P-8821",
+      patientName: "John Doe",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-13",
+      consultationTime: "11:30 AM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 2,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-002",
+          sessionId: "S-102",
+          date: "2026-09-13",
+          time: "11:30 AM",
+          duration: "19:40",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "NYC Medical Center",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Mild hepatic steatosis grade 1. Bilateral kidneys show preserved corticomedullary differentiation without calculi or hydronephrosis. Spleen normal in size.",
+          impression: "Mild fatty liver changes (Grade 1 steatosis). Otherwise normal renal and splenic evaluation."
+        },
+        {
+          recordType: "consultation",
+          sessionId: "S-002",
+          date: "2026-09-17",
+          time: "10:30 AM",
+          duration: "20:00",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "NYC Medical Center",
+          scanType: "Abdominal",
+          status: "Completed",
+          findings: "Follow-up tele-robotic palpation and liver acoustic mapping. Stable acoustic reflection profile.",
+          impression: "Dietary lifestyle counseling given; follow-up scheduled in 6 months."
+        }
+      ]
+    },
+    {
+      patientId: "P-4401",
+      patientName: "Marcus Brody",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-09",
+      consultationTime: "08:30 AM",
+      scanType: "Vascular",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-006",
+          sessionId: "S-106",
+          date: "2026-09-09",
+          time: "08:30 AM",
+          duration: "28:15",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "NYC Medical Center",
+          scanType: "Vascular",
+          status: "ready",
+          findings: "Bilateral extracranial carotid duplex examination. CCA and ICA spectral waveforms demonstrate laminar flow without significant hemodynamically relevant stenosis (<30%).",
+          impression: "Normal bilateral carotid flow without flow-limiting stenosis."
+        }
+      ]
+    },
+    {
+      patientId: "P-5590",
+      patientName: "Sarah Connor",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-08",
+      consultationTime: "01:20 PM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-007",
+          sessionId: "S-107",
+          date: "2026-09-08",
+          time: "01:20 PM",
+          duration: "21:05",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "NYC Medical Center",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Targeted abdominal scan. Normal pancreas, spleen, and abdominal aorta. No free intraperitoneal fluid detected in Morrison's pouch or pelvis.",
+          impression: "Normal abdominal ultrasound study."
+        }
+      ]
+    },
+    {
+      patientId: "P-1045",
+      patientName: "James Wilson",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-03",
+      consultationTime: "09:45 AM",
+      scanType: "Vascular",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-012",
+          sessionId: "S-112",
+          date: "2026-09-03",
+          time: "09:45 AM",
+          duration: "29:00",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "NYC Medical Center",
+          scanType: "Vascular",
+          status: "ready",
+          findings: "Lower extremity venous duplex examination. Common femoral, femoral, and popliteal veins show full compressibility with augmentable Doppler phasicity.",
+          impression: "Negative for deep venous thrombosis in the evaluated extremity."
+        }
+      ]
+    }
+  ],
+  "TORUS-B08": [
+    {
+      patientId: "P-9104",
+      patientName: "Jane Smith",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-12",
+      consultationTime: "02:00 PM",
+      scanType: "Cardiac",
+      status: "Completed",
+      recordsCount: 2,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-003",
+          sessionId: "S-103",
+          date: "2026-09-12",
+          time: "02:00 PM",
+          duration: "26:10",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Boston General",
+          scanType: "Cardiac",
+          status: "ready",
+          findings: "Transthoracic echocardiogram. LVEF estimated at 58% with normal left ventricular systolic function. Mild posterior mitral leaflet prolapse with trace to mild regurgitation. Normal aortic root. Normal chambers and standard Doppler velocity.",
+          impression: "Normal overall left ventricular systolic performance (LVEF 58%). Mild posterior mitral leaflet prolapse with clinically trace regurgitation. Stable findings."
+        },
+        {
+          recordType: "consultation",
+          sessionId: "S-003",
+          date: "2026-08-28",
+          time: "10:30 AM",
+          duration: "21:40",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Boston General",
+          scanType: "Cardiac",
+          status: "Completed",
+          findings: "Baseline cardiac ultrasound and tele-robotic probe evaluation. Stable hemodynamic parameters. Haptic contact force maintained at 2.1 N average.",
+          impression: "Clinical recommendation to monitor symptoms; follow-up scheduled."
+        }
+      ]
+    },
+    {
+      patientId: "P-3312",
+      patientName: "Eleanor Vance",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-10",
+      consultationTime: "03:45 PM",
+      scanType: "Cardiac",
+      status: "Completed",
+      recordsCount: 2,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-005",
+          sessionId: "S-105",
+          date: "2026-09-10",
+          time: "03:45 PM",
+          duration: "24:50",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Boston General",
+          scanType: "Cardiac",
+          status: "ready",
+          findings: "Complete 2D & Doppler cardiac evaluation. Normal chamber sizes, no regional wall motion abnormalities. Normal left ventricular filling pressures (E/A 1.2). Interventricular septum is intact without shunting.",
+          impression: "Unremarkable comprehensive cardiac tele-sonography. Preserved biventricular systolic and diastolic function."
+        },
+        {
+          recordType: "consultation",
+          sessionId: "S-088",
+          date: "2026-08-15",
+          time: "11:15 AM",
+          duration: "19:30",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Boston General",
+          scanType: "Cardiac",
+          status: "Completed",
+          findings: "Routine annual echocardiogram followup. Left ventricular internal dimensions within physiological range.",
+          impression: "Normal findings. Routine annual surveillance recommended."
+        }
+      ]
+    },
+    {
+      patientId: "P-7741",
+      patientName: "Amina Patel",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-06",
+      consultationTime: "04:10 PM",
+      scanType: "Thyroid",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-009",
+          sessionId: "S-109",
+          date: "2026-09-06",
+          time: "04:10 PM",
+          duration: "18:30",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Boston General",
+          scanType: "Thyroid",
+          status: "ready",
+          findings: "High-resolution thyroid sonography. Right lobe: 4.2 x 1.4 x 1.3 cm. Left lobe: 4.0 x 1.3 x 1.2 cm. Normal vascularity on color Doppler. Isthmus thickness: 2.8 mm. Uniform parenchymal echotexture.",
+          impression: "Normal thyroid ultrasound examination. Symmetrical lobes, normal vascularity, and absence of nodular disease (ACR TI-RADS 1 - Benign)."
+        }
+      ]
+    },
+    {
+      patientId: "P-9902",
+      patientName: "Clara Oswald",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-04",
+      consultationTime: "02:30 PM",
+      scanType: "Cardiac",
+      status: "Pending Review",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-011",
+          sessionId: "S-111",
+          date: "2026-09-04",
+          time: "02:30 PM",
+          duration: "23:10",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Boston General",
+          scanType: "Cardiac",
+          status: "pending",
+          findings: "Aortic valve and aortic root interrogation. Mild aortic sclerosis without significant transvalvular gradient elevation (peak 1.4 m/s). Concentric LV remodeling noted. Preserved ejection fraction (55%).",
+          impression: "Mild aortic sclerosis without significant gradient. Concentric LV remodeling. Preliminary report pending final countersignature."
+        }
+      ]
+    }
+  ],
+  "TORUS-C15": [
+    {
+      patientId: "P-7543",
+      patientName: "Robert Brown",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-11",
+      consultationTime: "10:15 AM",
+      scanType: "Pelvic",
+      status: "Completed",
+      recordsCount: 2,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-004",
+          sessionId: "S-104",
+          date: "2026-09-11",
+          time: "10:15 AM",
+          duration: "17:25",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Apollo Hospital",
+          scanType: "Pelvic",
+          status: "ready",
+          findings: "Urinary bladder well distended with smooth regular walls. Prostate volume 34cc with symmetric peripheral zone. Post-void residual negligible (18ml).",
+          impression: "Mild benign prostatic enlargement without obstruction. Complete evacuation fraction."
+        },
+        {
+          recordType: "consultation",
+          sessionId: "S-004",
+          date: "2026-09-17",
+          time: "02:15 PM",
+          duration: "18:00",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Apollo Hospital",
+          scanType: "Pelvic",
+          status: "Completed",
+          findings: "Scheduled follow-up consultation on TORUS-C15. Patient reports symptom stability with prescribed alpha-blocker therapy.",
+          impression: "Urological parameters stable; follow-up scan in 12 months."
+        }
+      ]
+    },
+    {
+      patientId: "P-6623",
+      patientName: "David Miller",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-07",
+      consultationTime: "11:00 AM",
+      scanType: "Pelvic",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-008",
+          sessionId: "S-108",
+          date: "2026-09-07",
+          time: "11:00 AM",
+          duration: "16:45",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Apollo Hospital",
+          scanType: "Pelvic",
+          status: "ready",
+          findings: "Pelvic sonography. Pre-void bladder volume 420ml, post-void residual 25ml. Normal urinary bladder contours without trabeculation.",
+          impression: "Normal pelvic tele-sonography with normal bladder compliance."
+        }
+      ]
+    }
+  ],
+  "TORUS-D22": [
+    {
+      patientId: "PAT-4001",
+      patientName: "Patient User",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-20",
+      consultationTime: "11:15 AM",
+      scanType: "Cardiac",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-051",
+          sessionId: "S-501",
+          date: "2026-09-20",
+          time: "11:15 AM",
+          duration: "23:45",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Fortis Healthcare",
+          scanType: "Cardiac",
+          status: "ready",
+          findings: "Focused robotic transthoracic echocardiography. Left ventricular ejection fraction 62%. Normal wall kinetics and intact septal structure.",
+          impression: "Physiologic cardiac tele-ultrasound with normal left ventricular contractility."
+        }
+      ]
+    },
+    {
+      patientId: "P-4793",
+      patientName: "Emma Watson",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-18",
+      consultationTime: "10:30 AM",
+      scanType: "Pelvic",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-052",
+          sessionId: "S-502",
+          date: "2026-09-18",
+          time: "10:30 AM",
+          duration: "19:10",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "Fortis Healthcare",
+          scanType: "Pelvic",
+          status: "ready",
+          findings: "Pelvic sonographic survey. Normal uterine contours and bilateral adnexal morphology. No free cul-de-sac fluid.",
+          impression: "Normal gynecologic ultrasound scan."
+        }
+      ]
+    }
+  ],
+  "TORUS-E18": [
+    {
+      patientId: "P-1144",
+      patientName: "Arjun Rao",
+      doctorName: "Dr. Priya Sundaram",
+      consultationDate: "2026-09-12",
+      consultationTime: "10:00 AM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-041",
+          sessionId: "S-401",
+          date: "2026-09-12",
+          time: "10:00 AM",
+          duration: "21:10",
+          doctorName: "Dr. Priya Sundaram",
+          diagnosticCenter: "CMC Hospital",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Renal ultrasound demonstrates normal bilateral corticomedullary ratio without calculi or dilatation.",
+          impression: "Normal renal ultrasound."
+        }
+      ]
+    },
+    {
+      patientId: "P-2299",
+      patientName: "Meera Nair",
+      doctorName: "Dr. Priya Sundaram",
+      consultationDate: "2026-09-09",
+      consultationTime: "02:45 PM",
+      scanType: "Thyroid",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-042",
+          sessionId: "S-402",
+          date: "2026-09-09",
+          time: "02:45 PM",
+          duration: "17:15",
+          doctorName: "Dr. Priya Sundaram",
+          diagnosticCenter: "CMC Hospital",
+          scanType: "Thyroid",
+          status: "ready",
+          findings: "Thyroid bilateral lobes symmetric, normal vascularity on power Doppler, no cysts or nodules.",
+          impression: "Benign thyroid sonogram (TI-RADS 1)."
+        }
+      ]
+    }
+  ],
+  "TORUS-F09": [
+    {
+      patientId: "P-5521",
+      patientName: "Ethan Hunt",
+      doctorName: "Dr. Sarah Lin",
+      consultationDate: "2026-09-13",
+      consultationTime: "11:00 AM",
+      scanType: "Vascular",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-031",
+          sessionId: "S-301",
+          date: "2026-09-13",
+          time: "11:00 AM",
+          duration: "27:30",
+          doctorName: "Dr. Sarah Lin",
+          diagnosticCenter: "LA Medical Plaza",
+          scanType: "Vascular",
+          status: "ready",
+          findings: "Bilateral lower extremity venous duplex. Spontaneous flow with complete compressibility of femoral and popliteal segments.",
+          impression: "Negative for deep vein thrombosis."
+        }
+      ]
+    },
+    {
+      patientId: "P-8032",
+      patientName: "Chloe Bennet",
+      doctorName: "Dr. Sarah Lin",
+      consultationDate: "2026-09-08",
+      consultationTime: "03:20 PM",
+      scanType: "Pelvic",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-032",
+          sessionId: "S-302",
+          date: "2026-09-08",
+          time: "03:20 PM",
+          duration: "18:45",
+          doctorName: "Dr. Sarah Lin",
+          diagnosticCenter: "LA Medical Plaza",
+          scanType: "Pelvic",
+          status: "ready",
+          findings: "Normal urinary bladder and pelvic organs. Negligible post-void residual volume (15 mL).",
+          impression: "Normal pelvic sonography."
+        }
+      ]
+    }
+  ],
+  "TORUS-G04": [
+    {
+      patientId: "P-6211",
+      patientName: "Lucas Graham",
+      doctorName: "Dr. Rajesh Sharma",
+      consultationDate: "2026-09-14",
+      consultationTime: "09:30 AM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-061",
+          sessionId: "S-601",
+          date: "2026-09-14",
+          time: "09:30 AM",
+          duration: "20:15",
+          doctorName: "Dr. Rajesh Sharma",
+          diagnosticCenter: "Manipal Hospital",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Comprehensive hepatobiliary evaluation. Liver contours smooth, no focal lesions or steatosis. Gallbladder clear without stones.",
+          impression: "Normal upper abdominal tele-ultrasound."
+        }
+      ]
+    },
+    {
+      patientId: "P-4889",
+      patientName: "Sophia Martinez",
+      doctorName: "Dr. Rajesh Sharma",
+      consultationDate: "2026-09-11",
+      consultationTime: "01:15 PM",
+      scanType: "Cardiac",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-062",
+          sessionId: "S-602",
+          date: "2026-09-11",
+          time: "01:15 PM",
+          duration: "24:00",
+          doctorName: "Dr. Rajesh Sharma",
+          diagnosticCenter: "Manipal Hospital",
+          scanType: "Cardiac",
+          status: "ready",
+          findings: "Normal left ventricular ejection fraction (60%). Valves demonstrate physiologic laminar flow without regurgitation.",
+          impression: "Unremarkable cardiac examination."
+        }
+      ]
+    }
+  ],
+  "TORUS-H17": [
+    {
+      patientId: "P-4369",
+      patientName: "David Miller",
+      doctorName: "Dr. Michael Chen",
+      consultationDate: "2026-09-15",
+      consultationTime: "10:30 AM",
+      scanType: "Vascular",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-071",
+          sessionId: "S-701",
+          date: "2026-09-15",
+          time: "10:30 AM",
+          duration: "25:30",
+          doctorName: "Dr. Michael Chen",
+          diagnosticCenter: "Mount Sinai Hospital",
+          scanType: "Vascular",
+          status: "ready",
+          findings: "Peripheral arterial Doppler study of upper extremities. Radial and ulnar triphasic arterial waveforms preserved bilaterally.",
+          impression: "Normal upper extremity vascular hemodynamics."
+        }
+      ]
+    },
+    {
+      patientId: "P-8821",
+      patientName: "John Smith",
+      doctorName: "Dr. Michael Chen",
+      consultationDate: "2026-09-10",
+      consultationTime: "03:00 PM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-072",
+          sessionId: "S-702",
+          date: "2026-09-10",
+          time: "03:00 PM",
+          duration: "22:00",
+          doctorName: "Dr. Michael Chen",
+          diagnosticCenter: "Mount Sinai Hospital",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Abdominal ultrasound for epigastric discomfort. Pancreas visualization unremarkable; gallbladder and CBD normal.",
+          impression: "Negative for cholelithiasis or biliary dilation."
+        }
+      ]
+    }
+  ],
+  "TORUS-K03": [
+    {
+      patientId: "P-8819",
+      patientName: "Carlos Mendoza",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-05",
+      consultationTime: "10:00 AM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-010",
+          sessionId: "S-110",
+          date: "2026-09-05",
+          time: "10:00 AM",
+          duration: "25:40",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "King Edward Memorial",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Renal Doppler and cortical assessment. Right kidney 10.8cm, left kidney 11.1cm. Normal resistive index (0.64). No perinephric fluid collection.",
+          impression: "Normal renal Doppler ultrasound with normal bilateral vascular resistance indices."
+        }
+      ]
+    },
+    {
+      patientId: "P-9104",
+      patientName: "Jane Smith",
+      doctorName: "Dr. Admin Doctor",
+      consultationDate: "2026-09-02",
+      consultationTime: "11:30 AM",
+      scanType: "Abdominal",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-081",
+          sessionId: "S-801",
+          date: "2026-09-02",
+          time: "11:30 AM",
+          duration: "21:00",
+          doctorName: "Dr. Admin Doctor",
+          diagnosticCenter: "King Edward Memorial",
+          scanType: "Abdominal",
+          status: "ready",
+          findings: "Screening abdominal sonogram. Normal liver texture, patent portal vein, normal spleen and bilateral kidneys.",
+          impression: "Normal comprehensive abdominal tele-sonography."
+        }
+      ]
+    }
+  ],
+  "TORUS-Z99": [
+    {
+      patientId: "P-12345",
+      patientName: "Patient A",
+      doctorName: "Dr. Jonathan Hayes",
+      consultationDate: "2026-08-20",
+      consultationTime: "02:00 PM",
+      scanType: "Cardiac",
+      status: "Completed",
+      recordsCount: 1,
+      records: [
+        {
+          recordType: "report",
+          reportId: "REP-2026-091",
+          sessionId: "S-901",
+          date: "2026-08-20",
+          time: "02:00 PM",
+          duration: "20:00",
+          doctorName: "Dr. Jonathan Hayes",
+          diagnosticCenter: "St. Jude Research Center",
+          scanType: "Cardiac",
+          status: "ready",
+          findings: "Archived telemetry scan from station TORUS-Z99 prior to maintenance mode. Normal chamber dimensions and valve dynamics.",
+          impression: "Stable archived cardiac evaluation."
+        }
+      ]
+    }
+  ]
+};
+
+// State management for TORUS Stations Portal
+let torusStationsState = {
+  currentView: "stations", // "stations" | "patients" | "patient-history"
+  selectedStationId: null,
+  selectedPatientId: null,
+  stationSearchQuery: "",
+  stationLocationQuery: "",
+  stationStatusFilter: "all",
+  patientSearchQuery: "",
+  patientScanFilter: "all",
+  historySearchQuery: "",
+  historyTab: "all"
+};
+
+/**
+ * Navigate to a specific view in the TORUS Stations Portal
+ * Handles browser history pushState / replaceState seamlessly
+ */
+function navigateTorusStationView(view, params = {}, pushToHistory = true) {
+  torusStationsState.currentView = view;
+  if (params.stationId) torusStationsState.selectedStationId = params.stationId;
+  if (params.patientId) torusStationsState.selectedPatientId = params.patientId;
+
+  const dashboardView = document.getElementById("tstaDashboardView");
+  const patientsView = document.getElementById("tstaPatientsView");
+  const patientHistoryView = document.getElementById("tstaPatientHistoryView");
+  const breadcrumb = document.getElementById("tstaBreadcrumb");
+
+  const trailStationName = document.getElementById("tstaTrailStationName");
+  const trailPatientName = document.getElementById("tstaTrailPatientName");
+  const trailSep1 = document.getElementById("tstaTrailSep1");
+  const trailSep2 = document.getElementById("tstaTrailSep2");
+  const backBtnText = document.getElementById("tstaBackBtnText");
+
+  if (view === "stations") {
+    if (dashboardView) dashboardView.style.display = "block";
+    if (patientsView) patientsView.style.display = "none";
+    if (patientHistoryView) patientHistoryView.style.display = "none";
+    if (breadcrumb) breadcrumb.style.display = "none";
+    renderTorusStationsGrid();
+
+    if (pushToHistory && window.history) {
+      window.history.pushState(
+        { torusStationsView: "stations" },
+        "TORUS Stations",
+        "#stations"
+      );
+    }
+  } else if (view === "patients") {
+    if (dashboardView) dashboardView.style.display = "none";
+    if (patientsView) patientsView.style.display = "block";
+    if (patientHistoryView) patientHistoryView.style.display = "none";
+    if (breadcrumb) breadcrumb.style.display = "flex";
+
+    const stId = torusStationsState.selectedStationId;
+    if (trailStationName) {
+      trailStationName.textContent = stId;
+      trailStationName.style.display = "inline";
+    }
+    if (trailSep1) trailSep1.style.display = "inline";
+    if (trailPatientName) trailPatientName.style.display = "none";
+    if (trailSep2) trailSep2.style.display = "none";
+    if (backBtnText) backBtnText.textContent = "Back to Stations";
+
+    renderStationPatients(stId);
+
+    if (pushToHistory && window.history) {
+      window.history.pushState(
+        { torusStationsView: "patients", stationId: stId },
+        `Station ${stId}`,
+        `#station-${stId}`
+      );
+    }
+  } else if (view === "patient-history") {
+    if (dashboardView) dashboardView.style.display = "none";
+    if (patientsView) patientsView.style.display = "none";
+    if (patientHistoryView) patientHistoryView.style.display = "block";
+    if (breadcrumb) breadcrumb.style.display = "flex";
+
+    const stId = torusStationsState.selectedStationId;
+    const patId = torusStationsState.selectedPatientId;
+    const patients = TORUS_STATION_PATIENTS_DATABASE[stId] || [];
+    const patient = patients.find(p => p.patientId === patId) || { patientName: "Patient" };
+
+    if (trailStationName) {
+      trailStationName.textContent = stId;
+      trailStationName.style.display = "inline";
+    }
+    if (trailSep1) trailSep1.style.display = "inline";
+    if (trailPatientName) {
+      trailPatientName.textContent = patient.patientName;
+      trailPatientName.style.display = "inline";
+    }
+    if (trailSep2) trailSep2.style.display = "inline";
+    if (backBtnText) backBtnText.textContent = `Back to ${stId} Patients`;
+
+    renderPatientDetailedHistory(stId, patId);
+
+    if (pushToHistory && window.history) {
+      window.history.pushState(
+        { torusStationsView: "patient-history", stationId: stId, patientId: patId },
+        `Patient ${patient.patientName}`,
+        `#patient-${patId}`
+      );
+    }
+  }
+}
+window.navigateTorusStationView = navigateTorusStationView;
+
+/**
+ * Render TORUS Stations Cards in a neat responsive grid layout
+ * Following the Search TORUS Device modal reference design
+ */
+function renderTorusStationsGrid() {
+  const container = document.getElementById("tstaStationsGrid");
   const emptyEl = document.getElementById("patRepEmptyState");
   const totalCountEl = document.getElementById("patRepTotalCount");
   const finalizedCountEl = document.getElementById("patRepFinalizedCount");
+  const standbyCountEl = document.getElementById("patRepStandbyCount");
 
-  const q = (query || "").trim().toLowerCase();
-  const filtered = reportsSource.filter(item => {
-    if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
+  const q = (torusStationsState.stationSearchQuery || "").trim().toLowerCase();
+  const locQ = (torusStationsState.stationLocationQuery || "").trim().toLowerCase();
+  const filter = torusStationsState.stationStatusFilter || "all";
+
+  const filtered = TORUS_DASHBOARD_STATIONS.filter(st => {
+    if (filter !== "all" && st.status.toLowerCase() !== filter.toLowerCase()) return false;
     if (q) {
-      const match = (item.reportId && item.reportId.toLowerCase().includes(q)) ||
-        (item.scanType && item.scanType.toLowerCase().includes(q)) ||
-        (item.doctorName && item.doctorName.toLowerCase().includes(q)) ||
-        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q)) ||
-        (item.patientName && item.patientName.toLowerCase().includes(q));
+      const match = st.id.toLowerCase().includes(q) ||
+        st.hospital.toLowerCase().includes(q) ||
+        st.location.toLowerCase().includes(q) ||
+        st.city.toLowerCase().includes(q);
       if (!match) return false;
+    }
+    if (locQ) {
+      const matchLoc = st.location.toLowerCase().includes(locQ) ||
+        st.city.toLowerCase().includes(locQ) ||
+        st.country.toLowerCase().includes(locQ);
+      if (!matchLoc) return false;
     }
     return true;
   });
 
   if (totalCountEl) totalCountEl.textContent = String(filtered.length);
-  if (finalizedCountEl) finalizedCountEl.textContent = String(filtered.filter(c => c.reportStatus === "ready" || !c.reportStatus).length);
+  if (finalizedCountEl) finalizedCountEl.textContent = String(filtered.filter(s => s.status === "online").length);
+  if (standbyCountEl) standbyCountEl.textContent = String(filtered.filter(s => s.status === "standby").length);
+
+  if (!container) return;
+
+  if (filtered.length === 0) {
+    container.innerHTML = "";
+    if (emptyEl) emptyEl.style.display = "flex";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+
+  container.innerHTML = filtered.map(st => {
+    const statusClass = (st.status || "standby").toLowerCase();
+    const patientCount = (TORUS_STATION_PATIENTS_DATABASE[st.id] || []).length;
+
+    return `
+      <div class="tsta-card"
+           role="button"
+           tabindex="0"
+           data-station-id="${st.id}"
+           aria-label="View station ${st.id} patient history">
+        <div class="tsta-card-top">
+          <div class="tsta-card-title-wrap">
+            <div class="tsta-card-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                <line x1="6" y1="18" x2="6.01" y2="18"></line>
+              </svg>
+            </div>
+            <h3 class="tsta-card-id">${st.id}</h3>
+          </div>
+          <span class="device-status ${statusClass}">${st.status}</span>
+        </div>
+        <p class="tsta-card-hospital" title="${st.hospital}">${st.hospital}</p>
+        <p class="tsta-card-location">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span>${st.location}</span>
+        </p>
+        <div class="tsta-card-metrics">
+          <div class="tsta-metric-col">
+            <span class="tsta-metric-label">Latency</span>
+            <p class="tsta-metric-val">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+              </svg>
+              <span>${st.latency}</span>
+            </p>
+          </div>
+          <div class="tsta-metric-col">
+            <span class="tsta-metric-label">Signal</span>
+            <p class="tsta-metric-val">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="2" y1="20" x2="2" y2="20"></line>
+                <line x1="7" y1="20" x2="7" y2="16"></line>
+                <line x1="12" y1="20" x2="12" y2="12"></line>
+                <line x1="17" y1="20" x2="17" y2="8"></line>
+                <line x1="22" y1="20" x2="22" y2="4"></line>
+              </svg>
+              <span>${st.signal}</span>
+            </p>
+          </div>
+          <div class="tsta-metric-col">
+            <span class="tsta-metric-label">Patients</span>
+            <p class="tsta-metric-val">
+              <span class="cyan">${patientCount}</span>
+            </p>
+          </div>
+        </div>
+        <div class="tsta-card-click-hint">
+          <span>View Patients</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Attach card click handlers
+  container.querySelectorAll(".tsta-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const stationId = card.getAttribute("data-station-id");
+      if (stationId) {
+        navigateTorusStationView("patients", { stationId }, true);
+      }
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const stationId = card.getAttribute("data-station-id");
+        if (stationId) navigateTorusStationView("patients", { stationId }, true);
+      }
+    });
+  });
+}
+window.renderTorusStationsGrid = renderTorusStationsGrid;
+
+/**
+ * Render all patients associated specifically with the selected station
+ */
+function renderStationPatients(stationId) {
+  const station = TORUS_DASHBOARD_STATIONS.find(s => s.id === stationId) || {
+    id: stationId,
+    hospital: "Medical Center",
+    location: "Location",
+    status: "standby",
+    latency: "40ms",
+    signal: "95%"
+  };
+
+  // Update Station Banner
+  const bannerId = document.getElementById("tstaBannerStationId");
+  const bannerStatus = document.getElementById("tstaBannerStatus");
+  const bannerHospital = document.getElementById("tstaBannerHospital");
+  const bannerTelemetry = document.getElementById("tstaBannerTelemetry");
+  const bannerPatientCount = document.getElementById("tstaBannerPatientCount");
+
+  if (bannerId) bannerId.textContent = station.id;
+  if (bannerStatus) {
+    bannerStatus.textContent = station.status;
+    bannerStatus.className = `device-status ${(station.status || "standby").toLowerCase()}`;
+  }
+  if (bannerHospital) bannerHospital.textContent = `${station.hospital} • ${station.location}`;
+  if (bannerTelemetry) bannerTelemetry.textContent = `${station.latency} • ${station.signal}`;
+
+  const allPatients = TORUS_STATION_PATIENTS_DATABASE[stationId] || [];
+  if (bannerPatientCount) bannerPatientCount.textContent = `${allPatients.length} Patients`;
+
+  const q = (torusStationsState.patientSearchQuery || "").trim().toLowerCase();
+  const scanFilter = torusStationsState.patientScanFilter || "all";
+
+  const filtered = allPatients.filter(pat => {
+    if (scanFilter !== "all" && pat.scanType.toLowerCase() !== scanFilter.toLowerCase()) return false;
+    if (q) {
+      const match = pat.patientName.toLowerCase().includes(q) ||
+        pat.patientId.toLowerCase().includes(q) ||
+        pat.doctorName.toLowerCase().includes(q) ||
+        pat.scanType.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  const listEl = document.getElementById("tstaPatientsList");
+  const emptyEl = document.getElementById("tstaPatientsEmptyState");
 
   if (!listEl) return;
 
@@ -5693,57 +6771,318 @@ function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all")
     if (emptyEl) emptyEl.style.display = "flex";
     return;
   }
-
   if (emptyEl) emptyEl.style.display = "none";
 
-  listEl.innerHTML = filtered.map(item => {
+  listEl.innerHTML = filtered.map(pat => {
     let scanClass = "purple";
-    if (item.scanType === "Cardiac") scanClass = "cyan";
-    else if (item.scanType === "Pelvic") scanClass = "emerald";
-    else if (item.scanType === "Vascular") scanClass = "amber";
+    if (pat.scanType === "Cardiac") scanClass = "cyan";
+    else if (pat.scanType === "Pelvic") scanClass = "emerald";
+    else if (pat.scanType === "Vascular") scanClass = "amber";
 
-    const repId = item.reportId || "REP-2026-001";
-    const statusText = item.reportStatus === "ready" ? "Finalized" : "Pending Review";
-    const statusBadgeClass = item.reportStatus === "ready" ? "drep-badge-ready" : "drep-badge-pending";
+    const initials = pat.patientName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+    const statusBadge = pat.status === "Completed"
+      ? `<span class="drep-badge-ready">Completed</span>`
+      : `<span class="drep-badge-pending">${pat.status}</span>`;
 
     return `
-      <div class="drep-row">
-        <div class="drep-patient-cell">
-          <div class="drep-patient-avatar ${scanClass}">DR</div>
+      <div class="tsta-patient-row"
+           role="button"
+           tabindex="0"
+           data-patient-id="${pat.patientId}"
+           aria-label="View history for patient ${pat.patientName}">
+        <div class="tsta-pat-avatar-cell">
+          <div class="tsta-pat-avatar ${scanClass}">${initials}</div>
           <div>
-            <p class="drep-patient-name">${repId}</p>
-            <p class="drep-patient-id">${item.scanType} Clinical Record</p>
+            <p class="tsta-pat-name">${pat.patientName}</p>
+            <p class="tsta-pat-id">ID: <strong>${pat.patientId}</strong></p>
           </div>
         </div>
         <div>
-          <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
+          <span class="tsta-doc-name">${pat.doctorName}</span>
         </div>
-        <div class="drep-date-cell">
-          <span class="drep-date-main">${item.sessionDate}</span>
-          <span class="drep-date-time">${item.sessionTime}</span>
-        </div>
-        <div class="drep-doc-cell">
-          <span class="drep-doc-name">${item.doctorName}</span>
-          <span class="drep-doc-session">${item.diagnosticCenter}</span>
+        <div class="tsta-date-cell">
+          <span class="tsta-date-main">${pat.consultationDate}</span>
+          <span class="tsta-date-time">${pat.consultationTime}</span>
         </div>
         <div>
-          <span class="${statusBadgeClass}">${statusText}</span>
+          <span class="ddash-scan-tag ${scanClass}">${pat.scanType}</span>
         </div>
-        <div class="drep-actions-cell">
-          <button type="button" class="drep-btn-view" onclick="openPatientReportViewModal('${repId}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-            <span>View</span>
-          </button>
-          <button type="button" class="drep-btn-download" onclick="downloadPatientReport('${repId}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <span>Download</span>
+        <div>
+          ${statusBadge}
+        </div>
+        <div>
+          <span class="tsta-rep-count-badge">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>${pat.recordsCount} ${pat.recordsCount === 1 ? 'Record' : 'Records'}</span>
+          </span>
+        </div>
+        <div>
+          <button type="button" class="tsta-btn-view-pat" data-action="view-patient" data-patient-id="${pat.patientId}">
+            <span>View History</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
           </button>
         </div>
       </div>
     `;
   }).join("");
+
+  // Attach patient row click listeners
+  listEl.querySelectorAll(".tsta-patient-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const patId = row.getAttribute("data-patient-id");
+      if (patId) {
+        navigateTorusStationView("patient-history", { patientId: patId }, true);
+      }
+    });
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const patId = row.getAttribute("data-patient-id");
+        if (patId) navigateTorusStationView("patient-history", { patientId: patId }, true);
+      }
+    });
+  });
+}
+window.renderStationPatients = renderStationPatients;
+
+/**
+ * Render a patient's complete consultation and diagnostic history in an organized layout
+ */
+function renderPatientDetailedHistory(stationId, patientId) {
+  const station = TORUS_DASHBOARD_STATIONS.find(s => s.id === stationId) || { id: stationId, hospital: "Hospital" };
+  const patients = TORUS_STATION_PATIENTS_DATABASE[stationId] || [];
+  const patient = patients.find(p => p.patientId === patientId);
+
+  if (!patient) return;
+
+  const heroAvatar = document.getElementById("tstaHeroAvatar");
+  const heroName = document.getElementById("tstaHeroName");
+  const heroId = document.getElementById("tstaHeroId");
+  const heroMeta = document.getElementById("tstaHeroMeta");
+  const heroConsultCount = document.getElementById("tstaHeroConsultCount");
+  const heroReportsCount = document.getElementById("tstaHeroReportsCount");
+
+  const initials = patient.patientName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  if (heroAvatar) heroAvatar.textContent = initials;
+  if (heroName) heroName.textContent = patient.patientName;
+  if (heroId) heroId.textContent = `ID: ${patient.patientId}`;
+  if (heroMeta) {
+    heroMeta.innerHTML = `Station: <strong class="cyan">${station.id}</strong> • Primary Physician: <strong>${patient.doctorName}</strong> • Center: <strong>${station.hospital}</strong>`;
+  }
+
+  const reportsList = patient.records.filter(r => r.recordType === "report");
+  const consultList = patient.records.filter(r => r.recordType === "consultation");
+
+  if (heroConsultCount) heroConsultCount.textContent = `${consultList.length || 1} Consultations`;
+  if (heroReportsCount) heroReportsCount.textContent = `${reportsList.length} Reports`;
+
+  const container = document.getElementById("tstaPatientHistoryRecords");
+  if (!container) return;
+
+  const tab = torusStationsState.historyTab || "all";
+  const q = (torusStationsState.historySearchQuery || "").trim().toLowerCase();
+
+  const filteredRecords = patient.records.filter(rec => {
+    if (tab === "reports" && rec.recordType !== "report") return false;
+    if (tab === "consultations" && rec.recordType !== "consultation") return false;
+    if (q) {
+      const match = (rec.reportId && rec.reportId.toLowerCase().includes(q)) ||
+        (rec.sessionId && rec.sessionId.toLowerCase().includes(q)) ||
+        (rec.scanType && rec.scanType.toLowerCase().includes(q)) ||
+        (rec.findings && rec.findings.toLowerCase().includes(q)) ||
+        (rec.impression && rec.impression.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  if (filteredRecords.length === 0) {
+    container.innerHTML = `
+      <div class="dact-empty-state" style="display: flex;">
+        <div class="dact-empty-icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          </svg>
+        </div>
+        <h3 class="dact-empty-title">No Records Found</h3>
+        <p class="dact-empty-subtitle">No matching clinical records found for the selected filter.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filteredRecords.map(rec => {
+    const isReport = rec.recordType === "report";
+    let scanClass = "purple";
+    if (rec.scanType === "Cardiac") scanClass = "cyan";
+    else if (rec.scanType === "Pelvic") scanClass = "emerald";
+    else if (rec.scanType === "Vascular") scanClass = "amber";
+
+    const badge = (rec.status === "ready" || rec.status === "Completed")
+      ? `<span class="drep-badge-ready">Verified</span>`
+      : `<span class="drep-badge-pending">Pending Countersignature</span>`;
+
+    const title = isReport
+      ? `Diagnostic Report #${rec.reportId}`
+      : `Clinical Consultation & Scan #${rec.sessionId}`;
+
+    return `
+      <div class="tsta-history-card">
+        <div class="tsta-hist-card-header">
+          <div class="tsta-hist-card-title-group">
+            <span class="ddash-scan-tag ${scanClass}">${rec.scanType} Ultrasound</span>
+            <h3 class="tsta-hist-card-title">${title}</h3>
+            ${badge}
+          </div>
+          <div class="tsta-hist-card-actions">
+            ${isReport ? `
+              <button type="button" class="drep-btn-view" onclick="openPatientReportViewModal('${rec.reportId}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <span>View Full Report</span>
+              </button>
+              <button type="button" class="drep-btn-download" onclick="downloadPatientReport('${rec.reportId}', '${patient.patientId}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Download PDF</span>
+              </button>
+            ` : `
+              <span class="dhist-duration-pill">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span>Duration: ${rec.duration}</span>
+              </span>
+            `}
+          </div>
+        </div>
+
+        <div class="tsta-hist-grid">
+          <div class="tsta-hist-item">
+            <span class="tsta-hist-lbl">EXAMINATION DATE</span>
+            <span class="tsta-hist-val">${rec.date} • ${rec.time}</span>
+          </div>
+          <div class="tsta-hist-item">
+            <span class="tsta-hist-lbl">ATTENDING PHYSICIAN</span>
+            <span class="tsta-hist-val cyan">${rec.doctorName}</span>
+          </div>
+          <div class="tsta-hist-item">
+            <span class="tsta-hist-lbl">CLINICAL CENTER</span>
+            <span class="tsta-hist-val">${rec.diagnosticCenter || station.hospital}</span>
+          </div>
+          <div class="tsta-hist-item">
+            <span class="tsta-hist-lbl">TORUS STATION</span>
+            <span class="tsta-hist-val purple">${station.id}</span>
+          </div>
+        </div>
+
+        <div class="tsta-hist-findings-box">
+          <div class="tsta-hist-findings-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>Ultrasound Findings & Telemetry</span>
+          </div>
+          <p class="tsta-hist-findings-text">${rec.findings}</p>
+        </div>
+
+        ${rec.impression ? `
+          <div class="tsta-hist-findings-box" style="margin-top: 10px; background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.3);">
+            <div class="tsta-hist-findings-title" style="color: #38bdf8;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span>Clinical Impression & Follow-up</span>
+            </div>
+            <p class="tsta-hist-findings-text" style="color: #e0f2fe; font-weight: 500;">${rec.impression}</p>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+}
+window.renderPatientDetailedHistory = renderPatientDetailedHistory;
+
+/**
+ * Main entrance for Patient Diagnostic Reports page
+ * Initializes the TORUS Stations dashboard
+ */
+function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all") {
+  if (query) torusStationsState.stationSearchQuery = query;
+  if (typeFilter && typeFilter !== "all") torusStationsState.stationStatusFilter = typeFilter;
+
+  // Default to main stations view
+  navigateTorusStationView("stations", {}, false);
 }
 window.renderPatientDiagnosticReports = renderPatientDiagnosticReports;
+
+// ============================================================
+// DIAGNOSTIC REPORTS SUMMARY VIEW (EXPANDED vs COMPACT)
+// ============================================================
+function setDiagnosticReportsSummaryView(isCompact, targetHeaderId = "patientDiagnosticReportsHeaderCard", targetBtnId = "patRepCollapseToggleBtn") {
+  const headerCard = document.getElementById(targetHeaderId);
+  const toggleBtn = document.getElementById(targetBtnId);
+  if (!headerCard) return;
+
+  if (isCompact) {
+    headerCard.classList.add("is-compact");
+    if (toggleBtn) {
+      toggleBtn.setAttribute("aria-pressed", "true");
+      toggleBtn.title = "Expand summary section";
+      toggleBtn.setAttribute("aria-label", "Expand summary section");
+      const iconMinus = toggleBtn.querySelector(".drep-collapse-icon-minus");
+      const iconPlus = toggleBtn.querySelector(".drep-collapse-icon-plus");
+      if (iconMinus) iconMinus.style.display = "none";
+      if (iconPlus) iconPlus.style.display = "block";
+    }
+  } else {
+    headerCard.classList.remove("is-compact");
+    if (toggleBtn) {
+      toggleBtn.setAttribute("aria-pressed", "false");
+      toggleBtn.title = "Collapse summary section";
+      toggleBtn.setAttribute("aria-label", "Collapse summary section");
+      const iconMinus = toggleBtn.querySelector(".drep-collapse-icon-minus");
+      const iconPlus = toggleBtn.querySelector(".drep-collapse-icon-plus");
+      if (iconMinus) iconMinus.style.display = "block";
+      if (iconPlus) iconPlus.style.display = "none";
+    }
+  }
+}
+window.setDiagnosticReportsSummaryView = setDiagnosticReportsSummaryView;
+
+function toggleDiagnosticReportsSummaryView(targetHeaderId = "patientDiagnosticReportsHeaderCard", targetBtnId = "patRepCollapseToggleBtn") {
+  const headerCard = document.getElementById(targetHeaderId);
+  if (!headerCard) return;
+  const isCurrentlyCompact = headerCard.classList.contains("is-compact");
+  const nextIsCompact = !isCurrentlyCompact;
+  setDiagnosticReportsSummaryView(nextIsCompact, targetHeaderId, targetBtnId);
+  try {
+    localStorage.setItem(`torus_summary_compact_${targetHeaderId}`, nextIsCompact ? "compact" : "expanded");
+  } catch (_) { }
+}
+window.toggleDiagnosticReportsSummaryView = toggleDiagnosticReportsSummaryView;
+
+function initDiagnosticReportsSummaryViews() {
+  const configs = [
+    { header: "patientDiagnosticReportsHeaderCard", btn: "patRepCollapseToggleBtn" },
+    { header: "doctorReportsHeaderCard", btn: "docRepCollapseToggleBtn" }
+  ];
+  configs.forEach(({ header, btn }) => {
+    try {
+      const saved = localStorage.getItem(`torus_summary_compact_${header}`);
+      if (saved === "compact") {
+        setDiagnosticReportsSummaryView(true, header, btn);
+      } else {
+        setDiagnosticReportsSummaryView(false, header, btn);
+      }
+    } catch (_) {
+      setDiagnosticReportsSummaryView(false, header, btn);
+    }
+  });
+}
+window.initDiagnosticReportsSummaryViews = initDiagnosticReportsSummaryViews;
 
 function calculateTotalDuration(items) {
   if (!items || items.length === 0) return "00:00";
@@ -6082,45 +7421,129 @@ function initPatientControls() {
     };
   }
 
-  // Reports Search & Filter
+  // Reports (TORUS Stations) Search & Filter
   const repSearch = document.getElementById("patRepSearchInput");
   const repClear = document.getElementById("patRepSearchClearBtn");
+  const repLoc = document.getElementById("patRepLocationInput");
   const repFilter = document.getElementById("patRepScanTypeFilter");
   const repRefresh = document.getElementById("patRepRefreshBtn");
 
   if (repSearch) {
     repSearch.oninput = () => {
       if (repClear) repClear.style.display = repSearch.value ? "block" : "none";
-      renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch.value, repFilter?.value || "all");
+      torusStationsState.stationSearchQuery = repSearch.value;
+      renderTorusStationsGrid();
     };
   }
   if (repClear) {
     repClear.onclick = () => {
       repSearch.value = "";
       repClear.style.display = "none";
-      renderPatientDiagnosticReports(currentAuthenticatedUser, "", repFilter?.value || "all");
+      torusStationsState.stationSearchQuery = "";
+      renderTorusStationsGrid();
+    };
+  }
+  if (repLoc) {
+    repLoc.oninput = () => {
+      torusStationsState.stationLocationQuery = repLoc.value;
+      renderTorusStationsGrid();
     };
   }
   if (repFilter) {
     repFilter.onchange = () => {
-      renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch?.value || "", repFilter.value);
+      torusStationsState.stationStatusFilter = repFilter.value;
+      renderTorusStationsGrid();
     };
   }
   if (repRefresh) {
-    repRefresh.onclick = async () => {
+    repRefresh.onclick = () => {
       repRefresh.classList.add("dact-refreshing");
-      try {
-        const res = await loadPatientBackendReports(currentAuthenticatedUser);
-        renderPatientDiagnosticReports(currentAuthenticatedUser, repSearch?.value || "", repFilter?.value || "all");
-        if (res && res.success) {
-          if (typeof showToastAlert === "function") showToastAlert(`Refreshed ${res.total || 0} diagnostic reports from clinical database.`, "info");
-        } else {
-          if (typeof showToastAlert === "function") showToastAlert("Diagnostic reports updated from records.", "info");
-        }
-      } catch (e) {
-        if (typeof showToastAlert === "function") showToastAlert("Failed to refresh diagnostic reports.", "error");
-      } finally {
-        setTimeout(() => repRefresh.classList.remove("dact-refreshing"), 600);
+      renderTorusStationsGrid();
+      if (typeof showToastAlert === "function") showToastAlert("TORUS Stations & telemetry updated.", "info");
+      setTimeout(() => repRefresh.classList.remove("dact-refreshing"), 600);
+    };
+  }
+
+  // Station Patients View Search & Filter
+  const patSearch = document.getElementById("tstaPatientSearchInput");
+  const patClear = document.getElementById("tstaPatientSearchClearBtn");
+  const patFilter = document.getElementById("tstaPatientScanFilter");
+
+  if (patSearch) {
+    patSearch.oninput = () => {
+      if (patClear) patClear.style.display = patSearch.value ? "block" : "none";
+      torusStationsState.patientSearchQuery = patSearch.value;
+      if (torusStationsState.selectedStationId) {
+        renderStationPatients(torusStationsState.selectedStationId);
+      }
+    };
+  }
+  if (patClear) {
+    patClear.onclick = () => {
+      patSearch.value = "";
+      patClear.style.display = "none";
+      torusStationsState.patientSearchQuery = "";
+      if (torusStationsState.selectedStationId) {
+        renderStationPatients(torusStationsState.selectedStationId);
+      }
+    };
+  }
+  if (patFilter) {
+    patFilter.onchange = () => {
+      torusStationsState.patientScanFilter = patFilter.value;
+      if (torusStationsState.selectedStationId) {
+        renderStationPatients(torusStationsState.selectedStationId);
+      }
+    };
+  }
+
+  // Patient Detailed History Tabs & Search
+  const histTabs = document.querySelectorAll("#tstaHistoryTabs .dact-tab");
+  histTabs.forEach(tab => {
+    tab.onclick = () => {
+      histTabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      torusStationsState.historyTab = tab.getAttribute("data-hist-tab") || "all";
+      if (torusStationsState.selectedStationId && torusStationsState.selectedPatientId) {
+        renderPatientDetailedHistory(torusStationsState.selectedStationId, torusStationsState.selectedPatientId);
+      }
+    };
+  });
+
+  const histSearchInput = document.getElementById("tstaHistorySearchInput");
+  if (histSearchInput) {
+    histSearchInput.oninput = () => {
+      torusStationsState.historySearchQuery = histSearchInput.value;
+      if (torusStationsState.selectedStationId && torusStationsState.selectedPatientId) {
+        renderPatientDetailedHistory(torusStationsState.selectedStationId, torusStationsState.selectedPatientId);
+      }
+    };
+  }
+
+  // Breadcrumb Back Button & Root Link
+  const tstaBackBtn = document.getElementById("tstaBackBtn");
+  if (tstaBackBtn) {
+    tstaBackBtn.onclick = () => {
+      if (torusStationsState.currentView === "patient-history") {
+        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, true);
+      } else {
+        navigateTorusStationView("stations", {}, true);
+      }
+    };
+  }
+
+  const tstaTrailStations = document.getElementById("tstaTrailStations");
+  if (tstaTrailStations) {
+    tstaTrailStations.onclick = () => {
+      navigateTorusStationView("stations", {}, true);
+    };
+  }
+
+  const tstaTrailStationName = document.getElementById("tstaTrailStationName");
+  if (tstaTrailStationName) {
+    tstaTrailStationName.onclick = () => {
+      if (torusStationsState.selectedStationId) {
+        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, true);
       }
     };
   }
@@ -7217,13 +8640,7 @@ const HapticPadService = {
       };
     }
 
-    const host = window.location.hostname || "127.0.0.1";
     const endpoints = [
-      "http://127.0.0.1:5000/api/haptic-pad/status",
-      "http://localhost:5000/api/haptic-pad/status",
-      `http://${host}:5000/api/haptic-pad/status`,
-      "http://127.0.0.1:3000/api/haptic-pad/status",
-      "http://localhost:3000/api/haptic-pad/status",
       "/api/haptic-pad/status"
     ];
 
@@ -12782,6 +14199,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         if (!isDoc && isPatSubOpen) {
+          if (patRep && patRep.style.display !== "none" && typeof torusStationsState !== "undefined") {
+            if (torusStationsState.currentView === "patient-history") {
+              navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, true);
+              return;
+            } else if (torusStationsState.currentView === "patients") {
+              navigateTorusStationView("stations", {}, true);
+              return;
+            }
+          }
           hideAllPortalSubViews();
           const patContent = document.getElementById("patientDashboardContent");
           if (patContent) patContent.style.display = "flex";
@@ -12969,6 +14395,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   initDocDashSidebar();
+  if (typeof initDiagnosticReportsSummaryViews === "function") {
+    initDiagnosticReportsSummaryViews();
+  }
 
   if (typeof setupHapticPadListeners === "function") {
     setupHapticPadListeners();
