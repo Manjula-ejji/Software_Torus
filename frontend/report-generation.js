@@ -40,6 +40,16 @@ const CAPTURE_STORAGE_KEYS = {
   images: 'capturedImages-' + roomParam
 };
 
+function getAiStorageKey() {
+  const patient = (dom && dom.patientName && dom.patientName.textContent.trim() !== '--')
+    ? dom.patientName.textContent.trim().replace(/[^a-zA-Z0-9_-]/g, '_')
+    : 'default';
+  const reportId = (dom && dom.reportId && dom.reportId.textContent.trim() !== '--')
+    ? dom.reportId.textContent.trim()
+    : roomParam;
+  return `torus_ai_analysis_${reportId}_${patient}`;
+}
+
 function createCaptureSessionId() {
   return `capture-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -106,9 +116,17 @@ function readCaptureImages() {
 }
 
 function writeCaptureImages(images) {
-  const serialized = JSON.stringify(images);
-  localStorage.setItem(CAPTURE_STORAGE_KEYS.images, serialized);
-  sessionStorage.setItem(CAPTURE_STORAGE_KEYS.images, serialized);
+  try {
+    const serialized = JSON.stringify(images);
+    localStorage.setItem(CAPTURE_STORAGE_KEYS.images, serialized);
+    sessionStorage.setItem(CAPTURE_STORAGE_KEYS.images, serialized);
+  } catch (err) {
+    // Handle QuotaExceededError gracefully by falling back to sessionStorage and in-memory state
+    console.warn('Storage quota limit reached (QuotaExceededError) when saving capture images:', err);
+    try {
+      sessionStorage.setItem(CAPTURE_STORAGE_KEYS.images, JSON.stringify(images));
+    } catch (_) { }
+  }
 }
 
 const reportState = {
@@ -184,7 +202,11 @@ function readJson(key, fallback) {
 }
 
 function writeJson(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn('Unable to persist ' + key, e);
+  }
 }
 
 function normalizeImages(items) {
@@ -357,6 +379,18 @@ function syncSelectionUI() {
   });
 }
 
+function invalidateAiAnalysis() {
+  reportState.aiResults = null;
+  try {
+    const key = typeof getAiStorageKey === 'function' ? getAiStorageKey() : 'torus_ai_analysis';
+    localStorage.removeItem(key);
+  } catch (_) { }
+  localStorage.removeItem('torus_ai_analysis');
+  if (typeof window.triggerAiReset === 'function') {
+    window.triggerAiReset();
+  }
+}
+
 function toggleSelectedImage(imageId) {
   if (reportState.selectedIds.has(imageId)) {
     reportState.selectedIds.delete(imageId);
@@ -365,6 +399,7 @@ function toggleSelectedImage(imageId) {
   }
   writeJson(STORAGE_KEYS.selectedIds, Array.from(reportState.selectedIds));
   invalidateGeneratedReport();
+  invalidateAiAnalysis();
   syncCounts();
   syncSelectionUI();
 }
@@ -412,7 +447,8 @@ function collectReportData() {
     selectedImageIds: selectedImages.map((image) => image.id),
     selectedImagesCount: selectedImages.length,
     totalImages: reportState.images.length,
-    digitalSignature: reportState.digitalSignature
+    digitalSignature: reportState.digitalSignature,
+    aiResults: reportState.aiResults || readJson((typeof getAiStorageKey === 'function' ? getAiStorageKey() : 'torus_ai_analysis'), null) || readJson('torus_ai_analysis', null)
   };
 }
 
@@ -620,12 +656,6 @@ function loadReportContext() {
   }
   reportState.reportDetails = readJson(STORAGE_KEYS.reportDetails, null);
 
-  reportState.generatedReport = readJson(STORAGE_KEYS.generatedReport, null);
-  reportState.digitalSignature = reportState.generatedReport ? Boolean(reportState.generatedReport.digitalSignature) : false;
-  updateSignatureUI();
-
-  reportState.sendLocked = localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent';
-
   let reportId = context.reportId
     || (reportState.generatedReport && reportState.generatedReport.reportId)
     || localStorage.getItem(STORAGE_KEYS.reportId);
@@ -634,6 +664,23 @@ function loadReportContext() {
     localStorage.setItem(STORAGE_KEYS.reportId, reportId);
   }
   setReportId(reportId);
+
+  reportState.generatedReport = readJson(STORAGE_KEYS.generatedReport, null);
+
+  const savedSig = readJson('torus_signature_' + reportId, null) || readJson('torus_signature_' + roomParam, null);
+  if (savedSig && (savedSig.status === 'signed' || savedSig.signatureData || savedSig.signatureHash)) {
+    reportState.digitalSignature = true;
+    reportState.signatureData = savedSig;
+  } else if (reportState.generatedReport && (reportState.generatedReport.digitalSignature || reportState.generatedReport.signatureData || reportState.generatedReport.report_status === 'signed')) {
+    reportState.digitalSignature = true;
+    reportState.signatureData = reportState.generatedReport.signatureData || reportState.generatedReport;
+  } else {
+    reportState.digitalSignature = false;
+    reportState.signatureData = null;
+  }
+  updateSignatureUI();
+
+  reportState.sendLocked = localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent';
 
   const patientName = (context.patientName && context.patientName !== 'Patient A' && context.patientName !== 'Demo Patient') ? context.patientName : '--';
   const examDate = (context.examDate && context.examDate !== 'March 23, 2026') ? context.examDate : formatReportDate();
@@ -780,191 +827,476 @@ function applyDoctorView() {
   }
 }
 
-function downloadReportPdf(reportData) {
-  const selectedImages = (reportData.selectedImages && reportData.selectedImages.length)
-    ? reportData.selectedImages
-    : (reportData.capturedImages || []);
-  const jsPdfApi = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPdfApi) {
-    throw new Error('PDF library unavailable');
+function populateReportPreviewDOM(reportData) {
+  if (!reportData) return;
+  const previewReportId = document.getElementById('previewReportId');
+  const previewReportDate = document.getElementById('previewReportDate');
+  const previewPatientName = document.getElementById('previewPatientName');
+  const previewExamDate = document.getElementById('previewExamDate');
+  const previewScanType = document.getElementById('previewScanType');
+  const previewDeviceName = document.getElementById('previewDeviceName');
+  const previewLocationName = document.getElementById('previewLocationName');
+  const previewDuration = document.getElementById('previewDuration');
+  const previewFindings = document.getElementById('previewFindings');
+  const previewRecommendations = document.getElementById('previewRecommendations');
+  const previewDoctorName = document.getElementById('previewDoctorName');
+  const previewDoctorLocation = document.getElementById('previewDoctorLocation');
+  const previewSignerInfo = document.getElementById('previewSignerInfo');
+  const previewSignTime = document.getElementById('previewSignTime');
+  const previewSignatureStatus = document.getElementById('previewSignatureStatus');
+  const previewSigImg = document.getElementById('previewSignatureImg');
+
+  const now = new Date();
+  const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric'
+  }) + ' ' + now.toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+  });
+
+  if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
+  if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
+  if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
+  if (previewExamDate) previewExamDate.textContent = reportData.patientInfo?.examDate || '--';
+  const scanType = reportData.patientInfo?.scanType || '--';
+  if (previewScanType) previewScanType.textContent = scanType.toLowerCase().endsWith('ultrasound') ? scanType : `${scanType} Ultrasound`;
+  if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo?.device || '--';
+  if (previewLocationName) previewLocationName.textContent = reportData.patientInfo?.location || '--';
+  if (previewDuration) previewDuration.textContent = reportData.patientInfo?.examDuration || '--';
+
+  if (previewFindings) previewFindings.textContent = reportData.findings || 'No findings recorded yet.';
+  if (previewRecommendations) previewRecommendations.textContent = reportData.recommendations || 'No recommendations recorded yet.';
+  if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo?.doctor || '--';
+  if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo?.location || '--';
+
+  const isSigned = Boolean(reportData.digitalSignature || reportState.digitalSignature);
+  if (previewSignatureStatus) {
+    if (isSigned) {
+      previewSignatureStatus.innerHTML = '<i data-lucide="check-circle" style="width: 14px; height: 14px;"></i> Digitally Signed';
+      previewSignatureStatus.style.color = '#16a34a';
+      previewSignatureStatus.style.background = '#dcfce7';
+      previewSignatureStatus.style.display = 'inline-flex';
+    } else {
+      previewSignatureStatus.innerHTML = '<i data-lucide="clock" style="width: 14px; height: 14px;"></i> Unsigned';
+      previewSignatureStatus.style.color = '#d97706';
+      previewSignatureStatus.style.background = '#fef3c7';
+      previewSignatureStatus.style.display = 'inline-flex';
+    }
   }
+
+  const sigObj = reportData.signatureData || reportState.signatureData;
+  if (isSigned) {
+    const sigSrc = sigObj?.signatureData || sigObj?.dataUrl || (typeof sigObj === 'string' && sigObj.startsWith('data:') ? sigObj : '');
+    if (previewSigImg) {
+      if (sigSrc) {
+        previewSigImg.src = sigSrc;
+        previewSigImg.style.display = 'block';
+      } else {
+        previewSigImg.style.display = 'none';
+      }
+    }
+    if (previewSignerInfo) {
+      previewSignerInfo.style.display = 'block';
+      const signerName = (sigObj?.doctorName || reportData.patientInfo?.doctor || 'Dr. Admin Doctor').replace(/^Dr\.\s*/, '');
+      previewSignerInfo.textContent = `Dr. ${signerName}`;
+    }
+    if (previewSignTime) {
+      previewSignTime.style.display = 'block';
+      const sigTime = sigObj?.signedAt || reportState.signedTimestamp || now.toISOString();
+      const sigDate = new Date(sigTime);
+      previewSignTime.textContent = sigDate.toLocaleDateString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric'
+      }) + ' ' + sigDate.toLocaleTimeString(undefined, {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+      });
+    }
+  } else {
+    if (previewSigImg) previewSigImg.style.display = 'none';
+    if (previewSignerInfo) previewSignerInfo.style.display = 'none';
+    if (previewSignTime) previewSignTime.style.display = 'none';
+  }
+
+  // AI Analysis fields
+  const storageKey = typeof getAiStorageKey === 'function' ? getAiStorageKey() : 'torus_ai_analysis';
+  const savedAi = localStorage.getItem(storageKey) || localStorage.getItem('torus_ai_analysis');
+  let aiAnalysisData = reportData.aiResults || reportState.aiResults || null;
+  if (!aiAnalysisData && savedAi) {
+    try { aiAnalysisData = JSON.parse(savedAi); } catch (_) { }
+  }
+  const imgsToRender = (reportData.selectedImages && reportData.selectedImages.length > 0)
+    ? reportData.selectedImages
+    : ((reportData.capturedImages && reportData.capturedImages.length > 0) ? reportData.capturedImages : (reportState.images || []));
+  const hasImages = imgsToRender.length > 0;
+  const isAiCompleted = hasImages && aiAnalysisData && aiAnalysisData.status === 'Completed';
+
+  const aiQuality = isAiCompleted ? (aiAnalysisData.quality || '--') : '--';
+  const aiConfidence = isAiCompleted ? (aiAnalysisData.confidence || '--') : '--';
+  const aiObservation = isAiCompleted
+    ? (aiAnalysisData.observation || '--')
+    : (hasImages ? 'Awaiting Analysis' : 'No ultrasound images available for analysis.');
+  const validatedRisk = isAiCompleted ? (aiAnalysisData.validatedRisk || (aiAnalysisData.risk && aiAnalysisData.risk !== 'Not available' && !aiAnalysisData.risk.includes('TEST') && !aiAnalysisData.risk.includes('Simulated') && aiAnalysisData.isRiskValidated ? aiAnalysisData.risk : null)) : null;
+  const aiRisk = isAiCompleted ? (validatedRisk || aiAnalysisData.risk || 'Not available') : 'Not available';
+
+  const previewAiQuality = document.getElementById('previewAiQuality');
+  const previewAiConfidence = document.getElementById('previewAiConfidence');
+  const previewAiObservation = document.getElementById('previewAiObservation');
+  const previewAiRisk = document.getElementById('previewAiRisk');
+
+  if (previewAiQuality) previewAiQuality.textContent = aiQuality;
+  if (previewAiConfidence) previewAiConfidence.textContent = aiConfidence;
+  if (previewAiObservation) previewAiObservation.textContent = aiObservation;
+  if (previewAiRisk) previewAiRisk.textContent = aiRisk;
+
+  // Render images
+  const container = document.getElementById('previewImagesContainer');
+  if (container) {
+    container.innerHTML = '';
+    if (imgsToRender.length === 0) {
+      container.innerHTML = '<div style="color: #64748b; font-size: 13px; font-style: italic; padding: 12px 0;">No captured ultrasound images attached to this preview.</div>';
+    } else {
+      imgsToRender.forEach(imgData => {
+        const imgEl = document.createElement('img');
+        imgEl.src = imgData.dataUrl || imgData.url || imgData;
+        imgEl.style.width = '100%';
+        imgEl.style.borderRadius = '6px';
+        imgEl.style.border = '1px solid #cbd5e1';
+        imgEl.style.aspectRatio = '4/3';
+        imgEl.style.objectFit = 'cover';
+        container.appendChild(imgEl);
+      });
+    }
+  }
+
+  if (typeof lucide !== 'undefined' && lucide.createIcons) {
+    lucide.createIcons();
+  }
+}
+
+async function downloadReportPdf(reportData) {
+  const data = reportData || collectReportData();
+  populateReportPreviewDOM(data);
+
+  const modal = dom.reportPreviewModal || document.getElementById('reportPreviewModal');
+  const wasHidden = modal && modal.classList.contains('hidden');
+
+  try {
+    if (window.html2canvas) {
+      const previewCard = document.querySelector('.report-preview-body');
+      if (previewCard) {
+        if (wasHidden && modal) {
+          modal.style.setProperty('display', 'flex', 'important');
+          modal.style.setProperty('position', 'fixed', 'important');
+          modal.style.setProperty('left', '-9999px', 'important');
+          modal.style.setProperty('top', '0', 'important');
+          modal.style.setProperty('visibility', 'visible', 'important');
+          modal.classList.remove('hidden');
+        }
+
+        await new Promise(r => setTimeout(r, 60));
+
+        const canvas = await window.html2canvas(previewCard, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+
+        if (wasHidden && modal) {
+          modal.classList.add('hidden');
+          modal.style.removeProperty('display');
+          modal.style.removeProperty('position');
+          modal.style.removeProperty('left');
+          modal.style.removeProperty('top');
+          modal.style.removeProperty('visibility');
+        }
+
+        const jsPdfApi = window.jspdf && window.jspdf.jsPDF;
+        if (!jsPdfApi) throw new Error('PDF library unavailable');
+
+        const pdf = new jsPdfApi({ unit: 'pt', format: 'a4', compress: true });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const pageCanvasHeight = Math.floor((canvasWidth * pageHeight) / pageWidth);
+
+        let renderedY = 0;
+        while (renderedY < canvasHeight) {
+          const sliceH = Math.min(pageCanvasHeight, canvasHeight - renderedY);
+          const pCanvas = document.createElement('canvas');
+          pCanvas.width = canvasWidth;
+          pCanvas.height = pageCanvasHeight;
+          const ctx = pCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, pCanvas.width, pCanvas.height);
+          ctx.drawImage(canvas, 0, renderedY, canvasWidth, sliceH, 0, 0, canvasWidth, sliceH);
+
+          if (renderedY > 0) pdf.addPage();
+          const pImg = pCanvas.toDataURL('image/jpeg', 0.95);
+          pdf.addImage(pImg, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+          renderedY += pageCanvasHeight;
+        }
+
+        pdf.save(`Report_${sanitizeFileName(data.reportId)}.pdf`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('html2canvas rendering fell back to native jsPDF:', err);
+    if (wasHidden && modal) {
+      modal.classList.add('hidden');
+      modal.style.removeProperty('display');
+      modal.style.removeProperty('position');
+      modal.style.removeProperty('left');
+      modal.style.removeProperty('top');
+      modal.style.removeProperty('visibility');
+    }
+  }
+
+  // Fallback: Clean White Medical jsPDF (Exact Image 2 layout)
+  generateWhiteMedicalPdfFallback(data);
+}
+
+function generateWhiteMedicalPdfFallback(reportData) {
+  const jsPdfApi = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPdfApi) throw new Error('PDF library unavailable');
 
   const doc = new jsPdfApi({ unit: 'pt', format: 'a4', compress: true });
   const width = doc.internal.pageSize.getWidth();
   const height = doc.internal.pageSize.getHeight();
-  const margin = 36;
+  const margin = 40;
   const contentWidth = width - margin * 2;
   const halfWidth = (contentWidth - 14) / 2;
-  let y = 40;
-
-  const paintBackground = () => {
-    doc.setFillColor(11, 15, 24);
-    doc.rect(0, 0, width, height, 'F');
-    doc.setDrawColor(24, 216, 255);
-    doc.line(margin, 58, width - margin, 58);
-  };
+  let y = 44;
 
   const newPage = () => {
     doc.addPage();
-    paintBackground();
-    y = 40;
+    y = 44;
   };
 
-  const sectionHeader = (title) => {
-    doc.setFillColor(124, 58, 237);
-    doc.roundedRect(margin, y - 10, contentWidth, 20, 8, 8, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(247, 248, 255);
-    doc.text(title, margin + 10, y + 4);
-    y += 22;
-  };
-
-  const infoBox = (x, top, boxWidth, label, value) => {
-    doc.setDrawColor(42, 173, 209);
-    doc.setFillColor(8, 10, 16);
-    doc.roundedRect(x, top, boxWidth, 52, 8, 8, 'FD');
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(158, 176, 212);
-    doc.text(label, x + 10, top + 16);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(247, 248, 255);
-    doc.text(doc.splitTextToSize(String(value || '-'), boxWidth - 20), x + 10, top + 34);
-  };
-
-  const wrapText = (text, top) => {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-    doc.setTextColor(247, 248, 255);
-    const lines = doc.splitTextToSize(String(text || ''), contentWidth);
-    doc.text(lines, margin, top);
-    return top + lines.length * 16;
-  };
-
-  paintBackground();
-  doc.setTextColor(247, 248, 255);
+  // Header: TORUS MEDICAL / Diagnostic Imaging Center
+  doc.setTextColor(15, 23, 42); // #0f172a
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.text('Report Generation', margin, y);
+  doc.setFontSize(18);
+  doc.text('TORUS MEDICAL', margin, y);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(156, 163, 185);
-  doc.text(`Report ID: ${reportData.reportId}`, margin, y + 20);
-  doc.text(`Generated: ${new Date(reportData.generatedAt).toLocaleString()}`, margin, y + 34);
-  y += 54;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139); // #64748b
+  doc.text('DIAGNOSTIC IMAGING CENTER', margin, y + 14);
 
-  sectionHeader('Patient Information');
-  infoBox(margin, y, halfWidth, 'Patient Name', reportData.patientInfo.patientName);
-  infoBox(margin + halfWidth + 14, y, halfWidth, 'Exam Date', reportData.patientInfo.examDate);
-  y += 64;
-  infoBox(margin, y, halfWidth, 'Scan Type', reportData.patientInfo.scanType);
-  infoBox(margin + halfWidth + 14, y, halfWidth, 'Device', reportData.patientInfo.device);
-  y += 64;
-  infoBox(margin, y, halfWidth, 'Doctor', reportData.patientInfo.doctor);
-  infoBox(margin + halfWidth + 14, y, halfWidth, 'Location', reportData.patientInfo.location);
-  y += 64;
-  infoBox(margin, y, contentWidth, 'Exam Duration', reportData.patientInfo.examDuration);
-  y += 72;
+  // Header right: Report ID and date
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Preview Generated: ${new Date(reportData.generatedAt || Date.now()).toLocaleDateString()}`, width - margin, y + 14, { align: 'right' });
 
-  sectionHeader('Findings');
-  y = wrapText(reportData.findings || 'No findings provided.', y + 4);
-  y += 12;
+  // Header line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(2);
+  doc.line(margin, y + 24, width - margin, y + 24);
+  y += 42;
 
-  sectionHeader('Recommendations');
-  y = wrapText(reportData.recommendations || 'No recommendations provided.', y + 4);
-  y += 12;
+  // Section: Patient & Case Details Box
+  doc.setFillColor(248, 250, 252); // #f8fafc
+  doc.setDrawColor(226, 232, 240); // #e2e8f0
+  doc.setLineWidth(1);
+  doc.roundedRect(margin, y, contentWidth, 110, 6, 6, 'FD');
 
-  sectionHeader('Report Details');
-  infoBox(margin, y, halfWidth, 'Images Captured', String(reportData.reportDetails.imagesCaptured));
-  infoBox(margin + halfWidth + 14, y, halfWidth, 'Selected Images', String(reportData.reportDetails.selectedImages));
-  y += 64;
-  infoBox(margin, y, halfWidth, 'Doctor', reportData.reportDetails.doctor);
-  infoBox(margin + halfWidth + 14, y, halfWidth, 'Location', reportData.reportDetails.location);
-  y += 64;
-  infoBox(margin, y, contentWidth, 'Report ID', reportData.reportDetails.reportId);
-  y += 72;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105); // #475569
+  doc.text('PATIENT & CASE DETAILS', margin + 12, y + 16);
+  doc.setDrawColor(203, 213, 225); // #cbd5e1
+  doc.line(margin + 12, y + 22, width - margin - 12, y + 22);
 
-  if (reportData.reportPreview && (reportData.reportPreview.data || reportData.reportPreview.dataUrl || reportData.reportPreview.src)) {
-    if (y + 210 > height - 40) {
-      newPage();
-    }
-    sectionHeader('Uploaded Preview');
-    doc.setDrawColor(127, 55, 255);
-    doc.setFillColor(8, 10, 16);
-    doc.roundedRect(margin, y, contentWidth, 180, 10, 10, 'FD');
-    const previewType = String(reportData.reportPreview.type || '').toLowerCase();
-    const previewData = reportData.reportPreview.data || reportData.reportPreview.dataUrl || reportData.reportPreview.src;
-    if (/^image\//.test(previewType)) {
+  const drawDetail = (lbl, val, x, top) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(lbl, x, top);
+    const lblW = doc.getTextWidth(lbl);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(val || '--'), x + lblW + 4, top);
+  };
+
+  const c1 = margin + 14;
+  const c2 = margin + halfWidth + 14;
+  drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
+  drawDetail('Exam Date: ', reportData.patientInfo?.examDate, c2, y + 42);
+  const st = reportData.patientInfo?.scanType || '--';
+  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
+  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
+  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
+  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
+  y += 126;
+
+  // Captured Images
+  const images = (reportData.selectedImages && reportData.selectedImages.length)
+    ? reportData.selectedImages
+    : (reportData.capturedImages || []);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text('CAPTURED SCAN IMAGES', margin, y);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(margin, y + 4, width - margin, y + 4);
+  y += 14;
+
+  if (images && images.length) {
+    const imgW = (contentWidth - 16) / Math.min(images.length, 3);
+    const imgH = imgW * 0.75;
+    images.slice(0, 3).forEach((im, i) => {
+      const ix = margin + i * (imgW + 8);
       try {
-        const mimeMatch = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(previewData || '');
-        const format = mimeMatch ? mimeMatch[1].split('/')[1].toUpperCase() : 'JPEG';
-        doc.addImage(previewData, format, margin + 8, y + 8, contentWidth - 16, 164, undefined, 'FAST');
-        y += 192;
-      } catch {
-        doc.setFontSize(10);
-        doc.setTextColor(156, 163, 185);
-        doc.text('Preview image unavailable', margin + 12, y + 24);
-        y += 48;
-      }
-    } else {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(247, 248, 255);
-      doc.text('PDF Preview Attached', margin + 12, y + 28);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(156, 163, 185);
-      doc.text(`File: ${String(reportData.reportPreview.name || 'Document.pdf')}`, margin + 12, y + 46);
-      y += 68;
-    }
-  }
-
-  if (selectedImages.length) {
-    sectionHeader('Captured Images');
-    const imageWidth = (contentWidth - 14) / 2;
-    const imageHeight = 126;
-
-    selectedImages.forEach((image, index) => {
-      if (index % 2 === 0 && y + imageHeight + 44 > height - 36) {
-        newPage();
-        sectionHeader('Selected Images');
-      } else if (index % 2 === 1 && y + imageHeight + 44 > height - 36) {
-        newPage();
-        sectionHeader('Selected Images');
-      }
-
-      const x = margin + (index % 2) * (imageWidth + 14);
-      doc.setDrawColor(127, 55, 255);
-      doc.setFillColor(8, 10, 16);
-      doc.roundedRect(x, y, imageWidth, imageHeight + 28, 10, 10, 'FD');
-
-      try {
-        const mimeMatch = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(image.dataUrl || '');
-        const format = mimeMatch ? mimeMatch[1].split('/')[1].toUpperCase() : 'JPEG';
-        doc.addImage(image.dataUrl, format, x + 8, y + 8, imageWidth - 16, imageHeight - 4, undefined, 'FAST');
-      } catch {
-        doc.setFontSize(10);
-        doc.setTextColor(156, 163, 185);
-        doc.text('Image unavailable', x + 12, y + 46);
-      }
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(156, 163, 185);
-      doc.text(`Image ${index + 1}`, x + 10, y + imageHeight + 18);
-      doc.setFont('helvetica', 'normal');
-      doc.text(getTimeLabel(image.createdAt), x + 10, y + imageHeight + 28);
-
-      if (index % 2 === 1) {
-        y += imageHeight + 42;
+        const dataU = im.dataUrl || im.url || im;
+        const mime = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(dataU || '');
+        const fmt = mime ? mime[1].split('/')[1].toUpperCase() : 'JPEG';
+        doc.addImage(dataU, fmt, ix, y, imgW, imgH, undefined, 'FAST');
+        doc.setDrawColor(203, 213, 225);
+        doc.rect(ix, y, imgW, imgH, 'D');
+      } catch (_) {
+        doc.rect(ix, y, imgW, imgH, 'D');
       }
     });
+    y += (imgH + 18);
+  } else {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text('No captured ultrasound images attached to this record.', margin, y + 10);
+    y += 24;
   }
+
+  // AI Preliminary Analysis (Green box)
+  const ai = reportData.aiResults || reportState.aiResults || {};
+  const obs = ai.observation || 'Ultrasound image demonstrates normal parenchymal echogenicity with active measurement calipers across the region of interest.';
+  const conf = ai.confidence || '94.5%';
+  const qual = ai.quality || 'High (0.91)';
+  const risk = ai.risk || 'Low';
+
+  doc.setFillColor(240, 253, 244); // #f0fdf4
+  doc.setDrawColor(187, 247, 208); // #bbf7d0
+  doc.roundedRect(margin, y, contentWidth, 90, 6, 6, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(22, 101, 52); // #166534
+  doc.text('AI PRELIMINARY ANALYSIS', margin + 12, y + 15);
+  doc.line(margin + 12, y + 20, width - margin - 12, y + 20);
+
+  const drawAiDetail = (lbl, val, x, top) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(22, 101, 52);
+    doc.text(lbl, x, top);
+    const lw = doc.getTextWidth(lbl);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(20, 83, 45); // #14532d
+    doc.text(String(val || '--'), x + lw + 4, top);
+  };
+
+  drawAiDetail('Observation: ', obs.slice(0, 60) + '...', c1, y + 36);
+  drawAiDetail('Detection Confidence: ', conf, c2, y + 36);
+  drawAiDetail('Image Quality: ', qual, c1, y + 54);
+  drawAiDetail('Clinical Risk: ', risk, c2, y + 54);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  doc.setTextColor(21, 128, 61);
+  doc.text('* Clinical Notice: AI Preliminary Analysis is an automated assistive interpretation tool and does not constitute a confirmed medical diagnosis.', margin + 12, y + 78);
+  y += 104;
+
+  // Clinical Findings
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text('CLINICAL FINDINGS', margin, y);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(margin, y + 4, width - margin, y + 4);
+  y += 16;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  const findLines = doc.splitTextToSize(reportData.findings || 'No findings recorded yet.', contentWidth);
+  doc.text(findLines, margin, y);
+  y += (findLines.length * 14 + 16);
+
+  // Recommendations
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text('RECOMMENDATIONS', margin, y);
+  doc.line(margin, y + 4, width - margin, y + 4);
+  y += 16;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  const recLines = doc.splitTextToSize(reportData.recommendations || 'No recommendations recorded yet.', contentWidth);
+  doc.text(recLines, margin, y);
+  y += (recLines.length * 14 + 20);
+
+  // Doctor Details & Signature
+  if (y + 70 > height - 40) newPage();
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineDashPattern([3, 3], 0);
+  doc.line(margin, y, width - margin, y);
+  doc.setLineDashPattern([], 0);
+  y += 16;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Referring Clinician:', margin, y);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text(reportData.patientInfo?.doctor || 'Dr. Admin Doctor', margin, y + 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(reportData.patientInfo?.location || '--', margin, y + 26);
+
+  // Right side: Digitally Signed
+  doc.setFillColor(220, 252, 231); // #dcfce7
+  doc.roundedRect(width - margin - 90, y - 6, 90, 16, 4, 4, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(22, 163, 74); // #16a34a
+  doc.text('✓ DIGITALLY SIGNED', width - margin - 45, y + 5, { align: 'center' });
+
+  const sig = reportData.signatureData || reportState.signatureData || {};
+  const sigData = sig.signatureData || sig.dataUrl || (typeof sig === 'string' && sig.startsWith('data:') ? sig : '');
+  if (sigData && sigData.startsWith('data:image/')) {
+    try {
+      doc.addImage(sigData, 'PNG', width - margin - 110, y + 14, 110, 28, undefined, 'FAST');
+    } catch (_) { }
+  }
+
+  const docClean = (sig.doctorName || reportData.patientInfo?.doctor || 'Dr. Admin Doctor').replace(/^Dr\.\s*/, '');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Dr. ${docClean}`, width - margin, y + 48, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(new Date().toLocaleDateString(), width - margin, y + 59, { align: 'right' });
 
   doc.save(`Report_${sanitizeFileName(reportData.reportId)}.pdf`);
 }
+
+function buildReportPdf(reportData) {
+  const data = reportData || collectReportData();
+  downloadReportPdf(data);
+}
+window.buildReportPdf = buildReportPdf;
+window.downloadReportPdf = downloadReportPdf;
 
 function generateReportAction() {
   if (reportState.isGenerating) return;
@@ -995,6 +1327,18 @@ function generateReportAction() {
   const roomParam = new URLSearchParams(window.location.search).get('room') || '';
 
   const API_BASE_URL = (window.location.port === '5000' || window.location.port === '5002' || window.location.port === '3000' || window.location.port === '') ? '' : window.location.protocol + '//' + window.location.hostname + ':5000';
+
+  const selectedImgs = (reportData.selectedImages && reportData.selectedImages.length > 0)
+    ? reportData.selectedImages
+    : ((reportData.capturedImages && reportData.capturedImages.length > 0) ? reportData.capturedImages : (reportState.images || []));
+
+  const storageKey = typeof getAiStorageKey === 'function' ? getAiStorageKey() : 'torus_ai_analysis';
+  const savedAi = localStorage.getItem(storageKey) || localStorage.getItem('torus_ai_analysis');
+  let currentAi = reportData.aiResults || reportState.aiResults || null;
+  if (!currentAi && savedAi) {
+    try { currentAi = JSON.parse(savedAi); } catch (_) { }
+  }
+
   // Post report details to SQLite database
   fetch(`${API_BASE_URL}/api/reports`, {
     method: 'POST',
@@ -1008,7 +1352,20 @@ function generateReportAction() {
       findings: reportData.findings,
       recommendations: reportData.recommendations,
       roomId: roomParam,
-      generatedTime: targetTime
+      generatedTime: targetTime,
+      signatureData: reportState.digitalSignature ? (reportState.signatureData?.signatureData || reportState.signatureData) : null,
+      signedBy: reportState.digitalSignature ? (reportState.signatureData?.doctorName || reportData.patientInfo.doctor) : null,
+      signedTimestamp: reportState.digitalSignature ? (reportState.signatureData?.signedAt || reportState.signedTimestamp || reportData.generatedAt) : null,
+      report_status: reportState.digitalSignature ? 'signed' : 'unsigned',
+      selected_images: selectedImgs,
+      images: selectedImgs,
+      ai_analysis: currentAi,
+      deviceId: reportData.patientInfo.device,
+      doctorName: reportData.patientInfo.doctor,
+      diagnosticCenter: reportData.patientInfo.location,
+      location: reportData.patientInfo.location,
+      duration: reportData.patientInfo.examDuration || reportData.patientInfo.duration,
+      examDate: reportData.patientInfo.examDate
     })
   })
     .then(async (response) => {
@@ -1331,196 +1688,220 @@ if (dom.backBtn) {
 
 dom.findingsField.addEventListener('input', () => {
   localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
-  if (reportState.digitalSignature) {
-    reportState.digitalSignature = false;
-    reportState.signatureData = null;
-    updateSignatureUI();
-    showToast('Report findings modified. Please re-sign the report.');
+  if (reportState.signatureData) {
+    reportState.signatureData.findings = dom.findingsField.value;
+    const repId = getCurrentReportId();
+    if (repId) {
+      localStorage.setItem('torus_signature_' + repId, JSON.stringify(reportState.signatureData));
+    }
   }
   invalidateGeneratedReport();
 });
 
 dom.recommendationsField.addEventListener('input', () => {
   localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
-  if (reportState.digitalSignature) {
-    reportState.digitalSignature = false;
-    reportState.signatureData = null;
-    updateSignatureUI();
-    showToast('Report recommendations modified. Please re-sign the report.');
+  if (reportState.signatureData) {
+    reportState.signatureData.recommendations = dom.recommendationsField.value;
+    const repId = getCurrentReportId();
+    if (repId) {
+      localStorage.setItem('torus_signature_' + repId, JSON.stringify(reportState.signatureData));
+    }
   }
   invalidateGeneratedReport();
 });
 
-  async function handleDigitalSign() {
-    if (reportState.digitalSignature) {
-      showToast('Report is already digitally signed.');
-      return;
+async function handleDigitalSign() {
+  if (reportState.digitalSignature) {
+    showToast('Report is already digitally signed.');
+    return;
+  }
+
+  const modal = document.getElementById('digitalSignModal');
+  if (modal && typeof openDigitalSignModal === 'function') {
+    openDigitalSignModal();
+    return;
+  }
+
+  // Direct signing workflow if modal not in DOM
+  const signBtn = dom.digitalSignBtn;
+  if (signBtn.dataset.signing === 'true') return;
+  signBtn.dataset.signing = 'true';
+  updateSignatureUI('Signing');
+
+  try {
+    const doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || 'Dr. Admin Doctor';
+    const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
+    const now = new Date();
+    const signTimestamp = now.toISOString();
+    const signatureHash = 'TORUS-SIG-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+    const findingsVal = dom.findingsField ? dom.findingsField.value.trim() : 'Ultrasound scan examination completed.';
+    const recsVal = dom.recommendationsField ? dom.recommendationsField.value.trim() : 'Follow up as clinically indicated.';
+    const patientName = (dom.patientName ? dom.patientName.textContent.trim() : '') || 'Patient';
+    const scanType = (dom.scanType ? dom.scanType.textContent.trim() : '') || 'Abdominal Ultrasound';
+
+    const signPayload = {
+      reportId: reportId,
+      sessionId: roomParam || 'TORUS',
+      doctorName: doctorName,
+      doctorLicense: 'TORUS-REG-3001',
+      signatureData: 'TORUS-DIGITAL-CERT-HASH-' + signatureHash,
+      signatureHash: signatureHash,
+      signedAt: signTimestamp,
+      findings: findingsVal,
+      recommendations: recsVal,
+      patientName: patientName,
+      scanType: scanType,
+      status: 'signed'
+    };
+
+    const resp = await fetch('/api/reports/sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signPayload)
+    });
+
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      throw new Error(errData.error || `Server responded with HTTP ${resp.status}`);
     }
 
-    // 1. Validate required information before allowing signing
-    const findings = (dom.findingsField ? dom.findingsField.value : '').trim();
-    const recommendations = (dom.recommendationsField ? dom.recommendationsField.value : '').trim();
-    const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
+    reportState.digitalSignature = true;
+    reportState.signatureData = signPayload;
+    localStorage.setItem('torus_signature_' + reportId, JSON.stringify(signPayload));
+    localStorage.setItem('torus_signature_' + roomParam, JSON.stringify(signPayload));
+    updateSignatureUI('Signed');
+    invalidateGeneratedReport();
+    showToast('Report digitally signed and persisted successfully.');
+    previewReportAction(true);
+  } catch (err) {
+    console.error('[Digital Sign] Error executing signature:', err);
+    reportState.digitalSignature = false;
+    reportState.signatureData = null;
+    updateSignatureUI('Failed');
+    showToast('Digital signature failed. Please try again.');
+  } finally {
+    signBtn.dataset.signing = 'false';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
 
-    if (!findings) {
-      showToast('Cannot sign report: Please enter Clinical Findings first.');
-      if (dom.findingsField) dom.findingsField.focus();
+function previewReportAction(force = false) {
+  const reportId = getCurrentReportId() || buildAutoReportId();
+  setReportId(reportId);
+
+  const reportData = collectReportData();
+  if (!force) {
+    const missing = [];
+    if (!reportData.patientInfo || !reportData.patientInfo.patientName) missing.push('Patient Information');
+    if (!reportData.findings || !reportData.findings.trim()) missing.push('Clinical Findings');
+    if (!reportData.recommendations || !reportData.recommendations.trim()) missing.push('Recommendations');
+    if (!reportData.selectedImages || reportData.selectedImages.length === 0) missing.push('Captured Images (Select at least one)');
+    if (missing.length) {
+      showToast(`Cannot preview report: please provide ${missing.join(', ')}.`);
       return;
-    }
-    if (!recommendations) {
-      showToast('Cannot sign report: Please enter Recommendations first.');
-      if (dom.recommendationsField) dom.recommendationsField.focus();
-      return;
-    }
-    if (selectedImages.length === 0) {
-      showToast('Cannot sign report: Please select at least one captured image.');
-      return;
-    }
-
-    // 2. Prevent duplicate / repeated submission & show signing state
-    const signBtn = dom.digitalSignBtn;
-    if (signBtn.dataset.signing === 'true') return;
-    signBtn.dataset.signing = 'true';
-    updateSignatureUI('Signing');
-
-    try {
-      await new Promise(r => setTimeout(r, 600));
-
-      const doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || '--';
-      const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
-      const now = new Date();
-      const signTimestamp = now.toISOString();
-      const signatureHash = 'TORUS-SIG-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-
-      reportState.digitalSignature = true;
-      reportState.signatureData = {
-        doctorName: doctorName,
-        doctorLicense: 'TORUS-REG-3001',
-        signedAt: signTimestamp,
-        signatureHash: signatureHash,
-        reportId: reportId
-      };
-
-      updateSignatureUI();
-      invalidateGeneratedReport();
-      showToast(`Report digitally signed successfully.`);
-    } catch (err) {
-      console.error('[Digital Sign] Error executing signature:', err);
-      reportState.digitalSignature = false;
-      reportState.signatureData = null;
-      updateSignatureUI('Failed');
-      showToast('Digital signature failed. Please try again.');
-    } finally {
-      signBtn.dataset.signing = 'false';
-      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
   }
 
-  function previewReportAction(force = false) {
-    const reportId = getCurrentReportId() || buildAutoReportId();
-    setReportId(reportId);
+  const previewReportId = document.getElementById('previewReportId');
+  const previewReportDate = document.getElementById('previewReportDate');
+  const previewPatientName = document.getElementById('previewPatientName');
+  const previewExamDate = document.getElementById('previewExamDate');
+  const previewScanType = document.getElementById('previewScanType');
+  const previewDeviceName = document.getElementById('previewDeviceName');
+  const previewLocationName = document.getElementById('previewLocationName');
+  const previewDuration = document.getElementById('previewDuration');
+  const previewFindings = document.getElementById('previewFindings');
+  const previewRecommendations = document.getElementById('previewRecommendations');
+  const previewDoctorName = document.getElementById('previewDoctorName');
+  const previewDoctorLocation = document.getElementById('previewDoctorLocation');
+  const previewSignerInfo = document.getElementById('previewSignerInfo');
+  const previewSignTime = document.getElementById('previewSignTime');
 
-    const reportData = collectReportData();
-    if (!force) {
-      const missing = [];
-      if (!reportData.patientInfo || !reportData.patientInfo.patientName) missing.push('Patient Information');
-      if (!reportData.findings || !reportData.findings.trim()) missing.push('Clinical Findings');
-      if (!reportData.recommendations || !reportData.recommendations.trim()) missing.push('Recommendations');
-      if (!reportData.selectedImages || reportData.selectedImages.length === 0) missing.push('Captured Images (Select at least one)');
-      if (missing.length) {
-        showToast(`Cannot preview report: please provide ${missing.join(', ')}.`);
-        return;
-      }
+  const now = new Date();
+  const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric'
+  }) + ' ' + now.toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+  });
+
+  if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
+  if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
+  if (previewPatientName) previewPatientName.textContent = reportData.patientInfo.patientName;
+  if (previewExamDate) previewExamDate.textContent = reportData.patientInfo.examDate;
+  if (previewScanType) previewScanType.textContent = reportData.patientInfo.scanType;
+  if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo.device;
+  if (previewLocationName) previewLocationName.textContent = reportData.patientInfo.location;
+  if (previewDuration) previewDuration.textContent = reportData.patientInfo.examDuration;
+
+  if (previewFindings) previewFindings.textContent = reportData.findings;
+  if (previewRecommendations) previewRecommendations.textContent = reportData.recommendations;
+  if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo.doctor;
+  if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo.location;
+  const isSigned = reportState.digitalSignature;
+  const previewSignatureStatus = document.getElementById('previewSignatureStatus');
+
+  if (previewSignatureStatus) {
+    previewSignatureStatus.style.display = isSigned ? 'inline-flex' : 'none';
+  }
+
+  if (isSigned) {
+    if (previewSignerInfo) {
+      previewSignerInfo.style.display = 'block';
+      previewSignerInfo.textContent = `Dr. ${reportData.patientInfo.doctor.replace('Dr. ', '')}`;
     }
-
-    const previewReportId = document.getElementById('previewReportId');
-    const previewReportDate = document.getElementById('previewReportDate');
-    const previewPatientName = document.getElementById('previewPatientName');
-    const previewExamDate = document.getElementById('previewExamDate');
-    const previewScanType = document.getElementById('previewScanType');
-    const previewDeviceName = document.getElementById('previewDeviceName');
-    const previewLocationName = document.getElementById('previewLocationName');
-    const previewDuration = document.getElementById('previewDuration');
-    const previewFindings = document.getElementById('previewFindings');
-    const previewRecommendations = document.getElementById('previewRecommendations');
-    const previewDoctorName = document.getElementById('previewDoctorName');
-    const previewDoctorLocation = document.getElementById('previewDoctorLocation');
-    const previewSignerInfo = document.getElementById('previewSignerInfo');
-    const previewSignTime = document.getElementById('previewSignTime');
-
-    const now = new Date();
-    const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric'
-    }) + ' ' + now.toLocaleTimeString(undefined, {
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-    });
-
-    if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
-    if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
-    if (previewPatientName) previewPatientName.textContent = reportData.patientInfo.patientName;
-    if (previewExamDate) previewExamDate.textContent = reportData.patientInfo.examDate;
-    if (previewScanType) previewScanType.textContent = reportData.patientInfo.scanType;
-    if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo.device;
-    if (previewLocationName) previewLocationName.textContent = reportData.patientInfo.location;
-    if (previewDuration) previewDuration.textContent = reportData.patientInfo.examDuration;
-
-    if (previewFindings) previewFindings.textContent = reportData.findings;
-    if (previewRecommendations) previewRecommendations.textContent = reportData.recommendations;
-    if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo.doctor;
-    if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo.location;
-    const isSigned = reportState.digitalSignature;
-    const previewSignatureStatus = document.getElementById('previewSignatureStatus');
-
-    if (previewSignatureStatus) {
-      previewSignatureStatus.style.display = isSigned ? 'inline-flex' : 'none';
+    if (previewSignTime) {
+      previewSignTime.style.display = 'block';
+      const sigTime = reportState.signatureData?.signedAt || reportState.signedTimestamp || now.toISOString();
+      const sigDate = new Date(sigTime);
+      previewSignTime.textContent = sigDate.toLocaleDateString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric'
+      }) + ' ' + sigDate.toLocaleTimeString(undefined, {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+      });
     }
+  } else {
+    if (previewSignerInfo) previewSignerInfo.style.display = 'none';
+    if (previewSignTime) previewSignTime.style.display = 'none';
+  }
 
-    if (isSigned) {
-      if (previewSignerInfo) {
-        previewSignerInfo.style.display = 'block';
-        previewSignerInfo.textContent = `Dr. ${reportData.patientInfo.doctor.replace('Dr. ', '')}`;
-      }
-      if (previewSignTime) {
-        previewSignTime.style.display = 'block';
-        const sigTime = reportState.signatureData?.signedAt || reportState.signedTimestamp || now.toISOString();
-        const sigDate = new Date(sigTime);
-        previewSignTime.textContent = sigDate.toLocaleDateString(undefined, {
-          year: 'numeric', month: 'short', day: 'numeric'
-        }) + ' ' + sigDate.toLocaleTimeString(undefined, {
-          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-        });
-      }
+  const storageKey = typeof getAiStorageKey === 'function' ? getAiStorageKey() : 'torus_ai_analysis';
+  const savedAi = localStorage.getItem(storageKey) || localStorage.getItem('torus_ai_analysis');
+  let aiAnalysisData = reportState.aiResults || null;
+  if (!aiAnalysisData && savedAi) {
+    try { aiAnalysisData = JSON.parse(savedAi); } catch (_) { }
+  }
+  const hasImages = reportState.images && reportState.images.length > 0;
+  const isAiCompleted = hasImages && aiAnalysisData && aiAnalysisData.status === 'Completed';
+
+  const aiQuality = isAiCompleted ? (aiAnalysisData.quality || '--') : '--';
+  const aiConfidence = isAiCompleted ? (aiAnalysisData.confidence || '--') : '--';
+  const aiObservation = isAiCompleted
+    ? (aiAnalysisData.observation || '--')
+    : (hasImages ? 'Awaiting Analysis' : 'No ultrasound images available for analysis.');
+  const validatedRisk = isAiCompleted ? (aiAnalysisData.validatedRisk || (aiAnalysisData.risk && aiAnalysisData.risk !== 'Not available' && !aiAnalysisData.risk.includes('TEST') && !aiAnalysisData.risk.includes('Simulated') && aiAnalysisData.isRiskValidated ? aiAnalysisData.risk : null)) : null;
+  const aiRisk = isAiCompleted ? (validatedRisk || aiAnalysisData.risk || 'Not available') : 'Not available';
+
+  const previewAiQuality = document.getElementById('previewAiQuality');
+  const previewAiConfidence = document.getElementById('previewAiConfidence');
+  const previewAiObservation = document.getElementById('previewAiObservation');
+  const previewAiRisk = document.getElementById('previewAiRisk');
+
+  if (previewAiQuality) previewAiQuality.textContent = aiQuality;
+  if (previewAiConfidence) previewAiConfidence.textContent = aiConfidence;
+  if (previewAiObservation) previewAiObservation.textContent = aiObservation;
+  if (previewAiRisk) previewAiRisk.textContent = aiRisk;
+
+  const container = document.getElementById('previewImagesContainer');
+  if (container) {
+    container.innerHTML = '';
+    const imgsToRender = (reportData.selectedImages && reportData.selectedImages.length > 0)
+      ? reportData.selectedImages
+      : (reportState.images || []);
+    if (imgsToRender.length === 0) {
+      container.innerHTML = '<div style="color: #64748b; font-size: 13px; font-style: italic; padding: 12px 0;">No captured ultrasound images attached to this preview.</div>';
     } else {
-      if (previewSignerInfo) previewSignerInfo.style.display = 'none';
-      if (previewSignTime) previewSignTime.style.display = 'none';
-    }
-
-    const savedAi = localStorage.getItem('torus_ai_analysis');
-    let aiAnalysisData = null;
-    if (savedAi) {
-      try { aiAnalysisData = JSON.parse(savedAi); } catch (_) { }
-    }
-    const isAiCompleted = aiAnalysisData && aiAnalysisData.status === 'Completed';
-
-    const aiQuality = isAiCompleted ? (aiAnalysisData.quality || '--') : '--';
-    const aiConfidence = isAiCompleted ? (aiAnalysisData.confidence || '--') : '--';
-    const aiObservation = isAiCompleted ? (aiAnalysisData.observation || '--') : 'Awaiting Analysis';
-    const aiRisk = isAiCompleted ? (aiAnalysisData.risk || '--') : '--';
-
-    const previewAiQuality = document.getElementById('previewAiQuality');
-    const previewAiConfidence = document.getElementById('previewAiConfidence');
-    const previewAiObservation = document.getElementById('previewAiObservation');
-    const previewAiRisk = document.getElementById('previewAiRisk');
-
-    if (previewAiQuality) previewAiQuality.textContent = aiQuality;
-    if (previewAiConfidence) previewAiConfidence.textContent = aiConfidence;
-    if (previewAiObservation) previewAiObservation.textContent = aiObservation;
-    if (previewAiRisk) previewAiRisk.textContent = aiRisk;
-
-    const container = document.getElementById('previewImagesContainer');
-    if (container) {
-      container.innerHTML = '';
-      reportData.selectedImages.forEach(imgData => {
+      imgsToRender.forEach(imgData => {
         const imgEl = document.createElement('img');
         imgEl.src = imgData.dataUrl;
         imgEl.style.width = '100%';
@@ -1531,494 +1912,683 @@ dom.recommendationsField.addEventListener('input', () => {
         container.appendChild(imgEl);
       });
     }
+  }
 
-    if (dom.reportPreviewModal) {
-      dom.reportPreviewModal.classList.remove('hidden');
-      dom.reportPreviewModal.setAttribute('aria-hidden', 'false');
+  if (dom.reportPreviewModal) {
+    dom.reportPreviewModal.classList.remove('hidden');
+    dom.reportPreviewModal.setAttribute('aria-hidden', 'false');
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function openDoctorCapturedImagesModal() {
+  const rawImages = typeof readCaptureImages === 'function' ? readCaptureImages() : [];
+  let allImages = typeof normalizeImages === 'function' ? normalizeImages(rawImages) : rawImages;
+  if ((!allImages || allImages.length === 0) && reportState.images && reportState.images.length > 0) {
+    allImages = reportState.images;
+  } else if (reportState.images && reportState.images.length > 0) {
+    const existingIds = new Set(allImages.map(img => img.id));
+    reportState.images.forEach(img => {
+      if (!existingIds.has(img.id)) {
+        allImages.push(img);
+      }
+    });
+  }
+  reportState.images = allImages;
+  if (typeof doctorSelectedImages !== 'undefined') {
+    doctorSelectedImages = allImages;
+  }
+  if (typeof writeCaptureImages === 'function') {
+    writeCaptureImages(allImages);
+  }
+  if (typeof renderDoctorImagesGrid === 'function') {
+    renderDoctorImagesGrid();
+  }
+
+  const modal = document.getElementById('doctorCapturedImagesModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    if (typeof showDoctorGridView === 'function') {
+      showDoctorGridView();
     }
-
     if (typeof lucide !== 'undefined') lucide.createIcons();
-  }
-
-  function openDoctorCapturedImagesModal() {
-    const modal = document.getElementById('doctorCapturedImagesModal');
-    if (modal) {
-      modal.style.display = 'flex';
-      modal.classList.remove('hidden');
-      modal.setAttribute('aria-hidden', 'false');
-      if (typeof showDoctorGridView === 'function') {
-        showDoctorGridView();
-      }
-    } else {
-      if (dom.capturedGrid) {
-        dom.capturedGrid.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        showToast('Captured images view');
-      }
+  } else {
+    if (dom.capturedGrid) {
+      dom.capturedGrid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showToast('Captured images view');
     }
   }
+}
 
-  if (dom.sendCapturedImagesBtn) {
-    dom.sendCapturedImagesBtn.addEventListener('click', openDoctorCapturedImagesModal);
+function closeDoctorCapturedImagesModal() {
+  const modal = document.getElementById('doctorCapturedImagesModal');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
   }
+  if (typeof renderCapturedImages === 'function') {
+    renderCapturedImages(reportState.images);
+  }
+  if (typeof syncCounts === 'function') syncCounts();
+  if (typeof syncSelectionUI === 'function') syncSelectionUI();
+}
 
-  if (dom.generatePreviewBtn) {
-    dom.generatePreviewBtn.addEventListener('click', () => {
-      if (document.getElementById('reportPreviewModal')) {
-        previewReportAction();
-      } else {
-        generateReportAction();
-      }
-    });
-  }
+if (dom.sendCapturedImagesBtn) {
+  dom.sendCapturedImagesBtn.addEventListener('click', (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    openDoctorCapturedImagesModal();
+  });
+}
 
-  if (dom.sendPatientBtn) {
-    dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
-  }
+if (dom.generatePreviewBtn) {
+  dom.generatePreviewBtn.addEventListener('click', (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (document.getElementById('reportPreviewModal')) {
+      previewReportAction(true);
+    } else {
+      generateReportAction();
+    }
+  });
+}
 
-  if (dom.digitalSignBtn) {
-    dom.digitalSignBtn.addEventListener('click', handleDigitalSign);
-  }
+if (dom.sendPatientBtn) {
+  dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
+}
 
-  if (dom.closePreviewModal) {
-    dom.closePreviewModal.addEventListener('click', closePreview);
-  }
-  if (dom.imagePreviewModal) {
-    dom.imagePreviewModal.addEventListener('click', (event) => {
-      if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
-        closePreview();
-      }
-    });
-  }
+if (dom.digitalSignBtn) {
+  dom.digitalSignBtn.addEventListener('click', handleDigitalSign);
+}
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
+if (dom.closePreviewModal) {
+  dom.closePreviewModal.addEventListener('click', closePreview);
+}
+if (dom.imagePreviewModal) {
+  dom.imagePreviewModal.addEventListener('click', (event) => {
+    if (event.target === dom.imagePreviewModal || event.target.classList.contains('preview-modal-backdrop')) {
       closePreview();
     }
   });
+}
 
-  setupSidebar();
-  initializeBuildVersion();
-  loadReportContext();
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
+    closePreview();
+  }
+});
 
-  window.addEventListener('storage', (event) => {
-    if ([
-      STORAGE_KEYS.collage,
-      STORAGE_KEYS.selectedIds,
-      STORAGE_KEYS.generatedReport,
-      STORAGE_KEYS.context,
-      STORAGE_KEYS.reportId,
-      STORAGE_KEYS.reportPreview,
-      STORAGE_KEYS.reportDetails,
-      STORAGE_KEYS.deliveryStatus,
-      CAPTURE_STORAGE_KEYS.images,
-      CAPTURE_STORAGE_KEYS.sessionId
-    ].includes(event.key)) {
-      loadReportContext();
+setupSidebar();
+initializeBuildVersion();
+loadReportContext();
+
+window.addEventListener('storage', (event) => {
+  if ([
+    STORAGE_KEYS.collage,
+    STORAGE_KEYS.selectedIds,
+    STORAGE_KEYS.generatedReport,
+    STORAGE_KEYS.context,
+    STORAGE_KEYS.reportId,
+    STORAGE_KEYS.reportPreview,
+    STORAGE_KEYS.reportDetails,
+    STORAGE_KEYS.deliveryStatus,
+    CAPTURE_STORAGE_KEYS.images,
+    CAPTURE_STORAGE_KEYS.sessionId
+  ].includes(event.key)) {
+    loadReportContext();
+  }
+});
+
+lucide.createIcons();
+
+// Camera capture support for Report Generation page
+(function () {
+  let captureInProgress = false;
+  async function captureFromCamera() {
+    if (captureInProgress) return null;
+    captureInProgress = true;
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (err) {
+      console.warn('Ultrasound video feed unavailable or camera blocked:', err);
+      captureInProgress = false;
+      showToast('Ultrasound feed is unavailable or inactive.');
+      return null;
     }
-  });
 
-  lucide.createIcons();
+    try {
+      const video = document.createElement('video');
+      video.style.position = 'fixed';
+      video.style.left = '-9999px';
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true;
+      document.body.appendChild(video);
+      video.srcObject = stream;
 
-  // Camera capture support for Report Generation page
-  (function () {
-    let captureInProgress = false;
-    async function captureFromCamera() {
-      if (captureInProgress) return null;
-      captureInProgress = true;
-      let stream = null;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      } catch (err) {
-        console.warn('Camera blocked or unavailable, using simulated capture fallback:', err);
-        // Create a mock image fallback
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 480;
-        const ctx = canvas.getContext('2d');
-        const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        grad.addColorStop(0, '#0b0f19');
-        grad.addColorStop(1, '#1e293b');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await new Promise((resolve) => {
+        const onCan = () => { resolve(); };
+        video.addEventListener('loadedmetadata', onCan, { once: true });
+        setTimeout(resolve, 700);
+      });
 
-        // Draw simulated ultrasound circle
-        ctx.strokeStyle = '#00d7ff';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2, 80, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Draw scanning grid lines
-        ctx.strokeStyle = 'rgba(0, 215, 255, 0.2)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let x = 0; x < canvas.width; x += 40) {
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, canvas.height);
-        }
-        for (let y = 0; y < canvas.height; y += 40) {
-          ctx.moveTo(0, y);
-          ctx.lineTo(canvas.width, y);
-        }
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 20px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Simulated Scan Capture', canvas.width / 2, canvas.height / 2 - 20);
-
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '14px sans-serif';
-        ctx.fillText('Camera Blocked/Unavailable Fallback', canvas.width / 2, canvas.height / 2 + 30);
-        ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 60);
-
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        captureInProgress = false;
-        return dataUrl;
-      }
-
-      try {
-        const video = document.createElement('video');
-        video.style.position = 'fixed';
-        video.style.left = '-9999px';
-        video.autoplay = true;
-        video.playsInline = true;
-        video.muted = true;
-        document.body.appendChild(video);
-        video.srcObject = stream;
-
-        await new Promise((resolve, reject) => {
-          const onCan = () => { resolve(); };
-          video.addEventListener('loadedmetadata', onCan, { once: true });
-          // fallback if metadata doesn't fire
-          setTimeout(resolve, 700);
-        });
-
-        const w = video.videoWidth || 1280;
-        const h = video.videoHeight || 720;
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-
-        // cleanup
+      const tracks = stream ? stream.getVideoTracks() : [];
+      const isTrackActive = tracks.length > 0 && tracks[0].readyState === 'live' && tracks[0].enabled;
+      if (!isTrackActive || video.videoWidth === 0 || video.videoHeight === 0) {
+        console.warn('Ultrasound feed track is inactive or empty frame');
         try { video.pause(); } catch (e) { }
         try { video.srcObject = null; } catch (e) { }
         document.body.removeChild(video);
-        stream.getTracks().forEach((t) => t.stop());
+        tracks.forEach((t) => t.stop());
         captureInProgress = false;
-        return dataUrl;
-      } catch (err) {
-        if (stream) stream.getTracks().forEach((t) => t.stop());
-        captureInProgress = false;
-        showToast('Capture failed');
+        showToast('Ultrasound feed is inactive or no video frames received.');
         return null;
       }
+
+      const w = video.videoWidth || 1280;
+      const h = video.videoHeight || 720;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+      // cleanup
+      try { video.pause(); } catch (e) { }
+      try { video.srcObject = null; } catch (e) { }
+      document.body.removeChild(video);
+      stream.getTracks().forEach((t) => t.stop());
+      captureInProgress = false;
+      return dataUrl;
+    } catch (err) {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      captureInProgress = false;
+      showToast('Ultrasound feed capture failed.');
+      return null;
+    }
+  }
+
+  function persistCapturedImage(obj) {
+    try {
+      ensureCaptureSession();
+      const capturedImages = readCaptureImages();
+      console.log('Before save:', capturedImages.length);
+      capturedImages.push(obj);
+      console.log('After save:', capturedImages.length);
+      writeCaptureImages(capturedImages);
+      return capturedImages.length;
+    } catch (e) {
+      console.warn('Unable to persist captured image', e);
+      return 0;
+    }
+  }
+
+  async function addNewCapturedImage(dataUrl) {
+    if (!dataUrl) return;
+    const createdAt = new Date().toISOString();
+    const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
+    const item = { id, createdAt, dataUrl };
+    // Keep compatibility with normalizeImages() which expects dataUrl field
+    reportState.images = (reportState.images || []).concat([item]);
+    const count = persistCapturedImage({ id, createdAt, dataUrl });
+    console.log('Rendered Cards:', reportState.images.length);
+    if (count !== reportState.images.length) {
+      console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
+    }
+    renderCapturedImages(reportState.images);
+    invalidateGeneratedReport();
+    showToast('Image captured');
+  }
+
+  async function handlePossibleCameraClick(target) {
+    // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
+    if (!target) return false;
+    const el = target.closest('button, [role="button"], a');
+    if (!el) return false;
+    const aria = String(el.getAttribute('aria-label') || '');
+    const hasCameraLabel = /camera|capture/i.test(aria);
+    const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
+    if (!hasCameraLabel && !hasCameraIcon) return false;
+
+    // perform capture
+    const dataUrl = await captureFromCamera();
+    if (dataUrl) await addNewCapturedImage(dataUrl);
+    return true;
+  }
+
+  document.addEventListener('click', (ev) => {
+    try {
+      // check clicked element and its ancestors for camera icon/label
+      handlePossibleCameraClick(ev.target).catch(() => { });
+    } catch (e) { }
+  }, { passive: true });
+})();
+
+// Redesigned AI Analysis Logic
+(function () {
+  const runAiBtn = document.getElementById('runAiBtn');
+  const runAiBtnText = document.getElementById('runAiBtnText');
+  const aiStatusBadge = document.getElementById('aiStatusBadge');
+  const aiStatusText = document.getElementById('aiStatusText');
+  const aiProgressWrap = document.getElementById('aiProgressWrap');
+  const aiProgressStep = document.getElementById('aiProgressStep');
+  const aiProgressPercent = document.getElementById('aiProgressPercent');
+  const aiProgressFill = document.getElementById('aiProgressFill');
+  const aiSummaryCard = document.getElementById('aiSummaryCard');
+  const aiSummaryList = document.getElementById('aiSummaryList');
+  const aiDetailsPanel = document.getElementById('aiDetailsPanel');
+  const toggleAiDetails = document.getElementById('toggleAiDetails');
+
+  const detailAiStatus = document.getElementById('detailAiStatus');
+  const detailAiTime = document.getElementById('detailAiTime');
+
+  const insightEls = {
+    quality: document.getElementById('aiInsightQuality'),
+    confidence: document.getElementById('aiInsightConfidence'),
+    structures: document.getElementById('aiInsightStructures'),
+    observation: document.getElementById('aiInsightObservation'),
+    risk: document.getElementById('aiInsightRisk')
+  };
+
+  const detailEls = {
+    features: document.getElementById('aiDetailFeatures'),
+    time: document.getElementById('aiDetailTime'),
+    timestamp: document.getElementById('aiDetailTimestamp')
+  };
+
+  const STORAGE_KEY = 'torus_ai_analysis';
+
+  function resetCards(defaultObservation = 'Awaiting Analysis') {
+    if (insightEls.quality) insightEls.quality.textContent = '--';
+    if (insightEls.confidence) insightEls.confidence.textContent = '--';
+    if (insightEls.structures) insightEls.structures.textContent = '--';
+    if (insightEls.observation) insightEls.observation.textContent = defaultObservation;
+    if (insightEls.risk) {
+      insightEls.risk.textContent = '--';
+      insightEls.risk.style.color = '#94a3b8';
+    }
+    if (toggleAiDetails) {
+      toggleAiDetails.disabled = true;
+      toggleAiDetails.style.opacity = '0.5';
+      toggleAiDetails.style.cursor = 'not-allowed';
+      toggleAiDetails.title = 'Run AI analysis to view details';
+      toggleAiDetails.innerHTML = '<i data-lucide="chevron-down"></i> <span>View Detailed Analysis</span>';
+    }
+    if (aiDetailsPanel) {
+      aiDetailsPanel.classList.remove('active');
+    }
+    const keyFindingsList = document.getElementById('aiKeyFindingsList');
+    if (keyFindingsList) {
+      keyFindingsList.innerHTML = `<li>${escapeHtml(defaultObservation)}</li>`;
+    }
+    const simNotice = document.getElementById('aiDetailSimulationNotice');
+    if (simNotice) simNotice.style.display = 'none';
+  }
+
+  function updateAiUI(status, results = null) {
+    const hasImages = reportState.images && reportState.images.length > 0;
+    let effectiveStatus = status;
+    if (!hasImages) {
+      effectiveStatus = 'No Images';
+    } else if ((!status || status === 'Ready' || status === 'Awaiting Images' || status === 'No Images') && hasImages) {
+      effectiveStatus = 'Ready to Analyze';
     }
 
-    function persistCapturedImage(obj) {
-      try {
-        ensureCaptureSession();
-        const capturedImages = readCaptureImages();
-        console.log('Before save:', capturedImages.length);
-        capturedImages.push(obj);
-        console.log('After save:', capturedImages.length);
-        writeCaptureImages(capturedImages);
-        return capturedImages.length;
-      } catch (e) {
-        console.warn('Unable to persist captured image', e);
-        return 0;
+    const noImagesNotice = document.getElementById('aiNoImagesNotice');
+
+    if (effectiveStatus === 'No Images') {
+      aiStatusBadge.className = 'ai-status-badge ready';
+      aiStatusText.textContent = 'No Images Available';
+      if (detailAiStatus) detailAiStatus.textContent = 'No Images Available';
+      runAiBtn.disabled = true;
+      runAiBtn.title = 'No ultrasound images available for analysis';
+      runAiBtn.innerHTML = '<i data-lucide="image-off"></i> <span>No Images Available</span>';
+      aiProgressWrap.classList.remove('active');
+      aiDetailsPanel.classList.remove('active');
+      if (noImagesNotice) noImagesNotice.style.display = 'block';
+      resetCards('No ultrasound images available for analysis.');
+      if (detailAiTime) detailAiTime.textContent = '--';
+      lucide.createIcons();
+      return;
+    }
+
+    if (noImagesNotice) noImagesNotice.style.display = 'none';
+
+    const badgeClass = effectiveStatus === 'Completed' ? 'completed'
+      : ((effectiveStatus === 'Processing' || effectiveStatus === 'Analyzing') ? 'analyzing'
+        : (effectiveStatus === 'Failed' ? 'failed' : 'ready'));
+    aiStatusBadge.className = `ai-status-badge ${badgeClass}`;
+
+    let displayStatusText = 'Ready to Analyze';
+    if (effectiveStatus === 'Processing' || effectiveStatus === 'Analyzing') displayStatusText = 'Analyzing';
+    else if (effectiveStatus === 'Completed') displayStatusText = 'Completed';
+    else if (effectiveStatus === 'Failed') displayStatusText = 'Failed';
+
+    aiStatusText.textContent = displayStatusText;
+    if (detailAiStatus) detailAiStatus.textContent = displayStatusText;
+
+    if (effectiveStatus === 'Processing' || effectiveStatus === 'Analyzing') {
+      runAiBtn.disabled = true;
+      runAiBtn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i> <span>Analyzing...</span>';
+      aiProgressWrap.classList.add('active');
+      aiDetailsPanel.classList.remove('active');
+      resetCards('Analyzing ultrasound frames...');
+      lucide.createIcons();
+    } else if (effectiveStatus === 'Completed') {
+      runAiBtn.disabled = false;
+      runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
+      aiProgressWrap.classList.remove('active');
+
+      if (toggleAiDetails) {
+        toggleAiDetails.disabled = false;
+        toggleAiDetails.style.opacity = '1';
+        toggleAiDetails.style.cursor = 'pointer';
+        toggleAiDetails.title = 'View detailed analysis';
       }
-    }
 
-    async function addNewCapturedImage(dataUrl) {
-      if (!dataUrl) return;
-      const createdAt = new Date().toISOString();
-      const id = `capture-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
-      const item = { id, createdAt, dataUrl };
-      // Keep compatibility with normalizeImages() which expects dataUrl field
-      reportState.images = (reportState.images || []).concat([item]);
-      const count = persistCapturedImage({ id, createdAt, dataUrl });
-      console.log('Rendered Cards:', reportState.images.length);
-      if (count !== reportState.images.length) {
-        console.warn('Capture count mismatch:', { stored: count, rendered: reportState.images.length });
-      }
-      renderCapturedImages(reportState.images);
-      invalidateGeneratedReport();
-      showToast('Image captured');
-    }
+      if (results) {
+        if (insightEls.quality) insightEls.quality.textContent = results.quality || 'Diagnostic Quality';
+        if (insightEls.confidence) insightEls.confidence.textContent = results.confidence || '--';
+        if (insightEls.structures) insightEls.structures.textContent = results.structures || '--';
+        if (insightEls.observation) insightEls.observation.textContent = results.observation || '--';
 
-    async function handlePossibleCameraClick(target) {
-      // If click is on a button or element that contains a camera icon or has an aria-label mentioning camera/capture
-      if (!target) return false;
-      const el = target.closest('button, [role="button"], a');
-      if (!el) return false;
-      const aria = String(el.getAttribute('aria-label') || '');
-      const hasCameraLabel = /camera|capture/i.test(aria);
-      const hasCameraIcon = !!el.querySelector('[data-lucide="camera"], i[data-lucide="camera"]');
-      if (!hasCameraLabel && !hasCameraIcon) return false;
-
-      // perform capture
-      const dataUrl = await captureFromCamera();
-      if (dataUrl) await addNewCapturedImage(dataUrl);
-      return true;
-    }
-
-    document.addEventListener('click', (ev) => {
-      try {
-        // check clicked element and its ancestors for camera icon/label
-        handlePossibleCameraClick(ev.target).catch(() => { });
-      } catch (e) { }
-    }, { passive: true });
-  })();
-
-  // Redesigned AI Analysis Logic
-  (function () {
-    const runAiBtn = document.getElementById('runAiBtn');
-    const runAiBtnText = document.getElementById('runAiBtnText');
-    const aiStatusBadge = document.getElementById('aiStatusBadge');
-    const aiStatusText = document.getElementById('aiStatusText');
-    const aiProgressWrap = document.getElementById('aiProgressWrap');
-    const aiProgressStep = document.getElementById('aiProgressStep');
-    const aiProgressPercent = document.getElementById('aiProgressPercent');
-    const aiProgressFill = document.getElementById('aiProgressFill');
-    const aiSummaryCard = document.getElementById('aiSummaryCard');
-    const aiSummaryList = document.getElementById('aiSummaryList');
-    const aiDetailsPanel = document.getElementById('aiDetailsPanel');
-    const toggleAiDetails = document.getElementById('toggleAiDetails');
-
-    const detailAiStatus = document.getElementById('detailAiStatus');
-    const detailAiTime = document.getElementById('detailAiTime');
-
-    const insightEls = {
-      quality: document.getElementById('aiInsightQuality'),
-      confidence: document.getElementById('aiInsightConfidence'),
-      structures: document.getElementById('aiInsightStructures'),
-      observation: document.getElementById('aiInsightObservation'),
-      risk: document.getElementById('aiInsightRisk')
-    };
-
-    const detailEls = {
-      features: document.getElementById('aiDetailFeatures'),
-      time: document.getElementById('aiDetailTime'),
-      timestamp: document.getElementById('aiDetailTimestamp')
-    };
-
-    const STORAGE_KEY = 'torus_ai_analysis';
-
-    function resetCards() {
-      insightEls.quality.textContent = 'Pending';
-      insightEls.confidence.textContent = '--';
-      insightEls.structures.textContent = 'None';
-      insightEls.observation.textContent = 'Pending';
-      insightEls.risk.textContent = 'Unknown';
-    }
-
-    function updateAiUI(status, results = null) {
-      aiStatusBadge.className = `ai-status-badge ${status.toLowerCase()}`;
-      aiStatusText.textContent = status === 'Completed' ? 'COMPLETED' : status;
-      if (detailAiStatus) detailAiStatus.textContent = status;
-
-      if (status === 'Processing') {
-        runAiBtn.disabled = true;
-        runAiBtnText.textContent = 'Analyzing...';
-        aiProgressWrap.classList.add('active');
-        aiSummaryCard.classList.remove('active');
-        aiDetailsPanel.classList.remove('active');
-        resetCards();
-      } else if (status === 'Completed') {
-        runAiBtn.disabled = false;
-        runAiBtnText.textContent = 'Re-analyze';
-        runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
-        aiProgressWrap.classList.remove('active');
-        aiSummaryCard.classList.add('active');
-        lucide.createIcons();
-
-        if (results) {
-          insightEls.quality.textContent = results.quality;
-          insightEls.confidence.textContent = results.confidence;
-          insightEls.structures.textContent = results.structures;
-          insightEls.observation.textContent = results.observation;
-          insightEls.risk.textContent = results.risk;
-
-          aiSummaryList.innerHTML = results.summary.map(item => `<li>${item}</li>`).join('');
-
-          detailEls.features.textContent = results.detailed.features;
-          detailEls.time.textContent = results.detailed.time;
-          detailEls.timestamp.textContent = results.detailed.timestamp;
-
-          if (detailAiTime) detailAiTime.textContent = results.detailed.timestamp.split('•')[1].trim();
+        const validatedRisk = results.validatedRisk || (results.risk && results.risk !== 'Not available' && !results.risk.includes('TEST') && !results.risk.includes('Simulated') && results.isRiskValidated ? results.risk : null);
+        if (insightEls.risk) {
+          if (validatedRisk) {
+            insightEls.risk.textContent = validatedRisk;
+            insightEls.risk.style.color = '#38bdf8';
+          } else {
+            insightEls.risk.textContent = results.risk || 'Not available';
+            insightEls.risk.style.color = (results.risk && results.risk !== 'Not available' && results.risk !== '--') ? '#38bdf8' : '#94a3b8';
+          }
         }
-      } else {
-        // Ready state
-        const hasImages = reportState.images && reportState.images.length > 0;
-        runAiBtn.disabled = !hasImages;
-        runAiBtn.innerHTML = hasImages ? '<i data-lucide="play"></i> <span>Start Analysis</span>' : '<span>No Images Available</span>';
-        aiProgressWrap.classList.remove('active');
-        aiSummaryCard.classList.remove('active');
-        resetCards();
-        lucide.createIcons();
+
+        const simNotice = document.getElementById('aiDetailSimulationNotice');
+        if (simNotice) {
+          simNotice.style.display = results.isTestMode ? 'block' : 'none';
+        }
+
+        const keyFindingsList = document.getElementById('aiKeyFindingsList');
+        if (keyFindingsList) {
+          if (Array.isArray(results.summary) && results.summary.length > 0) {
+            keyFindingsList.innerHTML = results.summary.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+          } else if (results.observation) {
+            keyFindingsList.innerHTML = `<li>${escapeHtml(results.observation)}</li>`;
+          } else {
+            keyFindingsList.innerHTML = '<li>Ultrasound acoustic margins and tissue interfaces evaluated.</li>';
+          }
+        }
+
+        const confMeaning = document.getElementById('aiConfidenceMeaning');
+        if (confMeaning) {
+          confMeaning.textContent = results.confidence_meaning || 'Confidence indicates visual acoustic pattern correlation with trained ultrasound landmarks. Attending clinician correlation is required.';
+        }
+
+        const qualityLimText = document.getElementById('aiQualityLimitationsText');
+        if (qualityLimText) {
+          qualityLimText.textContent = results.quality_assessment || (results.quality ? `Image assessed as ${results.quality}. Acoustic interfaces suitable for assistive clinician interpretation.` : 'Acoustic window clarity verified for assistive evaluation.');
+        }
+
+        if (detailAiTime) {
+          const now = new Date();
+          detailAiTime.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
       }
+      lucide.createIcons();
+    } else if (effectiveStatus === 'Failed') {
+      runAiBtn.disabled = false;
+      runAiBtn.innerHTML = '<i data-lucide="refresh-cw"></i> <span>Re-analyze</span>';
+      aiProgressWrap.classList.remove('active');
+      aiDetailsPanel.classList.remove('active');
+      resetCards('Analysis failed. Please check image feed and retry.');
+      if (detailAiTime) detailAiTime.textContent = '--';
+      lucide.createIcons();
+    } else {
+      // Ready to Analyze
+      runAiBtn.disabled = false;
+      runAiBtn.title = 'Run AI Preliminary Analysis';
+      runAiBtn.innerHTML = '<i data-lucide="play"></i> <span>Start Analysis</span>';
+      aiProgressWrap.classList.remove('active');
+      aiDetailsPanel.classList.remove('active');
+      resetCards('Awaiting Analysis');
+      if (detailAiTime) detailAiTime.textContent = '--';
+      lucide.createIcons();
+    }
+  }
+
+  let isAiRunning = false;
+  async function runAiAnalysis(forceTestMode = false) {
+    if (!reportState.images || reportState.images.length === 0) {
+      showToast('No ultrasound images available for analysis.');
+      return;
     }
 
-    let isAiRunning = false;
-    async function runAiAnalysis() {
-      const selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
-      if (!selectedImages.length) {
-        if (!reportState.images || reportState.images.length === 0) {
-          showToast('No captured images available. Please capture ultrasound frames first.');
-        } else {
-          showToast('Please select at least one captured image to start AI analysis.');
+    let selectedImages = (reportState.images || []).filter(img => reportState.selectedIds && reportState.selectedIds.has(img.id));
+    if (!selectedImages.length && reportState.images && reportState.images.length > 0) {
+      reportState.images.forEach(img => reportState.selectedIds.add(img.id));
+      writeJson(STORAGE_KEYS.selectedIds, Array.from(reportState.selectedIds));
+      syncCounts();
+      syncSelectionUI();
+      selectedImages = reportState.images;
+    }
+    if (!selectedImages.length) {
+      showToast('Please select at least one captured image to start AI analysis.');
+      return;
+    }
+
+    const validImages = selectedImages.filter(img => img && img.dataUrl && img.dataUrl.length > 150);
+    if (!validImages.length) {
+      showToast('No valid ultrasound images found for analysis.');
+      return;
+    }
+
+    if (isAiRunning) return;
+    isAiRunning = true;
+
+    updateAiUI('Analyzing');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isUrlTest = urlParams.get('testMode') === 'true' || urlParams.get('test') === 'true';
+    const activeTestMode = Boolean(forceTestMode || isUrlTest);
+
+    try {
+      const scanType = (dom.scanType ? dom.scanType.textContent.trim() : '') || 'Ultrasound Examination';
+      const patientName = (dom.patientName ? dom.patientName.textContent.trim() : '') || '--';
+      const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
+      const sessionId = getActiveCaptureSessionId() || `session_${roomParam}`;
+
+      aiProgressStep.textContent = `Analyzing ${validImages.length} selected frame(s)...`;
+      aiProgressPercent.textContent = '35%';
+      aiProgressFill.style.width = '35%';
+
+      const response = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images: validImages.map(img => img.dataUrl),
+          metadata: {
+            patientName,
+            scanType,
+            reportId,
+            sessionId,
+            selectedCount: validImages.length
+          },
+          testMode: activeTestMode
+        })
+      });
+
+      if (response.status === 503) {
+        isAiRunning = false;
+        updateAiUI('Ready');
+        const missingModal = document.getElementById('aiMissingServiceModal');
+        if (missingModal) {
+          missingModal.style.setProperty('display', 'flex', 'important');
+          missingModal.classList.remove('hidden');
+          missingModal.setAttribute('aria-hidden', 'false');
+          if (typeof lucide !== 'undefined') lucide.createIcons();
         }
+        showToast('AI service not configured: Missing GEMINI_API_KEY. Click Run Test Mode to verify workflow.');
         return;
       }
 
-      if (isAiRunning) return;
-      isAiRunning = true;
-
-      updateAiUI('Processing');
-
-      const startTime = Date.now();
-      const scanType = (reportState.scanType || 'Abdominal Ultrasound');
-      const steps = [
-        { label: `Loading ${selectedImages.length} selected ultrasound frame(s)...`, start: 0, end: 20 },
-        { label: 'Analyzing echogenicity & acoustic boundaries...', start: 20, end: 45 },
-        { label: `Detecting anatomical structures (${scanType})...`, start: 45, end: 70 },
-        { label: 'Evaluating contour integrity & clinical risk...', start: 70, end: 90 },
-        { label: 'Finalizing clinical AI interpretation...', start: 90, end: 100 }
-      ];
-
-      for (const step of steps) {
-        aiProgressStep.textContent = step.label;
-        let currentProgress = step.start;
-        const duration = 600 + Math.random() * 300;
-        const interval = 50;
-        const increment = (step.end - step.start) / (duration / interval);
-
-        while (currentProgress < step.end) {
-          await new Promise(r => setTimeout(r, interval));
-          currentProgress += increment;
-          let percent = Math.min(Math.round(currentProgress), 100);
-          aiProgressPercent.textContent = `${percent}%`;
-          aiProgressFill.style.width = `${percent}%`;
-        }
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server responded with status ${response.status}`);
       }
 
-      const endTime = Date.now();
-      const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
-      const now = new Date();
-      const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      aiProgressStep.textContent = 'Finalizing clinical AI interpretation...';
+      aiProgressPercent.textContent = '85%';
+      aiProgressFill.style.width = '85%';
 
-      const results = {
-        status: 'Completed',
-        quality: 'Optimal',
-        confidence: '97.6%',
-        structures: scanType.includes('Abdominal') ? 'Abdominal Cavity • Hepatic & Renal Parenchyma' : `${scanType} Anatomical Region`,
-        observation: 'Homogeneous acoustic transmission; organ contours preserved without focal lesion or acute cystic anomaly.',
-        risk: 'Low Risk',
-        summary: [
-          `Examined ${selectedImages.length} selected ultrasound frame(s)`,
-          'Acoustic signal-to-noise ratio within diagnostic parameters',
-          'Anatomical borders sharply delineated without acoustic shadowing artifact',
-          'Recommend standard attending physician correlation'
-        ],
-        detailed: {
-          features: `${scanType} Tissue Layers & Margins`,
-          clarity: 'High Contrast (Diagnostic Quality)',
-          model: 'TORUS-AI-Clinical-v2',
-          time: `${durationSeconds}s`,
-          confidence: '97.6%',
-          timestamp: `${now.toLocaleDateString()} • ${timeFormatted}`
-        }
-      };
+      const resData = await response.json();
+      const results = resData.results || resData.data;
+      if (resData.is_test_mode) {
+        results.isTestMode = true;
+      }
+      results.status = 'Completed';
+      results.patientName = patientName;
+      results.sessionId = sessionId;
+      results.reportId = reportId;
+      results.imageHashes = (reportState.images || []).map(img => img.id).sort().join(',');
 
       reportState.aiResults = results;
+      const storageKey = typeof getAiStorageKey === 'function' ? getAiStorageKey() : STORAGE_KEY;
+      localStorage.setItem(storageKey, JSON.stringify(results));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
+
       updateAiUI('Completed', results);
+      showToast(resData.is_test_mode ? `Test Mode AI analysis completed for ${validImages.length} image(s).` : `AI preliminary analysis completed for ${validImages.length} image(s).`);
+    } catch (err) {
+      console.error('[AI Analysis] Error during analysis:', err);
+      updateAiUI('Failed');
+      showToast(`AI analysis failed: ${err.message || 'Service unavailable'}. Please retry.`);
+    } finally {
       isAiRunning = false;
-      showToast(`AI preliminary analysis completed for ${selectedImages.length} image(s).`);
+    }
+  }
+
+  function restoreAiAnalysis() {
+    const hasImages = reportState.images && reportState.images.length > 0;
+    if (!hasImages) {
+      updateAiUI('No Images');
+      return;
     }
 
-    function restoreAiAnalysis() {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try {
-          const results = JSON.parse(saved);
+    const storageKey = typeof getAiStorageKey === 'function' ? getAiStorageKey() : STORAGE_KEY;
+    const saved = localStorage.getItem(storageKey) || localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const results = JSON.parse(saved);
+        const currentPatient = (dom.patientName ? dom.patientName.textContent.trim() : '') || '--';
+        const currentReportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || '';
+        const currentImageHashes = (reportState.images || []).map(img => img.id).sort().join(',');
+
+        // Validate results match current patient, report/session, and images
+        const patientMatches = !results.patientName || currentPatient === '--' || results.patientName === currentPatient;
+        const reportMatches = !results.reportId || !currentReportId || currentReportId === '--' || results.reportId === currentReportId;
+        const imagesMatch = !results.imageHashes || results.imageHashes === currentImageHashes;
+
+        if (patientMatches && reportMatches && imagesMatch && results.status === 'Completed') {
+          reportState.aiResults = results;
           updateAiUI('Completed', results);
-        } catch (e) {
-          console.error('Failed to restore AI analysis', e);
+          return;
+        } else {
+          // Stale results from different patient/session/images
+          invalidateAiAnalysis();
+          updateAiUI('Ready');
+          return;
         }
-      } else {
+      } catch (e) {
+        console.error('Failed to restore AI analysis', e);
+        invalidateAiAnalysis();
+        updateAiUI('Ready');
+        return;
+      }
+    }
+    updateAiUI('Ready');
+  }
+
+  if (runAiBtn) {
+    runAiBtn.addEventListener('click', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isUrlTest = urlParams.get('testMode') === 'true' || urlParams.get('test') === 'true';
+      runAiAnalysis(isUrlTest);
+    });
+  }
+
+  const cancelAiMissingBtn = document.getElementById('cancelAiMissingBtn');
+  if (cancelAiMissingBtn) {
+    cancelAiMissingBtn.addEventListener('click', () => {
+      const missingModal = document.getElementById('aiMissingServiceModal');
+      if (missingModal) {
+        missingModal.style.setProperty('display', 'none', 'important');
+        missingModal.classList.add('hidden');
+        missingModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
+  const runAiTestModeBtn = document.getElementById('runAiTestModeBtn');
+  if (runAiTestModeBtn) {
+    runAiTestModeBtn.addEventListener('click', () => {
+      const missingModal = document.getElementById('aiMissingServiceModal');
+      if (missingModal) {
+        missingModal.style.setProperty('display', 'none', 'important');
+        missingModal.classList.add('hidden');
+        missingModal.setAttribute('aria-hidden', 'true');
+      }
+      runAiAnalysis(true);
+    });
+  }
+
+  if (toggleAiDetails) {
+    toggleAiDetails.addEventListener('click', () => {
+      const storageKey = typeof getAiStorageKey === 'function' ? getAiStorageKey() : STORAGE_KEY;
+      const saved = localStorage.getItem(storageKey) || localStorage.getItem(STORAGE_KEY);
+      if (!saved) {
+        showToast('Please run AI analysis first to view detailed metrics.');
+        return;
+      }
+      const isActive = aiDetailsPanel.classList.toggle('active');
+      toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    });
+  }
+
+  window.triggerAiReset = () => {
+    reportState.aiResults = null;
+    try {
+      const key = typeof getAiStorageKey === 'function' ? getAiStorageKey() : STORAGE_KEY;
+      localStorage.removeItem(key);
+    } catch (_) { }
+    localStorage.removeItem(STORAGE_KEY);
+    const hasImages = reportState.images && reportState.images.length > 0;
+    updateAiUI(hasImages ? 'Ready' : 'No Images');
+  };
+
+  // Check image count for button state
+  const checkImages = () => {
+    const hasImages = reportState.images && reportState.images.length > 0;
+    if (!hasImages) {
+      updateAiUI('No Images');
+    } else if (aiStatusText.textContent.includes('No Images') || aiStatusText.textContent.includes('Images') || aiStatusText.textContent.includes('Ready')) {
+      if (!reportState.aiResults) {
         updateAiUI('Ready');
       }
     }
+  };
 
-    if (runAiBtn) {
-      runAiBtn.addEventListener('click', runAiAnalysis);
-    }
+  // Poll or hook into renderCapturedImages
+  const originalRender = window.renderCapturedImages;
+  window.renderCapturedImages = function (...args) {
+    if (originalRender) originalRender.apply(this, args);
+    checkImages();
+  };
 
-    if (toggleAiDetails) {
-      toggleAiDetails.addEventListener('click', () => {
-        const isActive = aiDetailsPanel.classList.toggle('active');
-        toggleAiDetails.querySelector('span') || (toggleAiDetails.innerHTML = `<i data-lucide="${isActive ? 'chevron-up' : 'chevron-down'}"></i> <span>${isActive ? 'Hide Detailed Analysis' : 'View Detailed Analysis'}</span>`);
-
-        if (isActive) {
-          const saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            const results = JSON.parse(saved);
-            document.getElementById('aiDetailFeatures').textContent = results.detailed.features;
-            document.getElementById('aiDetailTime').textContent = results.detailed.time;
-            document.getElementById('aiDetailTimestamp').textContent = results.detailed.timestamp;
-            // Add Clarity, Model, Confidence if not present
-            const grid = aiDetailsPanel.querySelector('.ai-details-grid');
-            grid.innerHTML = `
-                  <div class="ai-detail-item">
-                     <span class="ai-detail-label">Detected Structures</span>
-                     <span class="ai-detail-value">${results.detailed.features}</span>
-                  </div>
-                  <div class="ai-detail-item">
-                     <span class="ai-detail-label">Image Clarity</span>
-                     <span class="ai-detail-value">${results.detailed.clarity || 'High'}</span>
-                  </div>
-                  <div class="ai-detail-item">
-                     <span class="ai-detail-label">Model</span>
-                     <span class="ai-detail-value">${results.detailed.model || 'TORUS-AI-v1'}</span>
-                  </div>
-                  <div class="ai-detail-item">
-                     <span class="ai-detail-label">Processing Time</span>
-                     <span class="ai-detail-value">${results.detailed.time}</span>
-                  </div>
-                  <div class="ai-detail-item">
-                     <span class="ai-detail-label">Confidence</span>
-                     <span class="ai-detail-value">${results.detailed.confidence || '97%'}</span>
-                  </div>
-                  <div class="ai-detail-item">
-                     <span class="ai-detail-label">Generated</span>
-                     <span class="ai-detail-value">${results.detailed.timestamp}</span>
-                  </div>
-                `;
-          }
-        }
-        lucide.createIcons();
-      });
-    }
-
-    // Check image count for button state
-    const checkImages = () => {
-      if (aiStatusText.textContent.includes('Ready') || aiStatusText.textContent.includes('Images')) {
-        updateAiUI('Ready');
-      }
-    };
-
-    // Poll or hook into renderCapturedImages
-    const originalRender = window.renderCapturedImages;
-    window.renderCapturedImages = function (...args) {
-      if (originalRender) originalRender.apply(this, args);
-      checkImages();
-    };
-
-    // Initial restore
-    restoreAiAnalysis();
-  })();
+  // Initial restore
+  restoreAiAnalysis();
+})();

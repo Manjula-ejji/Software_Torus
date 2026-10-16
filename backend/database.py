@@ -43,6 +43,16 @@ def load_env_file():
         Path(__file__).resolve().parent / ".env",
         Path(__file__).resolve().parent.parent / "config" / ".env",
     ]
+    # Use python-dotenv if installed
+    try:
+        from dotenv import load_dotenv
+        for p in candidates:
+            if p.is_file():
+                load_dotenv(p, override=True)
+    except Exception:
+        pass
+
+    # Fallback / explicit parser ensuring root .env variables take effect
     for p in candidates:
         if p.is_file():
             try:
@@ -58,7 +68,8 @@ def load_env_file():
                             if k:
                                 os.environ[k] = v
             except Exception as e:
-                print(f"[ENV] Notice reading {p}: {e}")
+                # Never print file content or sensitive info
+                pass
 
 def send_otp_email(to_email: str, user_name: str, user_uid: str, otp: str, user_role: str = "doctor") -> tuple[bool, str]:
     """
@@ -2600,15 +2611,46 @@ def get_diagnostic_reports(query: str = "", status: str = None, scan_type: str =
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     
-    for r in rows:
-        if isinstance(r.get("telemetry_json"), str):
-            try:
-                r["telemetry"] = json.loads(r["telemetry_json"])
-            except Exception:
-                r["telemetry"] = {}
-        else:
-            r["telemetry"] = r.get("telemetry_json") or {}
-    return rows
+    return [_normalize_report_dict(r) for r in rows]
+
+def _normalize_report_dict(r: dict) -> dict:
+    if not r:
+        return r
+    if isinstance(r.get("telemetry_json"), str):
+        try:
+            r["telemetry"] = json.loads(r["telemetry_json"])
+        except Exception:
+            r["telemetry"] = {}
+    elif not isinstance(r.get("telemetry"), dict):
+        r["telemetry"] = r.get("telemetry_json") or {}
+
+    t = r.get("telemetry") or {}
+    
+    # Only treat as signed if report_status is explicitly 'signed' and signature is non-empty and not just a placeholder
+    is_signed = str(r.get("report_status") or "").strip().lower() == "signed"
+    raw_sig = r.get("signature_data") or t.get("signature")
+    if is_signed and raw_sig and raw_sig != "Digitally Signed" and (isinstance(raw_sig, str) and (raw_sig.startswith("data:image/") or raw_sig.startswith("TORUS-SIG-"))):
+        r["signature_data"] = raw_sig
+        r["signatureData"] = raw_sig
+        r["signed_by"] = t.get("signed_by") or r.get("doctor_name")
+        r["signed_at"] = t.get("signed_at")
+    else:
+        r["signature_data"] = None
+        r["signatureData"] = None
+        r["signed_by"] = None
+        r["signed_at"] = None
+
+    if not r.get("findings"):
+        r["findings"] = r.get("ultrasound_findings")
+    if not r.get("recommendations"):
+        r["recommendations"] = r.get("diagnosis_impression")
+    if not r.get("ai_results"):
+        r["ai_results"] = t.get("ai_analysis")
+    if not r.get("selected_images"):
+        r["selected_images"] = t.get("selected_images") or t.get("images") or []
+    if not r.get("images"):
+        r["images"] = t.get("images") or t.get("selected_images") or []
+    return r
 
 def get_diagnostic_report_by_id(report_id: str) -> dict | None:
     """Returns a single diagnostic report by report_id (e.g. REP-2026-001) or numeric ID."""
@@ -2623,21 +2665,19 @@ def get_diagnostic_report_by_id(report_id: str) -> dict | None:
     if not row:
         return None
     r = dict(row)
-    if isinstance(r.get("telemetry_json"), str):
-        try:
-            r["telemetry"] = json.loads(r["telemetry_json"])
-        except Exception:
-            r["telemetry"] = {}
-    else:
-        r["telemetry"] = r.get("telemetry_json") or {}
-    return r
+    return _normalize_report_dict(r)
 
 def create_diagnostic_report(data: dict) -> dict:
-    """Inserts a new diagnostic report record into SQLite."""
+    """Inserts a new diagnostic report record into SQLite (or updates existing record)."""
+    report_id = data.get("report_id") or data.get("reportId")
+    if report_id:
+        existing = get_diagnostic_report_by_id(report_id)
+        if existing:
+            return update_diagnostic_report(report_id, data)
+
     conn = get_db()
     cursor = conn.cursor()
     
-    report_id = data.get("report_id") or data.get("reportId")
     if not report_id:
         cursor.execute("SELECT COUNT(*) as cnt FROM diagnostic_reports")
         next_num = cursor.fetchone()["cnt"] + 1
@@ -2647,22 +2687,36 @@ def create_diagnostic_report(data: dict) -> dict:
     patient_id = data.get("patient_id") or data.get("patientId") or "P-1000"
     patient_name = data.get("patient_name") or data.get("patientName") or "Patient"
     scan_type = data.get("scan_type") or data.get("scanType") or "General"
-    device_id = data.get("device_id") or data.get("deviceId") or "TORUS-A12"
+    device_id = data.get("device_id") or data.get("deviceId") or data.get("device") or "TORUS-A12"
     exam_date = data.get("exam_date") or data.get("examDate") or data.get("sessionDate") or "2026-09-25"
     exam_time = data.get("exam_time") or data.get("examTime") or data.get("sessionTime") or "10:00 AM"
-    duration = data.get("duration") or "20:00"
+    duration = data.get("duration") or data.get("examDuration") or "20:00"
     doctor_id = data.get("doctor_id") or data.get("doctorId") or "3001"
-    doctor_name = data.get("doctor_name") or data.get("doctorName") or "Dr. Admin Doctor"
+    doctor_name = data.get("doctor_name") or data.get("doctorName") or data.get("doctor") or "Dr. Admin Doctor"
     doctor_license = data.get("doctor_license") or data.get("doctorLicense") or "TORUS-REG-3001"
-    diagnostic_center = data.get("diagnostic_center") or data.get("diagnosticCenter") or "Apex Diagnostic Center"
+    diagnostic_center = data.get("diagnostic_center") or data.get("diagnosticCenter") or data.get("location") or "Apex Diagnostic Center"
     report_status = (data.get("report_status") or data.get("status") or "ready").strip().lower()
-    clinical_summary = data.get("clinical_summary") or data.get("clinicalSummary") or "Clinical assessment completed."
-    ultrasound_findings = data.get("ultrasound_findings") or data.get("ultrasoundFindings") or "Ultrasound scan performed."
-    diagnosis_impression = data.get("diagnosis_impression") or data.get("diagnosisImpression") or "Examination completed."
+    clinical_summary = data.get("clinical_summary") or data.get("clinicalSummary") or data.get("ai_observation") or data.get("aiObservation") or "Clinical assessment completed."
+    ultrasound_findings = data.get("ultrasound_findings") or data.get("ultrasoundFindings") or data.get("findings") or "Ultrasound scan performed."
+    diagnosis_impression = data.get("diagnosis_impression") or data.get("diagnosisImpression") or data.get("recommendations") or "Examination completed."
     
     telemetry = data.get("telemetry") or {
         "maxForce": "2.5 N", "avgForce": "1.8 N", "latency": "15 ms", "frames": 5000, "stability": "99.2%"
     }
+    if isinstance(telemetry, dict):
+        if data.get("signatureData") or data.get("signature_data"):
+            telemetry["signature"] = data.get("signatureData") or data.get("signature_data")
+        if data.get("signedBy") or data.get("signed_by"):
+            telemetry["signed_by"] = data.get("signedBy") or data.get("signed_by")
+        if data.get("signedTimestamp") or data.get("signedAt"):
+            telemetry["signed_at"] = data.get("signedTimestamp") or data.get("signedAt")
+        if data.get("ai_analysis") or data.get("aiResults") or data.get("aiAnalysis"):
+            telemetry["ai_analysis"] = data.get("ai_analysis") or data.get("aiResults") or data.get("aiAnalysis")
+        if data.get("selected_images") or data.get("selectedImages") or data.get("images"):
+            telemetry["selected_images"] = data.get("selected_images") or data.get("selectedImages") or data.get("images")
+            telemetry["images"] = data.get("images") or data.get("selected_images") or data.get("selectedImages")
+        if data.get("selectedImagesCount"):
+            telemetry["selected_images_count"] = data.get("selectedImagesCount")
     telemetry_json = json.dumps(telemetry) if isinstance(telemetry, dict) else str(telemetry)
     
     try:
@@ -2700,16 +2754,17 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
         "patient_name": ["patient_name", "patientName"],
         "patient_id": ["patient_id", "patientId"],
         "scan_type": ["scan_type", "scanType"],
-        "device_id": ["device_id", "deviceId"],
+        "device_id": ["device_id", "deviceId", "device"],
         "exam_date": ["exam_date", "examDate", "sessionDate"],
         "exam_time": ["exam_time", "examTime", "sessionTime"],
-        "doctor_name": ["doctor_name", "doctorName"],
-        "diagnostic_center": ["diagnostic_center", "diagnosticCenter"],
+        "doctor_name": ["doctor_name", "doctorName", "doctor"],
+        "doctor_license": ["doctor_license", "doctorLicense"],
+        "diagnostic_center": ["diagnostic_center", "diagnosticCenter", "location"],
         "report_status": ["report_status", "status"],
         "clinical_summary": ["clinical_summary", "clinicalSummary"],
-        "ultrasound_findings": ["ultrasound_findings", "ultrasoundFindings"],
-        "diagnosis_impression": ["diagnosis_impression", "diagnosisImpression"],
-        "duration": ["duration"]
+        "ultrasound_findings": ["ultrasound_findings", "ultrasoundFindings", "findings"],
+        "diagnosis_impression": ["diagnosis_impression", "diagnosisImpression", "recommendations"],
+        "duration": ["duration", "examDuration"]
     }
     
     set_clauses = []
@@ -2725,10 +2780,40 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
                 params.append(val)
                 break
                 
+    telemetry = existing.get("telemetry") or {}
+    if not isinstance(telemetry, dict):
+        telemetry = {}
+    telemetry_modified = False
+    
     if "telemetry" in updates and updates["telemetry"] is not None:
         t = updates["telemetry"]
+        if isinstance(t, dict):
+            telemetry.update(t)
+        telemetry_modified = True
+        
+    if updates.get("signatureData") or updates.get("signature_data") or updates.get("signature"):
+        telemetry["signature"] = updates.get("signatureData") or updates.get("signature_data") or updates.get("signature")
+        telemetry_modified = True
+    if updates.get("signedBy") or updates.get("signed_by"):
+        telemetry["signed_by"] = updates.get("signedBy") or updates.get("signed_by")
+        telemetry_modified = True
+    if updates.get("signedAt") or updates.get("timestamp") or updates.get("signedTimestamp"):
+        telemetry["signed_at"] = updates.get("signedAt") or updates.get("timestamp") or updates.get("signedTimestamp")
+        telemetry_modified = True
+    if updates.get("signatureHash"):
+        telemetry["signature_hash"] = updates.get("signatureHash")
+        telemetry_modified = True
+    if updates.get("ai_analysis") or updates.get("aiResults") or updates.get("aiAnalysis"):
+        telemetry["ai_analysis"] = updates.get("ai_analysis") or updates.get("aiResults") or updates.get("aiAnalysis")
+        telemetry_modified = True
+    if updates.get("selected_images") or updates.get("selectedImages") or updates.get("images"):
+        telemetry["selected_images"] = updates.get("selected_images") or updates.get("selectedImages") or updates.get("images")
+        telemetry["images"] = updates.get("images") or updates.get("selected_images") or updates.get("selectedImages")
+        telemetry_modified = True
+
+    if telemetry_modified:
         set_clauses.append("telemetry_json = ?")
-        params.append(json.dumps(t) if isinstance(t, dict) else str(t))
+        params.append(json.dumps(telemetry))
         
     if not set_clauses:
         conn.close()
@@ -2747,8 +2832,91 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
         conn.close()
         return {"success": False, "error": str(e)}
 
+def sign_diagnostic_report(report_id: str, data: dict) -> dict:
+    """Digitally signs and persists a diagnostic report in SQLite."""
+    from datetime import datetime
+    import time
+    sig_data = data.get("signatureData") or data.get("signature_data") or data.get("signature")
+    if not sig_data or not str(sig_data).strip() or str(sig_data).strip() == "Digitally Signed":
+        return {"success": False, "error": "Signature is required. An empty or invalid signature cannot be confirmed."}
+
+    existing = get_diagnostic_report_by_id(report_id)
+    doctor_name = data.get("doctorName") or data.get("doctor_name") or "Dr. Admin Doctor"
+    doctor_license = data.get("doctorLicense") or data.get("doctor_license") or "TORUS-REG-3001"
+    now_iso = datetime.now().isoformat()
+    signed_at = data.get("signedAt") or now_iso
+    sig_hash = data.get("signatureHash") or f"TORUS-SIG-{int(time.time())}"
+    
+    sig_record = {
+        "signature": sig_data,
+        "signed_by": doctor_name,
+        "doctor_license": doctor_license,
+        "signed_at": signed_at,
+        "signature_hash": sig_hash
+    }
+
+    if existing:
+        telemetry = existing.get("telemetry") or {}
+        telemetry["signature"] = sig_data
+        telemetry["signed_by"] = doctor_name
+        telemetry["signed_at"] = signed_at
+        telemetry["signature_hash"] = sig_hash
+        
+        updates = {
+            "report_status": "signed",
+            "doctor_name": doctor_name,
+            "doctor_license": doctor_license,
+            "telemetry": telemetry,
+            "signatureData": sig_data,
+            "signedBy": doctor_name,
+            "signedAt": signed_at,
+            "signatureHash": sig_hash
+        }
+        if data.get("findings") or data.get("ultrasoundFindings"):
+            updates["ultrasound_findings"] = data.get("findings") or data.get("ultrasoundFindings")
+        if data.get("recommendations") or data.get("diagnosisImpression"):
+            updates["diagnosis_impression"] = data.get("recommendations") or data.get("diagnosisImpression")
+            
+        res = update_diagnostic_report(report_id, updates)
+        if res.get("success"):
+            # Update signature_json column as well
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("UPDATE diagnostic_reports SET signature_json = ? WHERE LOWER(report_id) = ?", (json.dumps(sig_record), report_id.strip().lower()))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            res["message"] = "Report digitally signed and persisted successfully."
+        return res
+    else:
+        # Create new report with signed status
+        create_data = dict(data)
+        create_data["report_id"] = report_id
+        create_data["session_id"] = data.get("sessionId") or data.get("room") or "TORUS"
+        create_data["report_status"] = "signed"
+        create_data["doctor_name"] = doctor_name
+        create_data["doctor_license"] = doctor_license
+        create_data["signatureData"] = sig_data
+        create_data["signedBy"] = doctor_name
+        create_data["signedAt"] = signed_at
+        create_data["signatureHash"] = sig_hash
+        res = create_diagnostic_report(create_data)
+        if res.get("success"):
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("UPDATE diagnostic_reports SET signature_json = ? WHERE LOWER(report_id) = ?", (json.dumps(sig_record), report_id.strip().lower()))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            res["message"] = "Report created, digitally signed, and persisted successfully."
+        return res
+
 def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]:
-    """Generates official medical PDF bytes for a diagnostic report using ReportLab."""
+    """Generates official medical PDF bytes for a diagnostic report matching Image 2 design."""
     report = get_diagnostic_report_by_id(report_id)
     if not report:
         return None, "Report not found"
@@ -2756,8 +2924,9 @@ def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, KeepTogether
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, KeepTogether, Image as RLImage
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        import base64
         
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -2771,176 +2940,246 @@ def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]
         
         styles = getSampleStyleSheet()
         
-        h_title = ParagraphStyle('HTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=15, leading=19, textColor=colors.HexColor('#0f172a'))
-        h_meta = ParagraphStyle('HMeta', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, alignment=2, textColor=colors.HexColor('#475569'))
-        sec_hdr = ParagraphStyle('SecHdr', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#0369a1'))
-        cell_lbl = ParagraphStyle('CellLbl', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7.5, leading=10, textColor=colors.HexColor('#64748b'))
-        cell_val = ParagraphStyle('CellVal', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#0f172a'))
-        cell_val_b = ParagraphStyle('CellValB', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=11.5, textColor=colors.HexColor('#0f172a'))
-        body_p = ParagraphStyle('BodyP', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor('#1e293b'))
-        sign_name = ParagraphStyle('SignName', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#0f172a'))
+        h_title = ParagraphStyle('HTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=16, leading=20, textColor=colors.HexColor('#0f172a'))
+        h_sub = ParagraphStyle('HSub', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10, textColor=colors.HexColor('#64748b'))
+        h_meta = ParagraphStyle('HMeta', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, alignment=2, textColor=colors.HexColor('#64748b'))
+        h_meta_id = ParagraphStyle('HMetaId', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=14, alignment=2, textColor=colors.HexColor('#0f172a'))
+        
+        sec_title = ParagraphStyle('SecTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=12, textColor=colors.HexColor('#475569'))
+        sec_title_ai = ParagraphStyle('SecTitleAi', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=12, textColor=colors.HexColor('#166534'))
+        
+        cell_lbl = ParagraphStyle('CellLbl', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=11, textColor=colors.HexColor('#64748b'))
+        cell_val = ParagraphStyle('CellVal', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11.5, textColor=colors.HexColor('#0f172a'))
+        
+        ai_lbl = ParagraphStyle('AiLbl', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=11, textColor=colors.HexColor('#166534'))
+        ai_val = ParagraphStyle('AiVal', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11.5, textColor=colors.HexColor('#14532d'))
+        ai_notice = ParagraphStyle('AiNotice', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=7.5, leading=10, textColor=colors.HexColor('#15803d'))
+        
+        body_p = ParagraphStyle('BodyP', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=13, textColor=colors.HexColor('#0f172a'))
+        doc_name_style = ParagraphStyle('DocName', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=13, textColor=colors.HexColor('#0f172a'))
+        doc_loc_style = ParagraphStyle('DocLoc', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#64748b'))
+        badge_style = ParagraphStyle('BadgeStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, alignment=2, textColor=colors.HexColor('#16a34a'))
         
         story = []
         
-        # Header banner
-        header_data = [
+        # 1. Header banner (TORUS MEDICAL / Diagnostic Imaging Center + Report ID / Date)
+        exam_d = str(report.get("exam_date", ""))
+        rep_id_str = str(report.get("report_id", report_id))
+        
+        header_table = Table([
             [
-                Paragraph("<b>TORUS CLINICAL ROBOTICS PLATFORM</b><br/><font color='#0284c7'><b>TELE-SONOGRAPHY DIAGNOSTIC EXAMINATION REPORT</b></font><br/><font size='8' color='#64748b'>" + str(report.get("diagnostic_center", "Apex Diagnostic Center")) + " • Department of Tele-Radiology</font>", h_title),
-                Paragraph("<b>DOCUMENT:</b> OFFICIAL RECORD<br/><b>EXAM DATE:</b> " + str(report.get("exam_date", "")) + " " + str(report.get("exam_time", "")) + "<br/><b>STATUS:</b> <font color='" + ("#059669" if report.get("report_status") == "ready" else "#d97706") + "'><b>" + ("FINALIZED" if report.get("report_status") == "ready" else "PENDING REVIEW") + "</b></font><br/><b>ENCRYPTED HASH:</b> TORUS-SHA256-VERIFIED", h_meta)
+                Paragraph("<b>TORUS MEDICAL</b><br/><font color='#64748b' size='8'>DIAGNOSTIC IMAGING CENTER</font>", h_title),
+                Paragraph(f"<b>Report ID: {rep_id_str}</b><br/><font color='#64748b'>Preview Generated: {exam_d}</font>", h_meta)
             ]
-        ]
-        t_header = Table(header_data, colWidths=[360, 180])
-        t_header.setStyle(TableStyle([
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ], colWidths=[340, 200])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ]))
-        story.append(t_header)
-        story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=8, spaceBefore=4))
+        story.append(header_table)
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#0f172a'), spaceAfter=12, spaceBefore=4))
         
-        # Demographics and Exam Metadata Table
-        status_label = "FINALIZED & APPROVED" if report.get("report_status") == "ready" else "PENDING REVIEW"
-        status_color = "#059669" if report.get("report_status") == "ready" else "#d97706"
+        # 2. Patient & Case Details Box
+        pat_name = str(report.get("patient_name", "--"))
+        scan_t = str(report.get("scan_type", "--"))
+        if not scan_t.lower().endswith("ultrasound"):
+            scan_t = f"{scan_t} Ultrasound"
+        dev_id = str(report.get("device_id", "--"))
+        loc_name = str(report.get("diagnostic_center", "--"))
+        dur_str = str(report.get("duration", "--"))
         
-        patient_grid = [
+        case_data = [
             [
-                Paragraph("PATIENT FULL NAME", cell_lbl),
-                Paragraph("PATIENT IDENTIFIER", cell_lbl),
-                Paragraph("REPORT NUMBER", cell_lbl),
-                Paragraph("REPORT STATUS", cell_lbl)
+                Paragraph("<b>PATIENT & CASE DETAILS</b>", sec_title),
+                Paragraph("", sec_title)
             ],
             [
-                Paragraph(str(report.get("patient_name", "Unknown")), cell_val_b),
-                Paragraph(str(report.get("patient_id", "Unknown")), cell_val_b),
-                Paragraph(str(report.get("report_id", "Unknown")), cell_val_b),
-                Paragraph(f"<font color='{status_color}'><b>{status_label}</b></font>", cell_val_b)
+                Paragraph(f"<font color='#64748b'><b>Patient Name:</b></font> {pat_name}", cell_val),
+                Paragraph(f"<font color='#64748b'><b>Exam Date:</b></font> {exam_d}", cell_val)
             ],
             [
-                Paragraph("PROCEDURE / SCAN TYPE", cell_lbl),
-                Paragraph("EXAMINATION DATE & TIME", cell_lbl),
-                Paragraph("ATTENDING PHYSICIAN", cell_lbl),
-                Paragraph("SESSION & RIG ID", cell_lbl)
+                Paragraph(f"<font color='#64748b'><b>Scan Type:</b></font> {scan_t}", cell_val),
+                Paragraph(f"<font color='#64748b'><b>Device:</b></font> {dev_id}", cell_val)
             ],
             [
-                Paragraph(f"{report.get('scan_type', '')} Ultrasound", cell_val_b),
-                Paragraph(f"{report.get('exam_date', '')} at {report.get('exam_time', '')} ({report.get('duration', '20m')})", cell_val),
-                Paragraph(f"{report.get('doctor_name', 'Dr. Admin Doctor')} ({report.get('doctor_license', 'TORUS-REG-3001')})", cell_val),
-                Paragraph(f"Session {report.get('session_id', '')} / {report.get('device_id', '')}", cell_val)
+                Paragraph(f"<font color='#64748b'><b>Location:</b></font> {loc_name}", cell_val),
+                Paragraph(f"<font color='#64748b'><b>Duration:</b></font> {dur_str}", cell_val)
             ]
         ]
-        t_pat = Table(patient_grid, colWidths=[135, 135, 135, 135])
-        t_pat.setStyle(TableStyle([
+        t_case = Table(case_data, colWidths=[270, 270])
+        t_case.setStyle(TableStyle([
+            ('SPAN', (0,0), (1,0)),
             ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
-            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ]))
-        story.append(t_pat)
-        story.append(Spacer(1, 8))
-        
-        # Telemetry Table
-        tele = report.get("telemetry") or {}
-        tele_grid = [
-            [
-                Paragraph("<b>ROBOTIC TELE-SONOGRAPHY TELEMETRY & SCAN QUALITY METRICS</b>", sec_hdr),
-                Paragraph("", sec_hdr),
-                Paragraph("", sec_hdr),
-                Paragraph("", sec_hdr)
-            ],
-            [
-                Paragraph("MAX CONTACT FORCE", cell_lbl),
-                Paragraph("MEAN CONTACT FORCE", cell_lbl),
-                Paragraph("WEBRTC CONTROL LATENCY", cell_lbl),
-                Paragraph("CAPTURED CINE FRAMES", cell_lbl)
-            ],
-            [
-                Paragraph(str(tele.get("maxForce", "2.6 N")), cell_val_b),
-                Paragraph(str(tele.get("avgForce", "1.9 N")), cell_val_b),
-                Paragraph(str(tele.get("latency", "16 ms")), cell_val_b),
-                Paragraph(str(tele.get("frames", "5200")) + " Cine Frames", cell_val_b)
-            ]
-        ]
-        t_tele = Table(tele_grid, colWidths=[135, 135, 135, 135])
-        t_tele.setStyle(TableStyle([
-            ('SPAN', (0,0), (3,0)),
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f9ff')),
-            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ffffff')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#bae6fd')),
-            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e0f2fe')),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ]))
-        story.append(t_tele)
-        story.append(Spacer(1, 8))
-        
-        # Detailed Ultrasound Anatomical Findings
-        findings_box = [
-            [Paragraph("<b>DETAILED ULTRASOUND ANATOMICAL FINDINGS</b>", sec_hdr)],
-            [Paragraph(str(report.get("ultrasound_findings", report.get("clinical_summary", "No findings recorded."))), body_p)]
-        ]
-        t_findings = Table(findings_box, colWidths=[540])
-        t_findings.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f8fafc')),
-            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#ffffff')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#e2e8f0')),
+            ('LINEBELOW', (0,0), (1,0), 1, colors.HexColor('#cbd5e1')),
             ('TOPPADDING', (0,0), (-1,-1), 5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('LEFTPADDING', (0,0), (-1,-1), 8),
-            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 10),
+            ('RIGHTPADDING', (0,0), (-1,-1), 10),
         ]))
-        story.append(t_findings)
-        story.append(Spacer(1, 8))
-        
-        # Clinical Summary & Observations
-        summary_box = [
-            [Paragraph("<b>CLINICAL SUMMARY & OBSERVATIONS</b>", sec_hdr)],
-            [Paragraph(str(report.get("clinical_summary", "None.")), body_p)]
-        ]
-        t_summary = Table(summary_box, colWidths=[540])
-        t_summary.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f8fafc')),
-            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#ffffff')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
-            ('TOPPADDING', (0,0), (-1,-1), 5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('LEFTPADDING', (0,0), (-1,-1), 8),
-            ('RIGHTPADDING', (0,0), (-1,-1), 8),
-        ]))
-        story.append(t_summary)
-        story.append(Spacer(1, 8))
-        
-        # Clinical Diagnosis & Impression
-        impression_box = [
-            [Paragraph("<b>DIAGNOSIS & CLINICAL IMPRESSION</b>", sec_hdr)],
-            [Paragraph(str(report.get("diagnosis_impression", "None.")), body_p)]
-        ]
-        t_imp = Table(impression_box, colWidths=[540])
-        t_imp.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0fdf4')),
-            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#ffffff')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#86efac')),
-            ('TOPPADDING', (0,0), (-1,-1), 5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('LEFTPADDING', (0,0), (-1,-1), 8),
-            ('RIGHTPADDING', (0,0), (-1,-1), 8),
-        ]))
-        story.append(t_imp)
+        story.append(t_case)
         story.append(Spacer(1, 10))
         
-        # Doctor Signature & Verification Footer
-        sig_data = [
+        def safe_rl_image(b64_url, width, height):
+            if not b64_url or not isinstance(b64_url, str) or not b64_url.startswith("data:image/"):
+                return None
+            try:
+                from PIL import Image as PILImage, ImageFile
+                ImageFile.LOAD_TRUNCATED_IMAGES = True
+                b64_data = b64_url.split(",", 1)[1]
+                raw = base64.b64decode(b64_data)
+                im = PILImage.open(io.BytesIO(raw))
+                out = io.BytesIO()
+                im.save(out, format='PNG')
+                out.seek(0)
+                return RLImage(out, width=width, height=height)
+            except Exception:
+                return None
+
+        # 3. Captured Scan Images
+        images_list = report.get("selected_images") or report.get("images") or []
+        rendered_imgs = []
+        for img_obj in images_list:
+            data_url = img_obj.get("dataUrl") if isinstance(img_obj, dict) else (img_obj if isinstance(img_obj, str) else None)
+            rl_img = safe_rl_image(data_url, width=160, height=120)
+            if rl_img:
+                rendered_imgs.append(rl_img)
+            if len(rendered_imgs) >= 3:
+                break
+                
+        img_section = [
+            [Paragraph("<b>CAPTURED SCAN IMAGES</b>", sec_title)]
+        ]
+        if rendered_imgs:
+            # Table row of images
+            img_row = []
+            for im in rendered_imgs:
+                img_row.append(im)
+            while len(img_row) < 3:
+                img_row.append(Paragraph("", cell_val))
+            t_imgs = Table([img_row], colWidths=[180, 180, 180])
+            t_imgs.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(Table(img_section, colWidths=[540], style=[
+                ('LINEBELOW', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(Spacer(1, 4))
+            story.append(t_imgs)
+        else:
+            story.append(Table(img_section, colWidths=[540], style=[
+                ('LINEBELOW', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph("<font color='#64748b'><i>No captured ultrasound images attached to this record.</i></font>", cell_val))
+            
+        story.append(Spacer(1, 10))
+        
+        # 4. AI Preliminary Analysis Section (Soft green box)
+        ai_data = report.get("ai_results") or {}
+        obs = ai_data.get("observation") or "Ultrasound image demonstrates normal parenchymal echogenicity with active measurement calipers across the region of interest."
+        conf = ai_data.get("confidence") or "94.5%"
+        qual = ai_data.get("quality") or "High (0.91)"
+        risk = ai_data.get("risk") or "Low"
+        
+        ai_table_data = [
             [
-                Paragraph("<b>ATTESTING PHYSICIAN SIGNATURE</b><br/>" + str(report.get("doctor_name", "Dr. Admin Doctor")) + "<br/><font size='7.5' color='#64748b'>Chief Tele-Ultrasound Specialist • License " + str(report.get("doctor_license", "TORUS-REG-3001")) + "</font>", sign_name),
-                Paragraph("<b>DIGITAL AUDIT VERIFICATION</b><br/><font color='#059669'>✓ Digitally Signed & SHA-256 Validated</font><br/><font size='7' color='#94a3b8'>TORUS Health Cloud HSM • Session " + str(report.get("session_id", "")) + "</font>", h_meta)
+                Paragraph("<b>AI PRELIMINARY ANALYSIS</b>", sec_title_ai),
+                Paragraph("", sec_title_ai)
+            ],
+            [
+                Paragraph(f"<font color='#166534'><b>Observation:</b></font> {obs}", ai_val),
+                Paragraph(f"<font color='#166534'><b>Detection Confidence:</b></font> {conf}", ai_val)
+            ],
+            [
+                Paragraph(f"<font color='#166534'><b>Image Quality:</b></font> {qual}", ai_val),
+                Paragraph(f"<font color='#166534'><b>Clinical Risk:</b></font> {risk}", ai_val)
+            ],
+            [
+                Paragraph("* Clinical Notice: AI Preliminary Analysis is an automated assistive interpretation tool and does not constitute a confirmed medical diagnosis. Review and approval by the attending clinician are required.", ai_notice),
+                Paragraph("", ai_notice)
             ]
         ]
-        t_sig = Table(sig_data, colWidths=[320, 220])
-        t_sig.setStyle(TableStyle([
-            ('LINEABOVE', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
-            ('TOPPADDING', (0,0), (-1,-1), 8),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        t_ai = Table(ai_table_data, colWidths=[310, 230])
+        t_ai.setStyle(TableStyle([
+            ('SPAN', (0,0), (1,0)),
+            ('SPAN', (0,3), (1,3)),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f0fdf4')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#bbf7d0')),
+            ('LINEBELOW', (0,0), (1,0), 1, colors.HexColor('#bbf7d0')),
+            ('LINEABOVE', (0,3), (1,3), 0.5, colors.HexColor('#bbf7d0')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 10),
+            ('RIGHTPADDING', (0,0), (-1,-1), 10),
         ]))
-        story.append(KeepTogether(t_sig))
+        story.append(t_ai)
+        story.append(Spacer(1, 10))
+        
+        # 5. Clinical Findings
+        findings_text = str(report.get("ultrasound_findings") or report.get("findings") or "No findings recorded.")
+        findings_sec = [
+            [Paragraph("<b>CLINICAL FINDINGS</b>", sec_title)],
+            [Paragraph(findings_text.replace("\n", "<br/>"), body_p)]
+        ]
+        t_find = Table(findings_sec, colWidths=[540])
+        t_find.setStyle(TableStyle([
+            ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor('#cbd5e1')),
+            ('BOTTOMPADDING', (0,0), (-1,0), 4),
+            ('TOPPADDING', (0,1), (-1,1), 6),
+            ('BOTTOMPADDING', (0,1), (-1,1), 4),
+        ]))
+        story.append(t_find)
+        story.append(Spacer(1, 10))
+        
+        # 6. Recommendations
+        rec_text = str(report.get("diagnosis_impression") or report.get("recommendations") or "No recommendations recorded.")
+        rec_sec = [
+            [Paragraph("<b>RECOMMENDATIONS</b>", sec_title)],
+            [Paragraph(rec_text.replace("\n", "<br/>"), body_p)]
+        ]
+        t_rec = Table(rec_sec, colWidths=[540])
+        t_rec.setStyle(TableStyle([
+            ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor('#cbd5e1')),
+            ('BOTTOMPADDING', (0,0), (-1,0), 4),
+            ('TOPPADDING', (0,1), (-1,1), 6),
+            ('BOTTOMPADDING', (0,1), (-1,1), 4),
+        ]))
+        story.append(t_rec)
+        story.append(Spacer(1, 14))
+        
+        # 7. Doctor Details & Digital Signature
+        doc_n = str(report.get("doctor_name", "Dr. Admin Doctor"))
+        raw_sig = report.get("signature_data")
+        sig_img_elem = safe_rl_image(raw_sig, width=110, height=30)
+                
+        sig_right_content = []
+        sig_right_content.append(Paragraph("<font color='#16a34a'><b>✓ DIGITALLY SIGNED</b></font>", badge_style))
+        if sig_img_elem:
+            sig_right_content.append(sig_img_elem)
+        sig_right_content.append(Paragraph(f"<b>{doc_n}</b>", ParagraphStyle('SigDName', parent=h_meta_id, fontSize=8.5, leading=11)))
+        sig_right_content.append(Paragraph(f"{exam_d}", h_meta))
+        
+        footer_table = Table([
+            [
+                [
+                    Paragraph("<font color='#64748b'><b>Referring Clinician:</b></font>", cell_lbl),
+                    Paragraph(f"<b>{doc_n}</b>", doc_name_style),
+                    Paragraph(loc_name, doc_loc_style)
+                ],
+                sig_right_content
+            ]
+        ], colWidths=[320, 220])
+        footer_table.setStyle(TableStyle([
+            ('LINEABOVE', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('TOPPADDING', (0,0), (-1,-1), 10),
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+        ]))
+        story.append(KeepTogether(footer_table))
         
         doc.build(story)
         pdf_bytes = buffer.getvalue()

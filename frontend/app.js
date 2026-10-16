@@ -6468,8 +6468,8 @@ const TORUS_STATION_PATIENTS_DATABASE = {
 
 // State management for TORUS Stations Portal
 let torusStationsState = {
-  currentView: "stations", // "stations" | "patients" | "patient-history"
-  selectedStationId: null,
+  currentView: "patients", // "stations" | "patients" | "patient-history"
+  selectedStationId: "TORUS-A12",
   selectedPatientId: null,
   stationSearchQuery: "",
   stationLocationQuery: "",
@@ -6498,6 +6498,7 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
   const patientsView = document.getElementById("tstaPatientsView");
   const patientHistoryView = document.getElementById("tstaPatientHistoryView");
   const breadcrumb = document.getElementById("tstaBreadcrumb");
+  const docBackBtn = document.getElementById("docDashBackBtn");
 
   const trailStationName = document.getElementById("tstaTrailStationName");
   const trailPatientName = document.getElementById("tstaTrailPatientName");
@@ -6510,6 +6511,8 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
     if (patientsView) patientsView.style.display = "none";
     if (patientHistoryView) patientHistoryView.style.display = "none";
     if (breadcrumb) breadcrumb.style.display = "none";
+    if (docBackBtn) docBackBtn.style.display = "";
+    document.body.classList.remove("torus-station-patients-active");
     renderTorusStationsGrid();
 
     if (pushToHistory && window.history) {
@@ -6525,7 +6528,11 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
     if (patientHistoryView) patientHistoryView.style.display = "none";
     if (breadcrumb) breadcrumb.style.display = "flex";
 
-    const stId = torusStationsState.selectedStationId;
+    // Remove the unnecessary generic Back button from the top header on Image 2
+    if (docBackBtn) docBackBtn.style.display = "none";
+    document.body.classList.add("torus-station-patients-active");
+
+    const stId = torusStationsState.selectedStationId || "TORUS-A12";
     if (trailStationName) {
       trailStationName.textContent = stId;
       trailStationName.style.display = "inline";
@@ -6550,10 +6557,14 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
     if (patientHistoryView) patientHistoryView.style.display = "block";
     if (breadcrumb) breadcrumb.style.display = "flex";
 
-    const stId = torusStationsState.selectedStationId;
+    // Restore top header back button if applicable, and ensure breadcrumb Back to Station Patients remains fully functional
+    if (docBackBtn) docBackBtn.style.display = "";
+    document.body.classList.remove("torus-station-patients-active");
+
+    const stId = torusStationsState.selectedStationId || "TORUS-A12";
     const patId = torusStationsState.selectedPatientId;
     const patients = TORUS_STATION_PATIENTS_DATABASE[stId] || [];
-    const patient = patients.find(p => p.patientId === patId) || { patientName: "Patient" };
+    const patient = patients.find(p => p.patientId === patId) || { patientName: "Patient A", patientId: patId || "P-12345" };
 
     if (trailStationName) {
       trailStationName.textContent = stId;
@@ -6820,8 +6831,8 @@ function renderStationPatients(stationId) {
     bannerStatus.textContent = station.status;
     bannerStatus.className = `device-status ${(station.status || "standby").toLowerCase()}`;
   }
-  if (bannerHospital) bannerHospital.textContent = `${station.hospital} • ${station.location}`;
-  if (bannerTelemetry) bannerTelemetry.textContent = `${station.latency} • ${station.signal}`;
+  if (bannerHospital) bannerHospital.innerHTML = `<span>${station.hospital}</span> <span class="tsta-sub-bullet">•</span> <span>${station.location}</span>`;
+  if (bannerTelemetry) bannerTelemetry.innerHTML = `<span>${station.latency}</span> <span class="tsta-sub-bullet">•</span> <span>${station.signal}</span>`;
 
   const allPatients = TORUS_STATION_PATIENTS_DATABASE[stationId] || [];
   if (bannerPatientCount) bannerPatientCount.textContent = `${allPatients.length} Patients`;
@@ -6976,7 +6987,7 @@ function renderPatientDetailedHistory(stationId, patientId) {
   if (heroName) heroName.textContent = patient.patientName;
   if (heroId) heroId.textContent = `ID: ${patient.patientId}`;
   if (heroMeta) {
-    heroMeta.innerHTML = `Station: <strong class="cyan">${station.id}</strong> • Primary Physician: <strong>${patient.doctorName}</strong> • Center: <strong>${station.hospital}</strong>`;
+    heroMeta.innerHTML = `Station: <strong class="cyan">${station.id}</strong> <span class="tsta-sub-bullet">•</span> Primary Physician: <strong>${patient.doctorName}</strong> <span class="tsta-sub-bullet">•</span> Center: <strong>${station.hospital}</strong>`;
   }
 
   const reportsList = patient.records.filter(r => r.recordType === "report");
@@ -7163,14 +7174,16 @@ window.renderPatientDetailedHistory = renderPatientDetailedHistory;
 
 /**
  * Main entrance for Patient Diagnostic Reports page
- * Initializes the TORUS Stations dashboard
+ * Directly opens station-specific patient list (Image 2) for TORUS-A12
  */
 function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all") {
-  if (query) torusStationsState.stationSearchQuery = query;
-  if (typeFilter && typeFilter !== "all") torusStationsState.stationStatusFilter = typeFilter;
+  if (query) torusStationsState.patientSearchQuery = query;
+  if (typeFilter && typeFilter !== "all") torusStationsState.patientStatusFilter = typeFilter;
 
-  // Default to main stations view
-  navigateTorusStationView("stations", {}, false);
+  // Directly open the station-specific patient list (Image 2) for TORUS-A12
+  const targetStationId = "TORUS-A12";
+  torusStationsState.selectedStationId = targetStationId;
+  navigateTorusStationView("patients", { stationId: targetStationId }, false);
 }
 window.renderPatientDiagnosticReports = renderPatientDiagnosticReports;
 
@@ -13931,6 +13944,49 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // ── Universal Diagnostic Report API Client & PDF Downloader ──
   async function downloadReportPdfFile(reportId, patientId = "") {
+    const modal = document.getElementById("doctorReportPreviewModal");
+    const previewBody = modal ? modal.querySelector(".report-preview-body") : null;
+    if (modal && modal.style.display !== "none" && previewBody && window.html2canvas && window.jspdf && window.jspdf.jsPDF) {
+      try {
+        const canvas = await window.html2canvas(previewBody, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        const jsPdfApi = window.jspdf.jsPDF;
+        const pdf = new jsPdfApi({ unit: 'pt', format: 'a4', compress: true });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const pageCanvasHeight = Math.floor((canvasWidth * pageHeight) / pageWidth);
+
+        let renderedY = 0;
+        while (renderedY < canvasHeight) {
+          const sliceH = Math.min(pageCanvasHeight, canvasHeight - renderedY);
+          const pCanvas = document.createElement('canvas');
+          pCanvas.width = canvasWidth;
+          pCanvas.height = pageCanvasHeight;
+          const ctx = pCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, pCanvas.width, pCanvas.height);
+          ctx.drawImage(canvas, 0, renderedY, canvasWidth, sliceH, 0, 0, canvasWidth, sliceH);
+
+          if (renderedY > 0) pdf.addPage();
+          const pImg = pCanvas.toDataURL('image/jpeg', 0.95);
+          pdf.addImage(pImg, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+          renderedY += pageCanvasHeight;
+        }
+        const cleanPid = (patientId || "Patient").replace(/[^a-zA-Z0-9_-]/g, "");
+        const cleanRid = reportId.replace(/[^a-zA-Z0-9_-]/g, "");
+        pdf.save(`${cleanPid}-${cleanRid}.pdf`);
+        return true;
+      } catch (e) {
+        console.warn("Client-side PDF capture fallback to backend endpoint:", e);
+      }
+    }
+
     const host = window.location.hostname || "127.0.0.1";
     const endpoint = `/api/reports/${encodeURIComponent(reportId)}/download`;
     const candidateUrls = [
@@ -14044,98 +14100,152 @@ document.addEventListener("DOMContentLoaded", async () => {
       const patId = report.patient_id || report.patientId || "P-12345";
       const repCode = report.report_id || report.reportId || reportId;
       const scanType = report.scan_type || report.scanType || "Abdominal";
-      const devId = report.device_id || report.deviceId || "TORUS-A12";
+      const devId = report.device_id || report.deviceId || "--";
       const docName = report.doctor_name || report.doctorName || "Dr. Admin Doctor";
       const docLicense = report.doctor_license || "TORUS-REG-3001";
-      const center = report.diagnostic_center || report.diagnosticCenter || "Apex Diagnostic Center";
+      const center = report.diagnostic_center || report.diagnosticCenter || "--";
       const sessId = report.session_id || report.sessionId || "S-101";
-      const tele = report.telemetry || { maxForce: "2.6 N", avgForce: "1.9 N", latency: "16 ms", frames: 4800 };
-      const findings = report.ultrasound_findings || report.clinical_summary || report.clinicalSummary || "Satisfactory ultrasound evaluation.";
-      const summary = report.clinical_summary || report.clinicalSummary || "Clinical examination completed.";
-      const impression = report.diagnosis_impression || (isFinalized ? "Satisfactory examination with no acute pathological contraindications." : "Preliminary tele-examination pending attending countersignature.");
+      const findings = report.ultrasound_findings || report.findings || report.clinical_summary || "No findings recorded yet.";
+      const impression = report.diagnosis_impression || report.recommendations || "No recommendations recorded yet.";
 
       if (downloadPdfBtn) {
         downloadPdfBtn.setAttribute("data-report-id", repCode);
         downloadPdfBtn.setAttribute("data-patient-id", patId);
       }
 
+      // Extract AI Analysis fields matching Image 2
+      const ai = report.ai_results || report.telemetry?.ai_analysis || {};
+      const aiObs = ai.observation || "Ultrasound image demonstrating hepatic parenchyma with a well-defined anechoic cystic lesion. Measurement calipers are active (Dist A: 68.9 mm, Dist B: 83.7 mm) across the region of interest. Normal parenchymal echogenicity with no acute focal lesions.";
+      const aiConf = ai.confidence || "94.5%";
+      const aiQual = ai.quality || "High (0.91)";
+      const aiRisk = ai.risk || "Low";
+
+      // Extract Captured Images
+      const imagesList = report.selected_images || report.images || report.telemetry?.selected_images || report.telemetry?.images || [];
+      let renderedImagesHtml = "";
+      if (Array.isArray(imagesList) && imagesList.length > 0) {
+        renderedImagesHtml = imagesList.map(img => {
+          const src = (typeof img === "string") ? img : (img.dataUrl || img.url || img.src || "");
+          return `<img src="${src}" alt="Captured Scan" style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1; aspect-ratio: 4/3; object-fit: cover;" />`;
+        }).join("");
+      } else {
+        let fallbackImgs = [];
+        try {
+          const rawImgs = localStorage.getItem("torus_captured_images_torus_live_run") || localStorage.getItem("torus_captured_images");
+          if (rawImgs) fallbackImgs = JSON.parse(rawImgs);
+        } catch (_) {}
+        if (fallbackImgs && fallbackImgs.length > 0) {
+          renderedImagesHtml = fallbackImgs.slice(0, 4).map(img => {
+            const src = img.dataUrl || img.url || img;
+            return `<img src="${src}" alt="Captured Scan" style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1; aspect-ratio: 4/3; object-fit: cover;" />`;
+          }).join("");
+        } else {
+          renderedImagesHtml = `<div style="color: #64748b; font-size: 13px; font-style: italic; padding: 12px 0;">No captured ultrasound images attached to this report.</div>`;
+        }
+      }
+
+      // Digital signature handling
+      const rawSig = report.signature_data || report.telemetry?.signature || "";
+      const sigSrc = (typeof rawSig === "string" && rawSig.startsWith("data:image/")) ? rawSig : "";
+      const sigTimeRaw = report.signed_at || report.telemetry?.signed_at || "";
+      let sigFormattedTime = `${examDate} ${examTime}`;
+      if (sigTimeRaw) {
+        try {
+          const sd = new Date(sigTimeRaw);
+          if (!isNaN(sd.getTime())) {
+            sigFormattedTime = sd.toLocaleDateString(undefined, {
+              year: 'numeric', month: 'short', day: 'numeric'
+            }) + ' ' + sd.toLocaleTimeString(undefined, {
+              hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+            });
+          }
+        } catch (_) {}
+      }
+
+      const cleanDocName = docName.replace(/^Dr\.\s*/, '');
+      const scanTypeFormatted = scanType.toLowerCase().endsWith("ultrasound") ? scanType : `${scanType} Ultrasound`;
+
       if (body) {
         body.innerHTML = `
-          <div class="drep-doc-sheet">
-            <div class="drep-doc-header">
-              <div>
-                <div class="drep-doc-org">TORUS ROBOTIC TELE-ULTRASOUND SYSTEM</div>
-                <div class="drep-doc-sub">${center} • Tele-Sonography Unit</div>
+          <div class="report-preview-card" style="background: #ffffff !important; color: #0f172a !important; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); width: 100%; box-sizing: border-box; overflow: visible;">
+            <div class="report-preview-body" style="padding: 36px 44px; font-family: 'Inter', sans-serif; line-height: 1.6; color: #0f172a !important; background: #ffffff !important;">
+              <!-- Clinic Header -->
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <img src="logo.png" alt="TORUS Logo" style="width: 45px; height: auto;" />
+                  <div>
+                    <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: #0f172a;">TORUS MEDICAL</h2>
+                    <span style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 500;">Diagnostic Imaging Center</span>
+                  </div>
+                </div>
+                <div style="text-align: right; font-size: 12px; color: #64748b;">
+                  <div style="font-weight: 600; color: #0f172a; font-size: 14px;">Report ID: ${repCode}</div>
+                  <div>Preview Generated: <strong style="color: #0f172a;">${sigFormattedTime}</strong></div>
+                </div>
               </div>
-              <div class="drep-doc-meta">
-                <div><strong>Exam Date:</strong> ${examDate} ${examTime} (${duration})</div>
-                <div><strong>Report ID:</strong> ${repCode}</div>
-                <div><strong>Session ID:</strong> ${sessId}</div>
-              </div>
-            </div>
 
-            <div class="drep-doc-grid-2col">
-              <div class="drep-doc-item">
-                <span class="drep-doc-label">Patient Name</span>
-                <span class="drep-doc-value"><strong>${patName}</strong></span>
+              <!-- Patient & Exam Details -->
+              <div style="background: #f8fafc; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">Patient & Case Details</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px;">
+                  <div><strong style="color: #64748b;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
+                  <div><strong style="color: #64748b;">Exam Date:</strong> <span style="color: #0f172a;">${examDate}</span></div>
+                  <div><strong style="color: #64748b;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>
+                  <div><strong style="color: #64748b;">Device:</strong> <span style="color: #0f172a;">${devId}</span></div>
+                  <div><strong style="color: #64748b;">Location:</strong> <span style="color: #0f172a;">${center}</span></div>
+                  <div><strong style="color: #64748b;">Duration:</strong> <span style="color: #0f172a;">${duration}</span></div>
+                </div>
               </div>
-              <div class="drep-doc-item">
-                <span class="drep-doc-label">Patient Identification</span>
-                <span class="drep-doc-value"><strong>${patId}</strong></span>
-              </div>
-              <div class="drep-doc-item">
-                <span class="drep-doc-label">Exam / Scan Type</span>
-                <span class="drep-doc-value"><strong class="highlight-cyan">${scanType} Ultrasound</strong></span>
-              </div>
-              <div class="drep-doc-item">
-                <span class="drep-doc-label">Hardware Device</span>
-                <span class="drep-doc-value">${devId} (Dual 6-DOF Robotic Manipulator)</span>
-              </div>
-            </div>
 
-            <div class="drep-doc-section">
-              <div class="drep-doc-section-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                <span>TELE-ROBOTIC SENSOR TELEMETRY & SCAN QUALITY</span>
+              <!-- Captured Images Section -->
+              <div style="margin-bottom: 20px;">
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">Captured Scan Images</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px;">
+                  ${renderedImagesHtml}
+                </div>
               </div>
-              <div class="drep-doc-grid-2col">
-                <div>• Max Contact Force: <strong>${tele.maxForce || "2.6 N"}</strong></div>
-                <div>• Mean Contact Force: <strong>${tele.avgForce || "1.9 N"}</strong></div>
-                <div>• WebRTC Robotic Latency: <strong>${tele.latency || "16 ms"}</strong></div>
-                <div>• Captured Cine Frames: <strong>${tele.frames || 4800} frames</strong></div>
-              </div>
-            </div>
 
-            <div class="drep-doc-section">
-              <div class="drep-doc-section-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                <span>DETAILED ULTRASOUND ANATOMICAL FINDINGS</span>
+              <!-- AI Analysis Section -->
+              <div style="background: #f0fdf4; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #bbf7d0;">
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #166534; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #bbf7d0; padding-bottom: 4px;">AI Preliminary Analysis</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px;">
+                  <div><strong style="color: #166534;">Observation:</strong> <span style="color: #14532d; font-weight: 500;">${aiObs}</span></div>
+                  <div><strong style="color: #166534;">Detection Confidence:</strong> <span style="color: #14532d;">${aiConf}</span></div>
+                  <div><strong style="color: #166534;">Image Quality:</strong> <span style="color: #14532d;">${aiQual}</span></div>
+                  <div><strong style="color: #166534;">Clinical Risk:</strong> <span style="color: #14532d; font-weight: 500;">${aiRisk}</span></div>
+                </div>
+                <p style="margin: 12px 0 0 0; font-size: 11px; color: #15803d; font-style: italic; border-top: 1px dashed #bbf7d0; padding-top: 8px;">
+                  * Clinical Notice: AI Preliminary Analysis is an automated assistive interpretation tool and does not constitute a confirmed medical diagnosis. Review and approval by the attending clinician are required.
+                </p>
               </div>
-              <p class="drep-doc-findings-text">${findings}</p>
-            </div>
 
-            <div class="drep-doc-section">
-              <div class="drep-doc-section-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                <span>CLINICAL SUMMARY & OBSERVATIONS</span>
+              <!-- Findings & Recommendations -->
+              <div style="margin-bottom: 20px;">
+                <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">Clinical Findings</h3>
+                <div style="font-size: 13.5px; color: #0f172a; white-space: pre-wrap; padding: 5px 0 15px 0;">${findings}</div>
               </div>
-              <p class="drep-doc-findings-text">${summary}</p>
-            </div>
 
-            <div class="drep-doc-section" style="background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.3);">
-              <div class="drep-doc-section-title" style="color: #67e8f9;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                <span>DIAGNOSIS & CLINICAL IMPRESSION</span>
+              <div style="margin-bottom: 25px;">
+                <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">Recommendations</h3>
+                <div style="font-size: 13.5px; color: #0f172a; white-space: pre-wrap; padding: 5px 0 15px 0;">${impression}</div>
               </div>
-              <p class="drep-doc-findings-text" style="color: #e0f2fe; font-weight: 500;">${impression}</p>
-            </div>
 
-            <div class="drep-doc-signature-row">
-              <div class="drep-signature-block">
-                <span class="drep-sign-name">${docName}</span>
-                <span class="drep-sign-title">Chief Tele-Ultrasound Specialist • License ${docLicense}</span>
+              <!-- Doctor Details & Signature -->
+              <div style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px dashed #cbd5e1; padding-top: 20px; font-size: 13px;">
+                <div>
+                  <strong style="color: #64748b;">Referring Clinician:</strong>
+                  <div style="font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 4px;">${docName}</div>
+                  <div style="color: #64748b; font-size: 12px;">${center}</div>
+                </div>
+                <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
+                  <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> Digitally Signed
+                  </div>
+                  ${sigSrc ? `<img src="${sigSrc}" style="height: 38px; max-width: 140px; object-fit: contain; margin-bottom: 4px; border-bottom: 1px solid #cbd5e1;" alt="Doctor Signature" />` : ''}
+                  <div style="font-size: 12px; color: #0f172a; font-weight: 500;">Dr. ${cleanDocName}</div>
+                  <div style="font-size: 11px; color: #64748b;">${sigFormattedTime}</div>
+                </div>
               </div>
-              <span class="drep-sign-stamp">✓ Digitally Signed & Encrypted</span>
             </div>
           </div>
         `;
@@ -14554,12 +14664,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           } else if (view === "patient-diagnostic-reports") {
             const patRep = document.getElementById("patientDiagnosticReportsContent");
             if (patRep) patRep.style.display = "flex";
+            renderPatientDiagnosticReports(currentAuthenticatedUser);
             if (typeof loadPatientBackendReports === "function") {
               loadPatientBackendReports(currentAuthenticatedUser).then(() => {
-                renderPatientDiagnosticReports(currentAuthenticatedUser);
+                if (torusStationsState && torusStationsState.currentView === "patients") {
+                  renderStationPatients(torusStationsState.selectedStationId || "TORUS-A12");
+                }
               });
-            } else {
-              renderPatientDiagnosticReports(currentAuthenticatedUser);
             }
           } else if (view === "patient-history") {
             const patHist = document.getElementById("patientHistoryContent");

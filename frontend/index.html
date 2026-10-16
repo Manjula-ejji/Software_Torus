@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=113" />
+  <link rel="stylesheet" href="css/styles.css?v=114" />
   <style>
     :root {
       --bg-main: #060B18;
@@ -2466,7 +2466,7 @@
           <div id="patientDiagnosticReportsContent" class="ddash-role-content drep-content" style="display: none;">
 
             <!-- STATIONS BREADCRUMB / NAV BAR (Visible in Drill-Down Views) -->
-            <div class="torus-stations-breadcrumb" id="tstaBreadcrumb" style="display: none;">
+            <div class="torus-stations-breadcrumb" id="tstaBreadcrumb">
               <button type="button" class="tsta-back-btn" id="tstaBackBtn">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                   stroke-linecap="round" stroke-linejoin="round">
@@ -2477,8 +2477,8 @@
               </button>
               <div class="tsta-trail" id="tstaTrail">
                 <span class="tsta-trail-item tsta-trail-root" id="tstaTrailStations">TORUS Stations</span>
-                <span class="tsta-trail-separator" id="tstaTrailSep1" style="display: none;">/</span>
-                <span class="tsta-trail-item" id="tstaTrailStationName" style="display: none;">TORUS-B08</span>
+                <span class="tsta-trail-separator" id="tstaTrailSep1">/</span>
+                <span class="tsta-trail-item" id="tstaTrailStationName">TORUS-A12</span>
                 <span class="tsta-trail-separator" id="tstaTrailSep2" style="display: none;">/</span>
                 <span class="tsta-trail-item tsta-trail-active" id="tstaTrailPatientName" style="display: none;">Jane
                   Smith</span>
@@ -2486,7 +2486,7 @@
             </div>
 
             <!-- LEVEL 1: TORUS STATIONS DASHBOARD VIEW -->
-            <div id="tstaDashboardView" class="tsta-view-panel">
+            <div id="tstaDashboardView" class="tsta-view-panel" style="display: none;">
               <!-- Header Card (Matching TORUS standard summary card & test expectations) -->
               <div class="dact-header-card drep-header-card" id="patientDiagnosticReportsHeaderCard">
                 <div class="dact-header-left">
@@ -2638,7 +2638,7 @@
             </div>
 
             <!-- LEVEL 2: STATION PATIENTS LIST VIEW -->
-            <div id="tstaPatientsView" class="tsta-view-panel" style="display: none;">
+            <div id="tstaPatientsView" class="tsta-view-panel">
               <!-- Station Header Info Banner -->
               <div class="tsta-station-banner" id="tstaStationBanner">
                 <div class="tsta-banner-left">
@@ -2653,20 +2653,20 @@
                   </div>
                   <div>
                     <div class="tsta-banner-title-row">
-                      <h2 class="tsta-banner-title" id="tstaBannerStationId">TORUS-B08</h2>
-                      <span class="device-status standby" id="tstaBannerStatus">standby</span>
+                      <h2 class="tsta-banner-title" id="tstaBannerStationId">TORUS-A12</h2>
+                      <span class="device-status online" id="tstaBannerStatus">online</span>
                     </div>
-                    <p class="tsta-banner-sub" id="tstaBannerHospital">Boston General Hospital • Boston, USA</p>
+                    <p class="tsta-banner-sub" id="tstaBannerHospital">NYC Medical Center • New York, USA</p>
                   </div>
                 </div>
                 <div class="tsta-banner-metrics">
                   <div class="tsta-banner-pill">
                     <span class="tsta-banner-pill-lbl">Assigned Patients</span>
-                    <span class="tsta-banner-pill-val cyan" id="tstaBannerPatientCount">4 Patients</span>
+                    <span class="tsta-banner-pill-val cyan" id="tstaBannerPatientCount">5 Patients</span>
                   </div>
                   <div class="tsta-banner-pill">
                     <span class="tsta-banner-pill-lbl">Latency / Signal</span>
-                    <span class="tsta-banner-pill-val" id="tstaBannerTelemetry">42ms • 95%</span>
+                    <span class="tsta-banner-pill-val" id="tstaBannerTelemetry">35ms • 98%</span>
                   </div>
                 </div>
               </div>
@@ -4819,7 +4819,9 @@
       allow="camera; microphone; display-capture"></iframe>
   </div>
 
-  <script src="app.js?v=113"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="html2canvas.min.js"></script>
+  <script src="app.js?v=114"></script>
 </body>
 
 </html>

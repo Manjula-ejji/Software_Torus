@@ -1341,3 +1341,23 @@ def main():
 
 if __name__ == "__main__":
     main()
+    file_path = FRONTEND_DIR / path
+    if file_path.is_file():
+        return send_from_directory(str(FRONTEND_DIR), path)
+    return send_from_directory(str(FRONTEND_DIR), "index.html")
+
+@app.route("/<path:path>")
+def serve_static_files(path):
+    file_path = FRONTEND_DIR / path
+    if file_path.is_file():
+        return send_from_directory(str(FRONTEND_DIR), path)
+    return send_from_directory(str(FRONTEND_DIR), "index.html")
+
+def main():
+    host = os.environ.get("SERVER_HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", os.environ.get("SERVER_PORT", "5000")))
+    print(f"[TORUS Backend] Server starting on http://127.0.0.1:{port} ...")
+    app.run(host=host, port=port, threaded=True)
+
+if __name__ == "__main__":
+    main()
