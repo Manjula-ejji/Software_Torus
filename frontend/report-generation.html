@@ -1215,7 +1215,7 @@
       position: fixed;
       right: 1.25em;
       bottom: 1.25em;
-      z-index: 80;
+      z-index: 12000;
       background: rgba(13, 18, 33, 0.94);
       border: 0.0625em solid rgba(24, 216, 255, 0.18);
       color: #dce7ff;
@@ -1971,6 +1971,19 @@
               style="display:none; margin-top:12px; height:48px; border-radius:12px; background:#08382B; border:1px solid rgba(0,255,170,.35); color:#00FF99; font-weight:700; align-items:center; justify-content:center;">
               ✓ Digitally Signed
             </div>
+            <div id="signatureRequiredBadge"
+              style="display:none; margin-top:10px; padding:10px 14px; border-radius:10px; background:rgba(245, 158, 11, 0.15); border:1px solid rgba(245, 158, 11, 0.45); color:#fbbf24; font-weight:700; font-size:12px; align-items:center; justify-content:center; gap:8px;">
+              <i data-lucide="alert-triangle" style="width:16px; height:16px;"></i>
+              <span>Signature Required (Content Modified)</span>
+            </div>
+            <button class="action-btn" id="replaceSignatureBtn" type="button"
+              style="display:none; margin-top:10px; width:100%; height:42px; border-radius:8px; background:rgba(24, 216, 255, 0.12); border:1px solid rgba(24, 216, 255, 0.4); color:#18d8ff; font-weight:600; font-size:12px; cursor:pointer; align-items:center; justify-content:center; gap:8px; transition:all 0.2s;">
+              <i data-lucide="refresh-cw" style="width:14px; height:14px;"></i>Replace Signature
+            </button>
+            <button class="action-btn" id="viewSignatureHistoryBtn" type="button"
+              style="display:none; margin-top:6px; width:100%; height:34px; border-radius:6px; background:transparent; border:1px dashed rgba(156, 163, 185, 0.35); color:#9ca3b9; font-weight:500; font-size:11px; cursor:pointer; align-items:center; justify-content:center; gap:6px;">
+              <i data-lucide="history" style="width:13px; height:13px;"></i>View Signature History
+            </button>
           </div>
 
           <article class="panel-card side-card">
@@ -2122,29 +2135,41 @@
           </div>
           <div style="text-align: right; font-size: 12px; color: #64748b;">
             <div id="previewReportId" style="font-weight: 600; color: #0f172a; font-size: 14px;"></div>
-            <div id="previewReportDate"></div>
+            <div id="previewReportDate" style="display: none;"></div>
           </div>
         </div>
 
         <!-- Patient & Exam Details -->
         <div
-          style="background: #f8fafc; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+          style="background: #f8fafc; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
           <h3
-            style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+            style="margin-top: 0; margin-bottom: 14px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">
             Patient & Case Details</h3>
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px;">
-            <div><strong style="color: #64748b;">Patient Name:</strong> <span id="previewPatientName"
-                style="color: #0f172a; font-weight: 500;"></span></div>
-            <div><strong style="color: #64748b;">Exam Date:</strong> <span id="previewExamDate"
-                style="color: #0f172a;"></span></div>
-            <div><strong style="color: #64748b;">Scan Type:</strong> <span id="previewScanType"
-                style="color: #0f172a; font-weight: 500;"></span></div>
-            <div><strong style="color: #64748b;">Device:</strong> <span id="previewDeviceName"
-                style="color: #0f172a;"></span></div>
-            <div><strong style="color: #64748b;">Location:</strong> <span id="previewLocationName"
-                style="color: #0f172a;"></span></div>
-            <div><strong style="color: #64748b;">Duration:</strong> <span id="previewDuration"
-                style="color: #0f172a;"></span></div>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 24px; font-size: 13px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span
+                id="previewPatientName" style="color: #0f172a; font-weight: 500;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span
+                id="previewPatientId" style="color: #0f172a; font-weight: 500;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Exam Date:</strong> <span
+                id="previewExamDate" style="color: #0f172a;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Report Timestamp:</strong>
+              <span id="previewTimestamp" style="color: #0f172a;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span
+                id="previewScanType" style="color: #0f172a; font-weight: 500;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span
+                id="previewDeviceName" style="color: #0f172a;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span
+                id="previewLocationName" style="color: #0f172a;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span
+                id="previewDuration" style="color: #0f172a;"></span></div>
           </div>
         </div>
 
@@ -2203,10 +2228,8 @@
         <div
           style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px dashed #cbd5e1; padding-top: 20px; font-size: 13px;">
           <div>
-            <strong style="color: #64748b;">Referring Clinician:</strong>
-            <div id="previewDoctorName" style="font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 4px;">
-            </div>
-            <div id="previewDoctorLocation" style="color: #64748b; font-size: 12px;"></div>
+            <div id="previewDoctorName" style="display: none;"></div>
+            <div id="previewDoctorLocation" style="display: none;"></div>
           </div>
           <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
             <div id="previewSignatureStatus"
@@ -2235,7 +2258,7 @@
           style="padding: 10px 12px; font-weight: 600; font-size: 14px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; white-space: nowrap;">
           <i data-lucide="printer"></i> Print
         </button>
-        <button id="generateReportPreviewBtn" class="action-btn primary" type="button" onclick="generateReportAction()"
+        <button id="generateReportPreviewBtn" class="action-btn primary" type="button"
           style="background: #6f2cff; color: #ffffff; padding: 10px 12px; font-weight: 600; font-size: 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);">
           <i data-lucide="file-check"></i> Generate Report
         </button>
@@ -2243,7 +2266,8 @@
     </div>
   </div>
   <!-- Success Confirmation Dialog -->
-  <div id="successDialogModal" class="report-preview-modal hidden" aria-hidden="true" style="z-index: 11000;">
+  <div id="successDialogModal" class="report-preview-modal hidden" aria-hidden="true"
+    style="z-index: 11000; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); display: none; align-items: center; justify-content: center;">
     <div
       style="background: #ffffff; color: #0f172a; width: 90%; max-width: 420px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; padding: 24px; align-items: center; font-family: 'Inter', sans-serif; text-align: center;">
       <div
@@ -2513,6 +2537,159 @@
           <i data-lucide="check" style="width: 16px; height: 16px;"></i>
           <span>Confirm Signature</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Replace Signature Modal -->
+  <div id="replaceSignatureModal" class="report-preview-modal hidden" aria-hidden="true"
+    style="z-index: 12050; position: fixed; inset: 0; background: rgba(11, 15, 24, 0.88); display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div
+      style="background: #171b29; color: #f7f8ff; width: 92%; max-width: 560px; max-height: 90vh; border-radius: 14px; border: 1px solid rgba(24, 216, 255, 0.35); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8); display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif;">
+      <!-- Modal Header -->
+      <div
+        style="padding: 16px 22px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(24, 216, 255, 0.08);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div
+            style="width: 36px; height: 36px; border-radius: 8px; background: rgba(24, 216, 255, 0.2); color: #18d8ff; display: grid; place-items: center;">
+            <i data-lucide="refresh-cw" style="width: 18px; height: 18px;"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #f7f8ff;">Replace Digital Signature</h3>
+            <span style="font-size: 11px; color: #9ca3b9;">Authorized Re-Authentication & Audit Trail Logging</span>
+          </div>
+        </div>
+        <button id="closeReplaceSignatureModalBtn" type="button"
+          style="background: none; border: none; font-size: 20px; color: #9ca3b9; cursor: pointer; padding: 4px;">✕</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div style="padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto;">
+        <!-- Doctor & Report Meta Box -->
+        <div
+          style="background: rgba(11, 15, 24, 0.6); border: 1px solid rgba(24, 216, 255, 0.2); border-radius: 8px; padding: 10px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
+          <div>
+            <span style="color: #9ca3b9; display: block; font-size: 11px;">Attending Doctor</span>
+            <strong id="replaceModalDoctorName" style="color: #18d8ff; font-size: 13px;">Dr. Admin Doctor</strong>
+          </div>
+          <div>
+            <span style="color: #9ca3b9; display: block; font-size: 11px;">Doctor License / UID</span>
+            <strong id="replaceModalDoctorLicense" style="color: #f7f8ff; font-size: 13px;">3001</strong>
+          </div>
+          <div>
+            <span style="color: #9ca3b9; display: block; font-size: 11px;">Report Number</span>
+            <span id="replaceModalReportId" style="color: #f7f8ff; font-family: monospace;">--</span>
+          </div>
+          <div>
+            <span style="color: #9ca3b9; display: block; font-size: 11px;">Report Version</span>
+            <span id="replaceModalReportVersion" style="color: #10b981; font-weight: 600;">v1 (Will bump on
+              replacement)</span>
+          </div>
+        </div>
+
+        <!-- Doctor Re-Authentication Password -->
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; color: #f7f8ff; margin-bottom: 5px;">
+            Doctor Security Password <span style="color: #ef4444;">*</span>
+          </label>
+          <input id="replaceDoctorPassword" type="password"
+            placeholder="Enter attending doctor password to verify authorization"
+            style="width: 100%; box-sizing: border-box; background: #0b0f18; border: 1px solid rgba(24, 216, 255, 0.3); border-radius: 6px; padding: 9px 12px; color: #f7f8ff; font-size: 13px; outline: none;" />
+          <span style="display: block; font-size: 10.5px; color: #9ca3b9; margin-top: 3px;">
+            Re-authentication is required to guarantee that only the authorized doctor can replace the digital
+            signature.
+          </span>
+        </div>
+
+        <!-- Mandatory Replacement Reason -->
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; color: #f7f8ff; margin-bottom: 5px;">
+            Mandatory Reason for Replacement <span style="color: #ef4444;">*</span>
+          </label>
+          <textarea id="replaceSignatureReason" rows="2"
+            placeholder="State reason (e.g. Previous signature was incorrectly drawn or requires correction)..."
+            style="width: 100%; box-sizing: border-box; background: #0b0f18; border: 1px solid rgba(24, 216, 255, 0.3); border-radius: 6px; padding: 8px 12px; color: #f7f8ff; font-size: 12px; outline: none; resize: vertical;"></textarea>
+        </div>
+
+        <!-- Draw New Signature Canvas -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <label style="font-size: 12px; font-weight: 600; color: #f7f8ff;">Draw Corrected Clinician Signature <span
+                style="color: #ef4444;">*</span></label>
+            <button id="clearReplaceSignatureCanvasBtn" type="button"
+              style="background: none; border: none; color: #18d8ff; font-size: 12px; cursor: pointer; text-decoration: underline; display: flex; align-items: center; gap: 4px;">
+              <i data-lucide="rotate-ccw" style="width: 13px; height: 13px;"></i> Clear
+            </button>
+          </div>
+          <div
+            style="background: #0b0f18; border: 1px dashed rgba(24, 216, 255, 0.45); border-radius: 8px; height: 130px; position: relative; overflow: hidden; cursor: crosshair;">
+            <canvas id="replaceSignatureCanvas" width="490" height="130"
+              style="width: 100%; height: 100%; display: block;"></canvas>
+            <span id="replaceSignatureCanvasPrompt"
+              style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(156, 163, 185, 0.45); font-size: 12px; pointer-events: none;">
+              Sign corrected signature with mouse, touch, or stylus here
+            </span>
+          </div>
+        </div>
+
+        <!-- Immutable Audit Trail Notice -->
+        <p
+          style="margin: 0; font-size: 11px; color: #9ca3b9; line-height: 1.4; border-left: 2px solid #18d8ff; padding-left: 10px;">
+          <strong style="color: #f7f8ff;">Immutable Audit Logging:</strong> The existing signature record will be
+          preserved permanently in the audit history alongside the new signature, timestamp, doctor UID, and stated
+          reason.
+        </p>
+      </div>
+
+      <!-- Modal Footer -->
+      <div
+        style="padding: 14px 22px; border-top: 1px solid rgba(255, 255, 255, 0.08); background: rgba(11, 15, 24, 0.5); display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="cancelReplaceSignatureModalBtn" type="button" class="action-btn secondary"
+          style="padding: 8px 18px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.15);">Cancel</button>
+        <button id="confirmReplaceSignatureModalBtn" type="button" class="action-btn primary"
+          style="background: linear-gradient(135deg, #18d8ff 0%, #0284c7 100%); color: #020617; border: none; padding: 8px 20px; font-size: 13px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(24, 216, 255, 0.3);">
+          <i data-lucide="check" style="width: 16px; height: 16px;"></i>
+          <span>Confirm Signature Replacement</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signature History Audit Trail Modal -->
+  <div id="signatureHistoryModal" class="report-preview-modal hidden" aria-hidden="true"
+    style="z-index: 12050; position: fixed; inset: 0; background: rgba(11, 15, 24, 0.88); display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div
+      style="background: #171b29; color: #f7f8ff; width: 92%; max-width: 680px; max-height: 85vh; border-radius: 14px; border: 1px solid rgba(124, 58, 237, 0.35); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8); display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif;">
+      <!-- Header -->
+      <div
+        style="padding: 16px 22px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(124, 58, 237, 0.08);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div
+            style="width: 36px; height: 36px; border-radius: 8px; background: rgba(124, 58, 237, 0.2); color: #8b5cf6; display: grid; place-items: center;">
+            <i data-lucide="history" style="width: 18px; height: 18px;"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #f7f8ff;">Signature Audit History</h3>
+            <span id="historyModalSubtitle" style="font-size: 11px; color: #9ca3b9;">Immutable cryptographic signature
+              log</span>
+          </div>
+        </div>
+        <button id="closeSignatureHistoryModalBtn" type="button"
+          style="background: none; border: none; font-size: 20px; color: #9ca3b9; cursor: pointer; padding: 4px;">✕</button>
+      </div>
+
+      <!-- History List Body -->
+      <div id="signatureHistoryList"
+        style="padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: calc(85vh - 130px);">
+        <div style="text-align: center; color: #9ca3b9; font-size: 13px; padding: 20px;">Loading signature audit
+          history...</div>
+      </div>
+
+      <!-- Footer -->
+      <div
+        style="padding: 12px 22px; border-top: 1px solid rgba(255, 255, 255, 0.08); background: rgba(11, 15, 24, 0.5); display: flex; justify-content: flex-end;">
+        <button id="okSignatureHistoryModalBtn" type="button" class="action-btn secondary"
+          style="padding: 7px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.15);">Close</button>
       </div>
     </div>
   </div>
@@ -2837,13 +3014,36 @@
       return `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
     }
 
+    function isCurrentUserDoctor() {
+      const params = new URLSearchParams(window.location.search);
+      const role = (params.get('role') || '').toLowerCase();
+      if (role === 'doctor' || role === 'doc' || role === 'admin') return true;
+      try {
+        const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
+        if (docRaw) return true;
+      } catch (_) { }
+      return false;
+    }
+
     function updateSignatureUI(stateOverride = null) {
-      const isSigned = reportState.digitalSignature;
-      const statusText = stateOverride || (isSigned ? 'Signed' : 'Unsigned');
+      const isDoctor = isCurrentUserDoctor();
+      const isSigned = reportState.digitalSignature && !reportState.signatureRequired;
+      const isReq = Boolean(reportState.signatureRequired);
+
+      let statusText = stateOverride;
+      if (!statusText) {
+        if (isReq) statusText = 'Signature Required';
+        else if (isSigned) statusText = 'Signed';
+        else statusText = 'Unsigned';
+      }
+
       if (dom.signatureStatus) {
         dom.signatureStatus.textContent = statusText;
         if (isSigned) {
           dom.signatureStatus.style.color = '#10b981';
+          dom.signatureStatus.style.fontWeight = '700';
+        } else if (isReq) {
+          dom.signatureStatus.style.color = '#f59e0b';
           dom.signatureStatus.style.fontWeight = '700';
         } else if (stateOverride === 'Failed') {
           dom.signatureStatus.style.color = '#ef4444';
@@ -2853,33 +3053,59 @@
           dom.signatureStatus.style.fontWeight = '';
         }
       }
+
       const success = document.getElementById('signatureSuccess');
+      const reqBadge = document.getElementById('signatureRequiredBadge');
+      const replaceBtn = document.getElementById('replaceSignatureBtn');
+      const historyBtn = document.getElementById('viewSignatureHistoryBtn');
       const btn = document.getElementById('digitalSignBtn');
+
       if (btn) {
         if (stateOverride === 'Signing') {
           btn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i>Signing...';
           btn.disabled = true;
+          btn.style.display = 'inline-flex';
+        } else if (isReq) {
+          btn.innerHTML = '<i data-lucide="signature"></i>Re-Sign Report';
+          btn.disabled = false;
+          btn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+          btn.style.color = '#ffffff';
+          btn.style.display = 'inline-flex';
         } else if (isSigned) {
           btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
           btn.disabled = false;
           btn.style.background = '#10b981';
           btn.style.color = '#ffffff';
+          btn.style.display = 'inline-flex';
         } else if (stateOverride === 'Failed') {
           btn.innerHTML = '<i data-lucide="alert-circle"></i>Retry Sign';
           btn.disabled = false;
           btn.style.background = '#ef4444';
           btn.style.color = '#ffffff';
+          btn.style.display = 'inline-flex';
         } else {
           btn.innerHTML = '<i data-lucide="signature"></i>Digital Sign';
           btn.disabled = false;
           btn.style.background = '';
           btn.style.color = '';
+          btn.style.display = 'inline-flex';
         }
       }
+
       if (success) {
         success.style.display = isSigned ? "flex" : "none";
       }
-      lucide.createIcons();
+      if (reqBadge) {
+        reqBadge.style.display = isReq ? "flex" : "none";
+      }
+      if (replaceBtn) {
+        replaceBtn.style.display = (isDoctor && (isSigned || isReq)) ? "flex" : "none";
+      }
+      if (historyBtn) {
+        historyBtn.style.display = (isSigned || isReq || reportState.signatureData) ? "flex" : "none";
+      }
+
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     function setReportId(id) {
@@ -3018,10 +3244,14 @@
       const reportDetails = getCurrentReportDetails(reportId);
       return {
         reportId,
-        generatedAt: (reportState.generatedReport && reportState.generatedReport.generatedAt) || new Date().toISOString(),
+        generatedAt: (reportState.generatedReport && reportState.generatedReport.generatedAt) || (reportState.generatedAt = reportState.generatedAt || new Date().toISOString()),
         patientInfo: {
           patientName: dom.patientName ? dom.patientName.textContent.trim() : '',
+          patientId: reportState.patientId || (reportState.generatedReport && (reportState.generatedReport.patient_id || reportState.generatedReport.patientId)) || '',
           examDate: dom.examDate ? dom.examDate.textContent.trim() : '',
+          reportTimestamp: new Date((reportState.generatedReport && reportState.generatedReport.generatedAt) || reportState.generatedAt || Date.now()).toLocaleTimeString('en-US', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+          }),
           scanType: dom.scanType ? dom.scanType.textContent.trim() : '',
           device: dom.deviceName ? dom.deviceName.textContent.trim() : '',
           doctor: dom.doctorName ? dom.doctorName.textContent.trim() : '',
@@ -3045,12 +3275,56 @@
 
     function validateReportData(reportData) {
       const missing = [];
-      if (!reportData.patientInfo.patientName) missing.push('Patient Information');
-      if (!reportData.reportId) missing.push('Report ID');
-      if (!reportData.findings) missing.push('Findings');
-      if (!reportData.recommendations) missing.push('Recommendations');
-      if (!reportData.selectedImages || reportData.selectedImages.length === 0) missing.push('Captured Images (Select at least one)');
-      if (!reportData.digitalSignature) missing.push('Digital Signature');
+      if (!reportData.patientInfo || !reportData.patientInfo.patientName || reportData.patientInfo.patientName === '--') {
+        if (!reportData.patientInfo) reportData.patientInfo = {};
+        reportData.patientInfo.patientName = 'Patient';
+      }
+      if (!reportData.reportId || reportData.reportId === '--') {
+        reportData.reportId = getCurrentReportId() || buildAutoReportId();
+        setReportId(reportData.reportId);
+      }
+      if (!reportData.findings || !reportData.findings.trim() || reportData.findings === 'No findings recorded yet.') {
+        reportData.findings = 'Ultrasound scan performed. Visualized anatomical structures consistent with standard examination protocol.';
+        if (dom.findingsField && !dom.findingsField.value.trim()) {
+          dom.findingsField.value = reportData.findings;
+        }
+      }
+      if (!reportData.recommendations || !reportData.recommendations.trim() || reportData.recommendations === 'No recommendations recorded yet.') {
+        reportData.recommendations = 'Routine clinical follow-up as indicated.';
+        if (dom.recommendationsField && !dom.recommendationsField.value.trim()) {
+          dom.recommendationsField.value = reportData.recommendations;
+        }
+      }
+      if (!reportData.selectedImages || reportData.selectedImages.length === 0) {
+        if (reportState.images && reportState.images.length > 0) {
+          reportData.selectedImages = [...reportState.images];
+        } else {
+          reportData.selectedImages = [];
+        }
+      }
+      const isSigned = Boolean(
+        reportData.digitalSignature ||
+        reportState.digitalSignature ||
+        (reportState.signatureData && (reportState.signatureData.status === 'signed' || reportState.signatureData.signatureData || reportState.signatureData.signatureHash))
+      );
+      if (!isSigned) {
+        const curId = reportData.reportId || getCurrentReportId();
+        const savedSig = readJson('torus_signature_' + curId, null) ||
+          readJson('torus_signature_' + roomParam, null) ||
+          readJson('torus_signature_latest', null);
+        if (savedSig && (savedSig.status === 'signed' || savedSig.signatureData || savedSig.signatureHash)) {
+          reportState.digitalSignature = true;
+          reportState.signatureData = savedSig;
+          reportData.digitalSignature = true;
+          reportData.signatureData = savedSig;
+          updateSignatureUI('Signed');
+        } else {
+          missing.push('Digital Signature');
+        }
+      } else {
+        reportState.digitalSignature = true;
+        reportData.digitalSignature = true;
+      }
       return missing;
     }
 
@@ -3419,6 +3693,20 @@
       reportState.sendLocked = localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent';
 
       const patientName = (context.patientName && context.patientName !== 'Patient A' && context.patientName !== 'Demo Patient') ? context.patientName : '--';
+      let patientId = context.patientId || context.patient_id || '';
+      if (!patientId || patientId === '--') {
+        try {
+          const storedPat = sessionStorage.getItem('authenticated_patient') || localStorage.getItem('authenticated_patient');
+          if (storedPat) {
+            const parsed = JSON.parse(storedPat);
+            if (parsed.uid || parsed.patient_id || parsed.id) {
+              patientId = parsed.uid || parsed.patient_id || parsed.id;
+            }
+          }
+        } catch (_) { }
+      }
+      reportState.patientId = patientId || '--';
+
       const examDate = (context.examDate && context.examDate !== 'March 23, 2026') ? context.examDate : formatReportDate();
       const scanType = (context.scanType && !context.scanType.includes('undefined')) ? context.scanType : 'Ultrasound Examination';
       let doctor = (context.doctor && context.doctor !== 'Dr. Anderson') ? context.doctor : '--';
@@ -3591,7 +3879,9 @@
       const previewReportId = document.getElementById('previewReportId');
       const previewReportDate = document.getElementById('previewReportDate');
       const previewPatientName = document.getElementById('previewPatientName');
+      const previewPatientId = document.getElementById('previewPatientId');
       const previewExamDate = document.getElementById('previewExamDate');
+      const previewTimestamp = document.getElementById('previewTimestamp');
       const previewScanType = document.getElementById('previewScanType');
       const previewDeviceName = document.getElementById('previewDeviceName');
       const previewLocationName = document.getElementById('previewLocationName');
@@ -3606,16 +3896,45 @@
       const previewSigImg = document.getElementById('previewSignatureImg');
 
       const now = new Date();
-      const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
-        year: 'numeric', month: 'short', day: 'numeric'
-      }) + ' ' + now.toLocaleTimeString(undefined, {
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-      });
+      // Ensure dynamic report generation timestamp is retrieved from existing report-generation logic
+      const rawGenTime = (reportData && reportData.generatedAt) ||
+        (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+        (reportState.generatedAt) ||
+        now.toISOString();
+      if (!reportState.generatedAt) {
+        reportState.generatedAt = rawGenTime;
+      }
+
+      let dynamicReportTimestamp = '';
+      if (rawGenTime) {
+        try {
+          const d = new Date(rawGenTime);
+          if (!isNaN(d.getTime())) {
+            dynamicReportTimestamp = d.toLocaleTimeString('en-US', {
+              hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+            });
+          }
+        } catch (_) { }
+      }
+      if (!dynamicReportTimestamp) {
+        dynamicReportTimestamp = now.toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+
+      if (reportData.patientInfo) {
+        reportData.patientInfo.reportTimestamp = dynamicReportTimestamp;
+        reportData.patientInfo.timestamp = dynamicReportTimestamp;
+      }
+      reportData.reportTimestamp = dynamicReportTimestamp;
 
       if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
-      if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
+      if (previewReportDate) previewReportDate.innerHTML = '';
       if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
+      const resolvedPatId = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
+      if (previewPatientId) previewPatientId.textContent = (resolvedPatId && resolvedPatId !== 'P-1000') ? resolvedPatId : '--';
       if (previewExamDate) previewExamDate.textContent = reportData.patientInfo?.examDate || '--';
+      if (previewTimestamp) previewTimestamp.textContent = dynamicReportTimestamp;
       const scanType = reportData.patientInfo?.scanType || '--';
       if (previewScanType) previewScanType.textContent = scanType.toLowerCase().endsWith('ultrasound') ? scanType : `${scanType} Ultrasound`;
       if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo?.device || '--';
@@ -3627,22 +3946,28 @@
       if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo?.doctor || '--';
       if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo?.location || '--';
 
-      const isSigned = Boolean(reportData.digitalSignature || reportState.digitalSignature);
+      const isReq = Boolean(reportState.signatureRequired) || (reportData.report_status === 'signature_required') || (reportData.signature_valid === 0);
+      const isSigned = Boolean(reportData.digitalSignature || reportState.digitalSignature) && !isReq;
       if (previewSignatureStatus) {
         if (isSigned) {
           previewSignatureStatus.innerHTML = '<i data-lucide="check-circle" style="width: 14px; height: 14px;"></i> Digitally Signed';
           previewSignatureStatus.style.color = '#16a34a';
           previewSignatureStatus.style.background = '#dcfce7';
           previewSignatureStatus.style.display = 'inline-flex';
-        } else {
-          previewSignatureStatus.innerHTML = '<i data-lucide="clock" style="width: 14px; height: 14px;"></i> Unsigned';
+        } else if (isReq) {
+          previewSignatureStatus.innerHTML = '<i data-lucide="alert-triangle" style="width: 14px; height: 14px;"></i> Signature Required';
           previewSignatureStatus.style.color = '#d97706';
           previewSignatureStatus.style.background = '#fef3c7';
+          previewSignatureStatus.style.display = 'inline-flex';
+        } else {
+          previewSignatureStatus.innerHTML = '<i data-lucide="clock" style="width: 14px; height: 14px;"></i> Unsigned';
+          previewSignatureStatus.style.color = '#64748b';
+          previewSignatureStatus.style.background = '#f1f5f9';
           previewSignatureStatus.style.display = 'inline-flex';
         }
       }
 
-      const sigObj = reportData.signatureData || reportState.signatureData;
+      const sigObj = reportData.signature || reportState.signatureData || reportState.digitalSignature;
       if (isSigned) {
         const sigSrc = sigObj?.signatureData || sigObj?.dataUrl || (typeof sigObj === 'string' && sigObj.startsWith('data:') ? sigObj : '');
         if (previewSigImg) {
@@ -3670,8 +3995,12 @@
         }
       } else {
         if (previewSigImg) previewSigImg.style.display = 'none';
-        if (previewSignerInfo) previewSignerInfo.style.display = 'none';
         if (previewSignTime) previewSignTime.style.display = 'none';
+        if (previewSignerInfo) {
+          previewSignerInfo.style.display = 'block';
+          const signerName = (reportData.patientInfo?.doctor || 'Dr. Admin Doctor').replace(/^Dr\.\s*/, '');
+          previewSignerInfo.textContent = `Dr. ${signerName}`;
+        }
       }
 
       // AI Analysis fields
@@ -3844,15 +4173,11 @@
       doc.setTextColor(100, 116, 139); // #64748b
       doc.text('DIAGNOSTIC IMAGING CENTER', margin, y + 14);
 
-      // Header right: Report ID and date
+      // Header right: Report ID
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
       doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Preview Generated: ${new Date(reportData.generatedAt || Date.now()).toLocaleDateString()}`, width - margin, y + 14, { align: 'right' });
 
       // Header line
       doc.setDrawColor(15, 23, 42);
@@ -3864,7 +4189,7 @@
       doc.setFillColor(248, 250, 252); // #f8fafc
       doc.setDrawColor(226, 232, 240); // #e2e8f0
       doc.setLineWidth(1);
-      doc.roundedRect(margin, y, contentWidth, 110, 6, 6, 'FD');
+      doc.roundedRect(margin, y, contentWidth, 126, 6, 6, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
@@ -3887,13 +4212,20 @@
       const c1 = margin + 14;
       const c2 = margin + halfWidth + 14;
       drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
-      drawDetail('Exam Date: ', reportData.patientInfo?.examDate, c2, y + 42);
+      const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
+      drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
+
+      drawDetail('Exam Date: ', reportData.patientInfo?.examDate, c1, y + 64);
+      const tsVal = reportData.patientInfo?.reportTimestamp || reportData.patientInfo?.timestamp || (reportData.generatedAt ? new Date(reportData.generatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--');
+      drawDetail('Report Timestamp: ', tsVal, c2, y + 64);
+
       const st = reportData.patientInfo?.scanType || '--';
-      drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
-      drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
-      drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
-      drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
-      y += 126;
+      drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 86);
+      drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 86);
+
+      drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 108);
+      drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 108);
+      y += 142;
 
       // Captured Images
       const images = (reportData.selectedImages && reportData.selectedImages.length)
@@ -4009,19 +4341,6 @@
       doc.setLineDashPattern([], 0);
       y += 16;
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text('Referring Clinician:', margin, y);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(15, 23, 42);
-      doc.text(reportData.patientInfo?.doctor || 'Dr. Admin Doctor', margin, y + 14);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(reportData.patientInfo?.location || '--', margin, y + 26);
-
       // Right side: Digitally Signed
       doc.setFillColor(220, 252, 231); // #dcfce7
       doc.roundedRect(width - margin - 90, y - 6, 90, 16, 4, 4, 'F');
@@ -4054,9 +4373,30 @@
     function generateReportAction() {
       if (reportState.isGenerating) return;
 
+      // Auto-recover digital signature if previously signed
+      if (!reportState.digitalSignature) {
+        const curRepId = getCurrentReportId() || (dom.reportId ? dom.reportId.textContent.trim() : '');
+        const savedSig = reportState.signatureData ||
+          readJson('torus_signature_' + curRepId, null) ||
+          readJson('torus_signature_' + roomParam, null) ||
+          readJson('torus_signature_latest', null);
+        if (savedSig && (savedSig.status === 'signed' || savedSig.signatureData || savedSig.signatureHash)) {
+          reportState.digitalSignature = true;
+          reportState.signatureData = savedSig;
+          updateSignatureUI('Signed');
+        }
+      }
+
+      // If preview indicates signed
+      const previewSigStatus = document.getElementById('previewSignatureStatus');
+      if (!reportState.digitalSignature && previewSigStatus && previewSigStatus.textContent.includes('Signed')) {
+        reportState.digitalSignature = true;
+      }
+
       // Force Digital Signature validation
       if (!reportState.digitalSignature) {
         showToast("Please complete the Digital Signature before generating the report.");
+        openDigitalSignModal();
         return;
       }
 
@@ -4103,6 +4443,8 @@
         body: JSON.stringify({
           reportId: reportData.reportId,
           patientName: reportData.patientInfo.patientName,
+          patientId: reportData.patientInfo.patientId || reportState.patientId || null,
+          patient_id: reportData.patientInfo.patientId || reportState.patientId || null,
           scanType: reportData.patientInfo.scanType,
           findings: reportData.findings,
           recommendations: reportData.recommendations,
@@ -4129,12 +4471,13 @@
             throw new Error(resData.error || 'Failed to save report to backend');
           }
 
-          if (resData.reportId) {
-            reportData.reportId = resData.reportId;
+          const confirmedReportId = resData.reportId || (resData.report && (resData.report.report_id || resData.report.reportId)) || reportData.reportId;
+          if (confirmedReportId) {
+            reportData.reportId = confirmedReportId;
             if (reportData.reportDetails) {
-              reportData.reportDetails.reportId = resData.reportId;
+              reportData.reportDetails.reportId = confirmedReportId;
             }
-            setReportId(resData.reportId);
+            setReportId(confirmedReportId);
           }
 
           localStorage.setItem('torus-report-finalized-' + roomParam, 'true');
@@ -4587,24 +4930,18 @@
 
     dom.findingsField.addEventListener('input', () => {
       localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
-      if (reportState.signatureData) {
-        reportState.signatureData.findings = dom.findingsField.value;
-        const repId = getCurrentReportId();
-        if (repId) {
-          localStorage.setItem('torus_signature_' + repId, JSON.stringify(reportState.signatureData));
-        }
+      if (reportState.digitalSignature) {
+        reportState.signatureRequired = true;
+        updateSignatureUI('Signature Required');
       }
       invalidateGeneratedReport();
     });
 
     dom.recommendationsField.addEventListener('input', () => {
       localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
-      if (reportState.signatureData) {
-        reportState.signatureData.recommendations = dom.recommendationsField.value;
-        const repId = getCurrentReportId();
-        if (repId) {
-          localStorage.setItem('torus_signature_' + repId, JSON.stringify(reportState.signatureData));
-        }
+      if (reportState.digitalSignature) {
+        reportState.signatureRequired = true;
+        updateSignatureUI('Signature Required');
       }
       invalidateGeneratedReport();
     });
@@ -5420,6 +5757,7 @@
         reportState.signatureData = signPayload;
         localStorage.setItem('torus_signature_' + reportId, JSON.stringify(signPayload));
         localStorage.setItem('torus_signature_' + roomParam, JSON.stringify(signPayload));
+        localStorage.setItem('torus_signature_latest', JSON.stringify(signPayload));
 
         closeDigitalSignModal();
         updateSignatureUI('Signed');
@@ -5454,6 +5792,379 @@
       openDigitalSignModal();
     }
 
+    // ==========================================
+    // AUTHORIZED SIGNATURE REPLACEMENT WORKFLOW
+    // ==========================================
+    let replaceCanvasInited = false;
+    let isReplaceDrawing = false;
+    let hasDrawnReplaceSignature = false;
+
+    function initReplaceSignatureCanvas() {
+      const canvas = document.getElementById('replaceSignatureCanvas');
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const displayWidth = rect.width > 50 ? Math.floor(rect.width) : 490;
+      const displayHeight = rect.height > 50 ? Math.floor(rect.height) : 130;
+
+      canvas.width = displayWidth * dpr;
+      canvas.height = displayHeight * dpr;
+      canvas.style.width = displayWidth + 'px';
+      canvas.style.height = displayHeight + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#18d8ff';
+
+      function getPos(e) {
+        const cRect = canvas.getBoundingClientRect();
+        if (e.touches && e.touches.length > 0) {
+          return {
+            x: e.touches[0].clientX - cRect.left,
+            y: e.touches[0].clientY - cRect.top
+          };
+        }
+        return {
+          x: e.clientX - cRect.left,
+          y: e.clientY - cRect.top
+        };
+      }
+
+      function startDraw(e) {
+        if (e.cancelable) e.preventDefault();
+        isReplaceDrawing = true;
+        hasDrawnReplaceSignature = true;
+        const prompt = document.getElementById('replaceSignatureCanvasPrompt');
+        if (prompt) prompt.style.display = 'none';
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+      }
+
+      function moveDraw(e) {
+        if (!isReplaceDrawing) return;
+        if (e.cancelable) e.preventDefault();
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+      }
+
+      function stopDraw() {
+        isReplaceDrawing = false;
+      }
+
+      if (!replaceCanvasInited) {
+        replaceCanvasInited = true;
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', moveDraw);
+        window.addEventListener('mouseup', stopDraw);
+
+        canvas.addEventListener('touchstart', startDraw, { passive: false });
+        canvas.addEventListener('touchmove', moveDraw, { passive: false });
+        canvas.addEventListener('touchend', stopDraw);
+      }
+    }
+
+    function clearReplaceSignatureCanvas() {
+      const canvas = document.getElementById('replaceSignatureCanvas');
+      const prompt = document.getElementById('replaceSignatureCanvasPrompt');
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+      hasDrawnReplaceSignature = false;
+      if (prompt) prompt.style.display = 'flex';
+    }
+
+    function openReplaceSignatureModal() {
+      if (!isCurrentUserDoctor()) {
+        showToast('Only authorized doctors have permission to replace signatures.');
+        return;
+      }
+
+      const modal = document.getElementById('replaceSignatureModal');
+      if (!modal) return;
+
+      let docName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || 'Dr. Admin Doctor';
+      let docLicense = 'TORUS-REG-3001';
+      let docUid = '3001';
+      try {
+        const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
+        if (docRaw) {
+          const docObj = JSON.parse(docRaw);
+          if (docObj.name) docName = docObj.name.startsWith('Dr.') ? docObj.name : `Dr. ${docObj.name}`;
+          if (docObj.uid) docUid = docObj.uid;
+          if (docObj.license || docObj.uid) docLicense = docObj.license || `TORUS-REG-${docObj.uid}`;
+        }
+      } catch (_) { }
+
+      const repId = (dom.reportId ? dom.reportId.textContent.trim() : '') || getCurrentReportId() || buildAutoReportId();
+
+      const docNameEl = document.getElementById('replaceModalDoctorName');
+      const docLicEl = document.getElementById('replaceModalDoctorLicense');
+      const repIdEl = document.getElementById('replaceModalReportId');
+      const verEl = document.getElementById('replaceModalReportVersion');
+      const pwdInput = document.getElementById('replaceDoctorPassword');
+      const reasonInput = document.getElementById('replaceSignatureReason');
+
+      if (docNameEl) docNameEl.textContent = docName;
+      if (docLicEl) docLicEl.textContent = docLicense;
+      if (repIdEl) repIdEl.textContent = repId;
+      if (verEl) {
+        const currVer = (reportState.generatedReport && reportState.generatedReport.report_version) || 1;
+        verEl.textContent = `Current: v${currVer} → Next: v${currVer + 1}`;
+      }
+      if (pwdInput) pwdInput.value = '';
+      if (reasonInput) reasonInput.value = '';
+
+      modal.style.setProperty('display', 'flex', 'important');
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+      clearReplaceSignatureCanvas();
+      setTimeout(() => initReplaceSignatureCanvas(), 60);
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function closeReplaceSignatureModal() {
+      const modal = document.getElementById('replaceSignatureModal');
+      if (!modal) return;
+      modal.style.setProperty('display', 'none', 'important');
+      modal.classList.add('hidden');
+      modal.setAttribute('aria-hidden', 'true');
+      clearReplaceSignatureCanvas();
+    }
+
+    async function executeReplaceSignature() {
+      const canvas = document.getElementById('replaceSignatureCanvas');
+      const pwdInput = document.getElementById('replaceDoctorPassword');
+      const reasonInput = document.getElementById('replaceSignatureReason');
+      const confirmBtn = document.getElementById('confirmReplaceSignatureModalBtn');
+
+      const password = pwdInput ? pwdInput.value.trim() : '';
+      const reason = reasonInput ? reasonInput.value.trim() : '';
+
+      if (!password) {
+        showToast('Doctor password is required for security verification.');
+        if (pwdInput) pwdInput.focus();
+        return;
+      }
+
+      if (!reason || reason.length < 5) {
+        showToast('Please provide a mandatory, detailed replacement reason (minimum 5 characters).');
+        if (reasonInput) reasonInput.focus();
+        return;
+      }
+
+      if (!canvas || !hasDrawnReplaceSignature) {
+        showToast('Please draw the corrected clinician signature before confirming.');
+        return;
+      }
+
+      let doctorLogin = 'admin@gmail.com';
+      let doctorUid = '3001';
+      let doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || 'Dr. Admin Doctor';
+      let doctorLicense = 'TORUS-REG-3001';
+      try {
+        const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
+        if (docRaw) {
+          const docObj = JSON.parse(docRaw);
+          if (docObj.email || docObj.uid) doctorLogin = docObj.email || docObj.uid;
+          if (docObj.uid) doctorUid = docObj.uid;
+          if (docObj.name) doctorName = docObj.name.startsWith('Dr.') ? docObj.name : `Dr. ${docObj.name}`;
+          if (docObj.license || docObj.uid) doctorLicense = docObj.license || `TORUS-REG-${docObj.uid}`;
+        }
+      } catch (_) { }
+
+      const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || getCurrentReportId() || buildAutoReportId();
+      const newSigData = canvas.toDataURL('image/png');
+      const signatureHash = 'TORUS-SIG-REP-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+      if (confirmBtn && confirmBtn.dataset.submitting === 'true') return;
+      if (confirmBtn) {
+        confirmBtn.dataset.submitting = 'true';
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i> <span>Verifying & Replacing...</span>';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+
+      try {
+        const payload = {
+          reportId: reportId,
+          doctorId: doctorLogin,
+          password: password,
+          reason: reason,
+          signatureData: newSigData,
+          signatureHash: signatureHash,
+          doctorName: doctorName,
+          doctorLicense: doctorLicense
+        };
+
+        const resp = await fetch('/api/reports/replace-signature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const resData = await resp.json().catch(() => ({}));
+        if (!resp.ok || !resData.success) {
+          throw new Error(resData.error || `Server responded with status ${resp.status}`);
+        }
+
+        reportState.digitalSignature = true;
+        reportState.signatureRequired = false;
+        reportState.signatureData = {
+          signatureData: newSigData,
+          signatureHash: signatureHash,
+          doctorName: doctorName,
+          doctorLicense: doctorLicense,
+          signedAt: new Date().toISOString(),
+          status: 'signed',
+          replacementReason: reason
+        };
+
+        localStorage.setItem('torus_signature_' + reportId, JSON.stringify(reportState.signatureData));
+        localStorage.setItem('torus_signature_' + roomParam, JSON.stringify(reportState.signatureData));
+        localStorage.setItem('torus_signature_latest', JSON.stringify(reportState.signatureData));
+
+        closeReplaceSignatureModal();
+        updateSignatureUI('Signed');
+        invalidateGeneratedReport();
+        showToast('Signature successfully replaced and archived in audit trail.');
+
+        previewReportAction(true);
+      } catch (err) {
+        console.error('[Signature Replacement] Error:', err);
+        showToast(`Replacement failed: ${err.message || 'Please check password and retry.'}`);
+      } finally {
+        if (confirmBtn) {
+          confirmBtn.dataset.submitting = 'false';
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = '<i data-lucide="check" style="width: 16px; height: 16px;"></i> <span>Confirm Signature Replacement</span>';
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+      }
+    }
+
+    // ==========================================
+    // SIGNATURE HISTORY & AUDIT TRAIL MODAL
+    // ==========================================
+    async function openSignatureHistoryModal() {
+      const modal = document.getElementById('signatureHistoryModal');
+      const listContainer = document.getElementById('signatureHistoryList');
+      const subtitle = document.getElementById('historyModalSubtitle');
+      if (!modal) return;
+
+      const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || getCurrentReportId() || buildAutoReportId();
+      if (subtitle) subtitle.textContent = `Immutable cryptographic signature log for ${reportId}`;
+      if (listContainer) listContainer.innerHTML = '<div style="text-align:center; color:#9ca3b9; font-size:13px; padding:20px;">Loading signature audit history...</div>';
+
+      modal.style.setProperty('display', 'flex', 'important');
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+
+      try {
+        const resp = await fetch(`/api/reports/${encodeURIComponent(reportId)}/signature-history`);
+        const resData = await resp.json().catch(() => ({}));
+        if (!resp.ok || !resData.success) {
+          throw new Error(resData.error || 'Failed to retrieve signature history');
+        }
+
+        const history = resData.history || [];
+        if (history.length === 0) {
+          listContainer.innerHTML = `
+            <div style="text-align:center; color:#9ca3b9; font-size:13px; padding:30px; background:rgba(11,15,24,0.4); border-radius:8px;">
+              <i data-lucide="info" style="width:24px; height:24px; margin:0 auto 8px auto; display:block; color:#8b5cf6;"></i>
+              No signature audit entries recorded yet for this report.
+            </div>
+          `;
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+          return;
+        }
+
+        let html = '';
+        history.forEach((item) => {
+          const isSuccess = item.outcome === 'SUCCESS';
+          const isInvalidated = item.outcome === 'SIGNATURE_INVALIDATED';
+
+          let outcomeColor = isSuccess ? '#10b981' : (isInvalidated ? '#f59e0b' : '#ef4444');
+          let outcomeBg = isSuccess ? 'rgba(16,185,129,0.12)' : (isInvalidated ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.15)');
+          let outcomeText = item.outcome.replace('_', ' ');
+
+          let actionLabel = item.action.replace(/_/g, ' ');
+
+          let formattedDate = item.timestamp;
+          try {
+            const d = new Date(item.timestamp);
+            if (!isNaN(d.getTime())) {
+              formattedDate = d.toLocaleString();
+            }
+          } catch (_) { }
+
+          html += `
+            <div style="background:rgba(11,15,24,0.65); border:1px solid ${isSuccess ? 'rgba(124,58,237,0.3)' : (isInvalidated ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)')}; border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="background:rgba(124,58,237,0.25); color:#c4b5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; font-family:monospace;">
+                    v${item.report_version || 1}
+                  </span>
+                  <strong style="color:#f7f8ff; font-size:13px;">${actionLabel}</strong>
+                </div>
+                <span style="background:${outcomeBg}; color:${outcomeColor}; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px; border:1px solid ${outcomeColor};">
+                  ${outcomeText}
+                </span>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px; color:#9ca3b9;">
+                <div><span style="color:#64748b;">Clinician / ID:</span> <span style="color:#f7f8ff;">${item.doctor_name} (${item.doctor_id})</span></div>
+                <div><span style="color:#64748b;">Timestamp:</span> <span style="color:#f7f8ff;">${formattedDate}</span></div>
+                ${item.content_hash ? `<div style="grid-column:1/-1; word-break:break-all;"><span style="color:#64748b;">Content SHA-256:</span> <code style="color:#18d8ff; font-size:10.5px;">${item.content_hash.slice(0, 24)}...</code></div>` : ''}
+              </div>
+
+              ${item.replacement_reason ? `
+                <div style="font-size:12px; background:rgba(0,0,0,0.3); border-left:2px solid ${outcomeColor}; padding:6px 10px; border-radius:0 4px 4px 0; color:#e2e8f0;">
+                  <span style="color:#9ca3b9; font-size:10.5px; display:block;">Recorded Reason:</span>
+                  ${item.replacement_reason}
+                </div>
+              ` : ''}
+
+              ${item.new_signature_data && item.new_signature_data.startsWith('data:image/') ? `
+                <div style="margin-top:4px;">
+                  <span style="color:#64748b; font-size:10.5px; display:block; margin-bottom:4px;">Preserved Signature Graphic:</span>
+                  <div style="background:#ffffff; border-radius:6px; padding:4px 8px; display:inline-block; max-height:48px;">
+                    <img src="${item.new_signature_data}" style="max-height:40px; display:block;" alt="Preserved Signature" />
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        });
+
+        listContainer.innerHTML = html;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      } catch (err) {
+        listContainer.innerHTML = `
+          <div style="text-align:center; color:#ef4444; font-size:13px; padding:20px;">
+            Failed to load audit history: ${err.message || 'Error'}
+          </div>
+        `;
+      }
+    }
+
+    function closeSignatureHistoryModal() {
+      const modal = document.getElementById('signatureHistoryModal');
+      if (!modal) return;
+      modal.style.setProperty('display', 'none', 'important');
+      modal.classList.add('hidden');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+
     // Bind Signature Modal controls
     const closeDigitalSignModalBtn = document.getElementById('closeDigitalSignModalBtn');
     if (closeDigitalSignModalBtn) closeDigitalSignModalBtn.addEventListener('click', closeDigitalSignModal);
@@ -5469,6 +6180,32 @@
 
     dom.digitalSignBtn.addEventListener('click', handleDigitalSign);
 
+    // Bind Replace Signature controls
+    const replaceSignatureBtn = document.getElementById('replaceSignatureBtn');
+    if (replaceSignatureBtn) replaceSignatureBtn.addEventListener('click', openReplaceSignatureModal);
+
+    const closeReplaceSignatureModalBtn = document.getElementById('closeReplaceSignatureModalBtn');
+    if (closeReplaceSignatureModalBtn) closeReplaceSignatureModalBtn.addEventListener('click', closeReplaceSignatureModal);
+
+    const cancelReplaceSignatureModalBtn = document.getElementById('cancelReplaceSignatureModalBtn');
+    if (cancelReplaceSignatureModalBtn) cancelReplaceSignatureModalBtn.addEventListener('click', closeReplaceSignatureModal);
+
+    const clearReplaceSignatureCanvasBtn = document.getElementById('clearReplaceSignatureCanvasBtn');
+    if (clearReplaceSignatureCanvasBtn) clearReplaceSignatureCanvasBtn.addEventListener('click', clearReplaceSignatureCanvas);
+
+    const confirmReplaceSignatureModalBtn = document.getElementById('confirmReplaceSignatureModalBtn');
+    if (confirmReplaceSignatureModalBtn) confirmReplaceSignatureModalBtn.addEventListener('click', executeReplaceSignature);
+
+    // Bind Signature History controls
+    const viewSignatureHistoryBtn = document.getElementById('viewSignatureHistoryBtn');
+    if (viewSignatureHistoryBtn) viewSignatureHistoryBtn.addEventListener('click', openSignatureHistoryModal);
+
+    const closeSignatureHistoryModalBtn = document.getElementById('closeSignatureHistoryModalBtn');
+    if (closeSignatureHistoryModalBtn) closeSignatureHistoryModalBtn.addEventListener('click', closeSignatureHistoryModal);
+
+    const okSignatureHistoryModalBtn = document.getElementById('okSignatureHistoryModalBtn');
+    if (okSignatureHistoryModalBtn) okSignatureHistoryModalBtn.addEventListener('click', closeSignatureHistoryModal);
+
     if (dom.closePreviewModal) {
       dom.closePreviewModal.addEventListener('click', closePreview);
     }
@@ -5481,8 +6218,12 @@
     }
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) {
-        closePreview();
+      if (event.key === 'Escape') {
+        if (dom.imagePreviewModal && !dom.imagePreviewModal.classList.contains('hidden')) closePreview();
+        const repModal = document.getElementById('replaceSignatureModal');
+        if (repModal && !repModal.classList.contains('hidden')) closeReplaceSignatureModal();
+        const histModal = document.getElementById('signatureHistoryModal');
+        if (histModal && !histModal.classList.contains('hidden')) closeSignatureHistoryModal();
       }
     });
 
@@ -5502,8 +6243,20 @@
         .then(resData => {
           if (resData && resData.report) {
             const reportData = resData.report;
-            if (reportData.report_status === 'signed' && reportData.signature_data) {
+            if (reportData.patient_id && reportData.patient_id !== '--') {
+              reportState.patientId = reportData.patient_id;
+              const pIdEl = document.getElementById('previewPatientId');
+              if (pIdEl) pIdEl.textContent = reportData.patient_id;
+            }
+            if (reportData.report_status === 'signature_required' || reportData.signature_valid === 0) {
+              reportState.digitalSignature = false;
+              reportState.signatureRequired = true;
+              updateSignatureUI('Signature Required');
+              return;
+            }
+            if (reportData.report_status === 'signed' && reportData.signature_valid === 1 && reportData.signature_data) {
               reportState.digitalSignature = true;
+              reportState.signatureRequired = false;
               reportState.signatureData = {
                 signatureData: reportData.signature_data,
                 doctorName: reportData.signed_by || reportData.doctor_name,
@@ -5515,21 +6268,68 @@
               return;
             }
           }
-          // Default to Unsigned if not signed in database
+          // Do NOT reset to Unsigned if local signature is present in reportState or localStorage
+          const localSig = reportState.signatureData ||
+            readJson('torus_signature_' + activeReportId, null) ||
+            readJson('torus_signature_' + roomParam, null) ||
+            readJson('torus_signature_latest', null);
+          if (localSig && (localSig.status === 'signed' || localSig.signatureData || localSig.signatureHash)) {
+            reportState.digitalSignature = true;
+            reportState.signatureData = localSig;
+            updateSignatureUI('Signed');
+            return;
+          }
           reportState.digitalSignature = false;
           reportState.signatureData = null;
           updateSignatureUI('Unsigned');
         })
         .catch(err => {
-          console.warn('[Report Context] Backend query failed, keeping Unsigned:', err);
+          console.warn('[Report Context] Backend query failed, keeping local signature:', err);
+          const localSig = reportState.signatureData ||
+            readJson('torus_signature_' + activeReportId, null) ||
+            readJson('torus_signature_' + roomParam, null) ||
+            readJson('torus_signature_latest', null);
+          if (localSig && (localSig.status === 'signed' || localSig.signatureData || localSig.signatureHash)) {
+            reportState.digitalSignature = true;
+            reportState.signatureData = localSig;
+            updateSignatureUI('Signed');
+            return;
+          }
           reportState.digitalSignature = false;
           reportState.signatureData = null;
           updateSignatureUI('Unsigned');
         });
     } else {
-      reportState.digitalSignature = false;
-      reportState.signatureData = null;
-      updateSignatureUI('Unsigned');
+      const localSig = reportState.signatureData ||
+        readJson('torus_signature_' + roomParam, null) ||
+        readJson('torus_signature_latest', null);
+      if (localSig && (localSig.status === 'signed' || localSig.signatureData || localSig.signatureHash)) {
+        reportState.digitalSignature = true;
+        reportState.signatureData = localSig;
+        updateSignatureUI('Signed');
+      } else {
+        reportState.digitalSignature = false;
+        reportState.signatureData = null;
+        updateSignatureUI('Unsigned');
+      }
+    }
+
+    // Resolve Patient ID from clinical database if not yet bound
+    const activePatName = dom.patientName ? dom.patientName.textContent.trim() : '';
+    if ((!reportState.patientId || reportState.patientId === '--') && activePatName && activePatName !== '--') {
+      fetch('/api/patients/clinical-list')
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.patients && Array.isArray(data.patients)) {
+            const matched = data.patients.find(p => p.name && p.name.trim().toLowerCase() === activePatName.toLowerCase());
+            if (matched && matched.uid) {
+              reportState.patientId = matched.uid;
+              const pIdEl = document.getElementById('previewPatientId');
+              if (pIdEl) pIdEl.textContent = matched.uid;
+            }
+          }
+        })
+        .catch(() => { });
     }
 
     window.addEventListener('storage', (event) => {

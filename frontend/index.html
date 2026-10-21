@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=114" />
+  <link rel="stylesheet" href="css/styles.css?v=118" />
   <style>
     :root {
       --bg-main: #060B18;
@@ -2465,178 +2465,6 @@
           <!-- PATIENT DIAGNOSTIC REPORTS CONTENT VIEW (TORUS Stations Dashboard & Patient History) -->
           <div id="patientDiagnosticReportsContent" class="ddash-role-content drep-content" style="display: none;">
 
-            <!-- STATIONS BREADCRUMB / NAV BAR (Visible in Drill-Down Views) -->
-            <div class="torus-stations-breadcrumb" id="tstaBreadcrumb">
-              <button type="button" class="tsta-back-btn" id="tstaBackBtn">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                  stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="19" y1="12" x2="5" y2="12"></line>
-                  <polyline points="12 19 5 12 12 5"></polyline>
-                </svg>
-                <span id="tstaBackBtnText">Back to Stations</span>
-              </button>
-              <div class="tsta-trail" id="tstaTrail">
-                <span class="tsta-trail-item tsta-trail-root" id="tstaTrailStations">TORUS Stations</span>
-                <span class="tsta-trail-separator" id="tstaTrailSep1">/</span>
-                <span class="tsta-trail-item" id="tstaTrailStationName">TORUS-A12</span>
-                <span class="tsta-trail-separator" id="tstaTrailSep2" style="display: none;">/</span>
-                <span class="tsta-trail-item tsta-trail-active" id="tstaTrailPatientName" style="display: none;">Jane
-                  Smith</span>
-              </div>
-            </div>
-
-            <!-- LEVEL 1: TORUS STATIONS DASHBOARD VIEW -->
-            <div id="tstaDashboardView" class="tsta-view-panel" style="display: none;">
-              <!-- Header Card (Matching TORUS standard summary card & test expectations) -->
-              <div class="dact-header-card drep-header-card" id="patientDiagnosticReportsHeaderCard">
-                <div class="dact-header-left">
-                  <div class="dact-header-title-group">
-                    <div class="dprof-icon-box purple">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-                        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-                        <line x1="6" y1="6" x2="6.01" y2="6"></line>
-                        <line x1="6" y1="18" x2="6.01" y2="18"></line>
-                      </svg>
-                    </div>
-                    <div class="dact-header-text">
-                      <h1 class="dact-title">Diagnostic Reports</h1>
-                      <p class="dact-subtitle">Verified medical ultrasound examination reports and clinical findings</p>
-                    </div>
-                  </div>
-                </div>
-                <div class="dact-header-stats">
-                  <div class="dact-stat-pill">
-                    <span class="dact-stat-num" id="patRepTotalCount">10</span>
-                    <span class="dact-stat-lbl">Total Stations</span>
-                  </div>
-                  <div class="dact-stat-pill">
-                    <span class="dact-stat-num cyan" id="patRepFinalizedCount">6</span>
-                    <span class="dact-stat-lbl">Online</span>
-                  </div>
-                  <div class="dact-stat-pill">
-                    <span class="dact-stat-num purple" id="patRepStandbyCount">3</span>
-                    <span class="dact-stat-lbl">Standby</span>
-                  </div>
-                  <div class="dact-stat-pill">
-                    <span class="dact-stat-num red" id="patRepOfflineCount">1</span>
-                    <span class="dact-stat-lbl">Offline</span>
-                  </div>
-                  <div class="dact-stat-pill">
-                    <span class="dact-stat-num cyan" id="patRepTotalPatientsCount">23</span>
-                    <span class="dact-stat-lbl">Total Patients</span>
-                  </div>
-                  <div class="dact-stat-pill">
-                    <span class="dact-stat-num emerald" id="patRepActiveConsultCount">6</span>
-                    <span class="dact-stat-lbl">Active Consultations</span>
-                  </div>
-                  <button type="button" id="patRepCollapseToggleBtn" class="drep-collapse-btn"
-                    onclick="toggleDiagnosticReportsSummaryView('patientDiagnosticReportsHeaderCard', 'patRepCollapseToggleBtn')"
-                    title="Collapse summary section" aria-label="Collapse summary section">
-                    <svg class="drep-collapse-icon-minus" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    <svg class="drep-collapse-icon-plus" style="display: none;" width="16" height="16"
-                      viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
-                      stroke-linejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19"></line>
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Station Filter & Search Toolbar (Following Reference Image of Search TORUS Device modal) -->
-              <div class="dact-toolbar drep-toolbar tsta-toolbar">
-                <div class="dact-search-wrap tsta-search-wrap">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  </svg>
-                  <input type="text" id="patRepSearchInput" class="dact-search-input"
-                    placeholder="Search by ID, hospital, city..." />
-                  <button type="button" id="patRepSearchClearBtn" class="dact-search-clear" style="display:none;"
-                    title="Clear search">✕</button>
-                </div>
-
-                <div class="dact-search-wrap tsta-location-wrap">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                    <circle cx="12" cy="10" r="3"></circle>
-                  </svg>
-                  <input type="text" id="patRepLocationInput" class="dact-search-input"
-                    placeholder="Filter by country or city..." />
-                </div>
-
-                <div class="drep-type-select-wrap">
-                  <select id="patRepScanTypeFilter" class="drep-filter-select" aria-label="Filter stations by status">
-                    <option value="all">All Statuses</option>
-                    <option value="online">Online</option>
-                    <option value="standby">Standby</option>
-                    <option value="offline">Offline</option>
-                  </select>
-                </div>
-
-                <div class="drep-type-select-wrap">
-                  <select id="patRepStationScanFilter" class="drep-filter-select"
-                    aria-label="Filter stations by scan type">
-                    <option value="all">All Scan Types</option>
-                    <option value="Cardiac">Cardiac</option>
-                    <option value="Thyroid">Thyroid</option>
-                    <option value="Abdominal">Abdominal</option>
-                    <option value="Pelvic">Pelvic</option>
-                    <option value="Vascular">Vascular</option>
-                  </select>
-                </div>
-
-                <div class="drep-type-select-wrap">
-                  <select id="tstaStationSort" class="drep-filter-select" aria-label="Sort stations">
-                    <option value="id-asc">Sort by ID (A-Z)</option>
-                    <option value="id-desc">Sort by ID (Z-A)</option>
-                    <option value="patients-desc">Most Patients</option>
-                    <option value="latency-asc">Lowest Latency</option>
-                    <option value="signal-desc">Highest Signal</option>
-                    <option value="status">Status</option>
-                  </select>
-                </div>
-
-                <div class="dact-actions">
-                  <button type="button" id="patRepRefreshBtn" class="dact-btn-icon" title="Refresh TORUS Stations">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                      stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <polyline points="1 20 1 14 7 14"></polyline>
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- TORUS Stations Grid Dashboard Container -->
-              <div class="tsta-grid-wrapper">
-                <div class="tsta-grid" id="tstaStationsGrid">
-                  <!-- Rendered dynamically as separate clickable station cards -->
-                </div>
-                <div class="dact-empty-state" id="patRepEmptyState" style="display: none;">
-                  <div class="dact-empty-icon">
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                      stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-                      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-                      <line x1="6" y1="6" x2="6.01" y2="6"></line>
-                      <line x1="6" y1="18" x2="6.01" y2="18"></line>
-                    </svg>
-                  </div>
-                  <h3 class="dact-empty-title">No TORUS Stations Found</h3>
-                  <p class="dact-empty-subtitle">No TORUS devices match the search criteria or filter location.</p>
-                </div>
-              </div>
-            </div>
-
             <!-- LEVEL 2: STATION PATIENTS LIST VIEW -->
             <div id="tstaPatientsView" class="tsta-view-panel">
               <!-- Station Header Info Banner -->
@@ -2853,7 +2681,7 @@
                   <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
                 <input type="text" id="patHistSearchInput" class="dact-search-input"
-                  placeholder="Search examination history by scan type, doctor, or center..." />
+                  placeholder="Search examinations by ID, patient, scan, doctor, or center..." />
                 <button type="button" id="patHistSearchClearBtn" class="dact-search-clear" style="display:none;"
                   title="Clear search">✕</button>
               </div>
@@ -2866,6 +2694,15 @@
                   <option value="Pelvic">Pelvic</option>
                   <option value="Vascular">Vascular</option>
                   <option value="Thyroid">Thyroid</option>
+                </select>
+              </div>
+
+              <div class="drep-type-select-wrap">
+                <select id="patHistDateFilter" class="drep-filter-select" aria-label="Filter history by date range">
+                  <option value="all">All Dates</option>
+                  <option value="last7">Past 7 Days</option>
+                  <option value="last30">Past 30 Days</option>
+                  <option value="september-2026">September 2026</option>
                 </select>
               </div>
 
@@ -2884,7 +2721,9 @@
             <!-- History Table Container -->
             <div class="pathist-table-container">
               <div class="pathist-grid-row pathist-table-header">
-                <div class="pathist-col pathist-col-date">EXAMINATION DATE</div>
+                <div class="pathist-col pathist-col-date">EXAMINATION DATE &amp; TIME</div>
+                <div class="pathist-col pathist-col-id">EXAMINATION ID</div>
+                <div class="pathist-col pathist-col-patient">PATIENT NAME / ID</div>
                 <div class="pathist-col pathist-col-scan">SCAN TYPE</div>
                 <div class="pathist-col pathist-col-physician">PHYSICIAN / CENTER</div>
                 <div class="pathist-col pathist-col-duration">DURATION</div>
@@ -2902,21 +2741,13 @@
                     <polyline points="12 6 12 12 14 14"></polyline>
                   </svg>
                 </div>
-                <h3 class="dact-empty-title">No Examination History</h3>
+                <h3 class="dact-empty-title">No Examinations Found</h3>
                 <p class="dact-empty-subtitle">No historical examination logs match the search or category filters.</p>
               </div>
-              <!-- Structured Medical Archive Table Footer -->
+              <!-- Clean Records Counter Table Footer -->
               <div class="pathist-table-footer" id="patHistTableFooter">
                 <div class="pathist-footer-left">
-                  <span class="pathist-records-count" id="patHistRecordsCount">Showing 1 of 1 examination record</span>
-                  <span class="pathist-footer-badge">
-                    <span class="pathist-footer-dot"></span>
-                    Verified Clinical Archive
-                  </span>
-                </div>
-                <div class="pathist-footer-right">
-                  <span class="pathist-footer-meta">TORUS Robotic Sonography Records • DICOM & Telemetry
-                    Compliant</span>
+                  <span class="pathist-records-count" id="patHistRecordsCount">Showing 5 examination records</span>
                 </div>
               </div>
             </div>
@@ -4821,7 +4652,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="html2canvas.min.js"></script>
-  <script src="app.js?v=114"></script>
+  <script src="app.js?v=118"></script>
 </body>
 
 </html>

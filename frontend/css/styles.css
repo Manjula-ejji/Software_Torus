@@ -10233,80 +10233,12 @@ button.drep-collapse-btn:focus-visible,
    Matches Search TORUS Device modal reference styling, dark purple/cyan accents
    ========================================================================== */
 
-/* Breadcrumb & Navigation */
 .torus-stations-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 14px 24px;
-  background: rgba(13, 20, 44, 0.75);
-  border: 1px solid rgba(139, 92, 246, 0.25);
-  border-radius: 12px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  animation: dprofFadeIn 0.2s ease-out;
-  margin-bottom: 24px;
-}
-
-.tsta-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(139, 92, 246, 0.14);
-  border: 1px solid rgba(139, 92, 246, 0.4);
-  color: #c084fc;
-  padding: 9px 20px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
-  flex-shrink: 0;
-}
-
-.tsta-back-btn:hover {
-  background: rgba(139, 92, 246, 0.26);
-  border-color: #a855f7;
-  color: #ffffff;
-  transform: translateX(-2px);
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.35);
-}
-
-.tsta-trail {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: #94a3b8;
-}
-
-.tsta-trail-item {
-  color: #cbd5e1;
-  transition: color 0.15s ease;
-}
-
-.tsta-trail-root {
-  cursor: pointer;
-  color: #a78bfa;
-}
-
-.tsta-trail-root:hover {
-  color: #ffffff;
-  text-decoration: underline;
-}
-
-.tsta-trail-separator {
-  color: #64748b;
-  font-size: 13px;
-  margin: 0 2px;
-  user-select: none;
-}
-
-.tsta-trail-active {
-  color: #22d3ee;
-  font-weight: 700;
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
 }
 
 /* Stations Grid & Toolbar */
@@ -10637,30 +10569,45 @@ button.drep-collapse-btn:focus-visible,
   -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
   margin-top: 20px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .tsta-patients-table-head {
   display: grid;
-  grid-template-columns: minmax(220px, 2.2fr) minmax(160px, 1.5fr) minmax(200px, 1.7fr) minmax(130px, 1.1fr) minmax(180px, 1.4fr) minmax(160px, 1.3fr) minmax(140px, 1.1fr);
-  column-gap: 20px;
-  min-width: 1160px;
-  padding: 18px 26px;
+  grid-template-columns: minmax(180px, 1.8fr) minmax(130px, 1.3fr) minmax(140px, 1.3fr) minmax(95px, 0.9fr) minmax(110px, 1.1fr) minmax(115px, 1.1fr) minmax(110px, 1fr);
+  column-gap: 14px;
+  width: 100%;
+  min-width: 960px;
+  padding: 12px 20px;
   background: rgba(16, 24, 52, 0.9);
   border-bottom: 1px solid rgba(139, 92, 246, 0.2);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.8px;
   color: #64748b;
+  text-transform: uppercase;
   align-items: center;
   box-sizing: border-box;
+  user-select: none;
+}
+
+.tsta-patients-table-head span {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  white-space: nowrap;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .tsta-patient-row {
   display: grid;
-  grid-template-columns: minmax(220px, 2.2fr) minmax(160px, 1.5fr) minmax(200px, 1.7fr) minmax(130px, 1.1fr) minmax(180px, 1.4fr) minmax(160px, 1.3fr) minmax(140px, 1.1fr);
-  column-gap: 20px;
-  min-width: 1160px;
-  padding: 18px 26px;
+  grid-template-columns: minmax(180px, 1.8fr) minmax(130px, 1.3fr) minmax(140px, 1.3fr) minmax(95px, 0.9fr) minmax(110px, 1.1fr) minmax(115px, 1.1fr) minmax(110px, 1fr);
+  column-gap: 14px;
+  width: 100%;
+  min-width: 960px;
+  padding: 12px 20px;
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   transition: background 0.18s ease, border-color 0.18s ease;
@@ -10669,28 +10616,37 @@ button.drep-collapse-btn:focus-visible,
 }
 
 .tsta-patient-row:hover {
-  background: rgba(139, 92, 246, 0.09);
+  background: rgba(139, 92, 246, 0.08);
 }
 
 .tsta-patient-row:last-child {
   border-bottom: none;
 }
 
+.tsta-patient-row > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
 .tsta-pat-avatar-cell {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .tsta-pat-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 11px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 11.5px;
   flex-shrink: 0;
   background: rgba(139, 92, 246, 0.16);
   border: 1px solid rgba(139, 92, 246, 0.35);
@@ -10709,20 +10665,33 @@ button.drep-collapse-btn:focus-visible,
   color: #34d399;
 }
 
+.tsta-pat-avatar.amber {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
 .tsta-pat-name {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #ffffff;
-  margin: 0 0 5px 0;
-  line-height: 1.3;
+  margin: 0 0 2px 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tsta-pat-id {
-  font-size: 12px;
+  font-size: 11.5px;
   color: #94a3b8;
   margin: 0;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .tsta-pat-id strong {
@@ -10731,39 +10700,47 @@ button.drep-collapse-btn:focus-visible,
 }
 
 .tsta-doc-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #e2e8f0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tsta-date-cell {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
 }
 
 .tsta-date-main {
   font-size: 13.5px;
-  color: #f1f5f9;
-  font-weight: 500;
+  color: #ffffff;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .tsta-date-time {
-  font-size: 12px;
+  font-size: 11.5px;
   color: #94a3b8;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .tsta-rep-count-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
   background: rgba(139, 92, 246, 0.12);
   border: 1px solid rgba(139, 92, 246, 0.3);
   color: #c084fc;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -10771,13 +10748,13 @@ button.drep-collapse-btn:focus-visible,
 .tsta-btn-view-pat {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(6, 182, 212, 0.12);
   border: 1px solid rgba(6, 182, 212, 0.35);
   color: #22d3ee;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -10787,7 +10764,7 @@ button.drep-collapse-btn:focus-visible,
 .tsta-btn-view-pat:hover {
   background: rgba(6, 182, 212, 0.25);
   border-color: #22d3ee;
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
   transform: translateY(-1px);
 }
 
@@ -11020,33 +10997,7 @@ button.drep-collapse-btn:focus-visible,
 }
 
 .tsta-hist-findings-box {
-  background: rgba(14, 22, 48, 0.6);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  border-radius: 12px;
-  padding: 18px 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.tsta-hist-findings-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #22d3ee;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 2px;
-}
-
-.tsta-hist-findings-text {
-  font-size: 14px;
-  color: #cbd5e1;
-  line-height: 1.65;
-  margin: 0;
+  display: none !important;
 }
 
 /* Consultation Event Timeline Stepper */
@@ -11055,7 +11006,7 @@ button.drep-collapse-btn:focus-visible,
   border: 1px solid rgba(139, 92, 246, 0.25);
   border-radius: 14px;
   padding: 24px 28px;
-  margin-top: 24px;
+  margin-top: 0;
 }
 
 .tsta-timeline-title {
@@ -11084,22 +11035,13 @@ button.drep-collapse-btn:focus-visible,
 }
 
 .tsta-timeline-step::before {
-  content: "";
-  position: absolute;
-  top: 12px;
-  left: 26px;
-  right: -14px;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  z-index: 1;
+  display: none !important;
+  content: none !important;
 }
 
-.tsta-timeline-step:last-child::before {
-  display: none;
-}
-
+.tsta-timeline-step:last-child::before,
 .tsta-timeline-step.completed::before {
-  background: linear-gradient(90deg, #10b981 0%, #06b6d4 100%);
+  display: none !important;
 }
 
 .tsta-timeline-step-header {
@@ -11334,16 +11276,16 @@ body.torus-station-patients-active #docDashBackBtn {
   min-height: 440px;
 }
 
-/* SHARED GRID: Header and every Data Row use this identical track definition */
+/* SHARED GRID: Header and every Data Row use this identical track definition (8 Columns) */
 .pathist-grid-row {
   display: grid !important;
-  grid-template-columns: minmax(170px, 1.6fr) minmax(110px, 1fr) minmax(230px, 2.3fr) minmax(90px, 0.8fr) minmax(145px, 1.3fr) minmax(200px, 1.8fr) !important;
-  column-gap: 20px !important;
+  grid-template-columns: minmax(165px, 1.4fr) minmax(110px, 1fr) minmax(150px, 1.3fr) minmax(105px, 0.9fr) minmax(170px, 1.5fr) minmax(85px, 0.7fr) minmax(140px, 1.2fr) minmax(110px, 1fr) !important;
+  column-gap: 18px !important;
   padding: 14px 24px !important;
   align-items: center !important;
   box-sizing: border-box !important;
   width: 100% !important;
-  min-width: 945px !important;
+  min-width: 1080px !important;
 }
 
 /* Header-specific styling */
@@ -11368,7 +11310,7 @@ body.torus-station-patients-active #docDashBackBtn {
 .pathist-data-row {
   background: transparent !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
-  padding: 18px 24px !important;
+  padding: 16px 22px !important;
   transition: background 0.18s ease, border-color 0.18s ease !important;
 }
 
@@ -11390,7 +11332,7 @@ body.torus-station-patients-active #docDashBackBtn {
   min-width: 0 !important;
 }
 
-/* Column 1: Date */
+/* Column 1: Date & Time */
 .pathist-col-date {
   white-space: nowrap !important;
 }
@@ -11399,7 +11341,7 @@ body.torus-station-patients-active #docDashBackBtn {
   flex-direction: column !important;
   align-items: flex-start !important;
   justify-content: center !important;
-  gap: 3px !important;
+  gap: 2px !important;
 }
 
 .dhist-date-main-wrap {
@@ -11414,36 +11356,79 @@ body.torus-station-patients-active #docDashBackBtn {
   color: #ffffff !important;
 }
 
-.dhist-session-pill {
-  display: inline-flex !important;
-  align-items: center !important;
-  padding: 1px 6px !important;
-  border-radius: 4px !important;
-  background: rgba(6, 182, 212, 0.1) !important;
-  border: 1px solid rgba(6, 182, 212, 0.28) !important;
-  color: #38bdf8 !important;
-  font-size: 10.5px !important;
-  font-weight: 600 !important;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
-  letter-spacing: 0.3px !important;
-}
-
 .dhist-date-time {
   font-size: 11.5px !important;
   color: #94a3b8 !important;
 }
 
-/* Column 2: Scan Type */
+/* Column 2: Examination ID */
+.pathist-col-id {
+  align-items: center !important;
+}
+
+.dhist-session-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 3px 8px !important;
+  border-radius: 5px !important;
+  background: rgba(6, 182, 212, 0.12) !important;
+  border: 1px solid rgba(6, 182, 212, 0.3) !important;
+  color: #38bdf8 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  letter-spacing: 0.3px !important;
+}
+
+/* Column 3: Patient Name / ID */
+.pathist-col-patient {
+  align-items: center !important;
+}
+
+.pathist-data-row .pathist-col-patient {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 2px !important;
+}
+
+.dhist-pat-name {
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+
+.dhist-pat-id {
+  font-size: 11.5px !important;
+  color: #94a3b8 !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+
+.dhist-pat-id strong {
+  color: #c084fc !important;
+  font-weight: 600 !important;
+}
+
+/* Column 4: Scan Type */
 .pathist-col-scan {
   align-items: center !important;
 }
 
-/* Column 3: Physician / Center */
+/* Column 5: Physician / Center */
 .pathist-data-row .pathist-col-physician {
   flex-direction: column !important;
   align-items: flex-start !important;
   justify-content: center !important;
-  gap: 3px !important;
+  gap: 2px !important;
 }
 
 .pathist-data-row .pathist-col-physician .dhist-patient-name {
@@ -11467,7 +11452,7 @@ body.torus-station-patients-active #docDashBackBtn {
   max-width: 100% !important;
 }
 
-/* Column 4: Duration */
+/* Column 6: Duration */
 .pathist-col-duration {
   align-items: center !important;
 }
@@ -11485,7 +11470,7 @@ body.torus-station-patients-active #docDashBackBtn {
   font-variant-numeric: tabular-nums !important;
 }
 
-/* Column 5: Status */
+/* Column 7: Report Status */
 .pathist-col-status {
   align-items: center !important;
 }
@@ -11508,21 +11493,28 @@ body.torus-station-patients-active #docDashBackBtn {
   animation: dhistDotPulse 2s infinite ease-in-out;
 }
 
-@keyframes dhistDotPulse {
+.dhist-pulse-dot-pending {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  margin-right: 6px;
+}
 
-  0%,
-  100% {
+@keyframes dhistDotPulse {
+  0%, 100% {
     opacity: 1;
     transform: scale(1);
   }
-
   50% {
     opacity: 0.45;
     transform: scale(0.85);
   }
 }
 
-/* Column 6: Action */
+/* Column 8: Action */
 .pathist-col-actions {
   align-items: center !important;
   gap: 8px !important;
@@ -11530,10 +11522,15 @@ body.torus-station-patients-active #docDashBackBtn {
   justify-content: flex-start !important;
 }
 
-.pathist-data-row .pathist-col-actions .dhist-btn-view,
-.pathist-data-row .pathist-col-actions .dhist-btn-download {
+.pathist-data-row .pathist-col-actions .dhist-btn-view {
   margin: 0 !important;
   flex-shrink: 0 !important;
+}
+
+/* Remove download button and unverified compliance note */
+.dhist-btn-download,
+.pathist-single-record-note {
+  display: none !important;
 }
 
 /* ── Examination History Table Footer ── */

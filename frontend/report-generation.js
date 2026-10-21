@@ -266,30 +266,98 @@ function formatReportDate() {
   return `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
 }
 
+function isCurrentUserDoctor() {
+  const params = new URLSearchParams(window.location.search);
+  const role = (params.get('role') || '').toLowerCase();
+  if (role === 'doctor' || role === 'doc' || role === 'admin') return true;
+  try {
+    const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
+    if (docRaw) return true;
+  } catch (_) {}
+  return false;
+}
+
 function updateSignatureUI(stateOverride = null) {
-  const isSigned = reportState.digitalSignature;
-  const statusText = stateOverride || (isSigned ? 'Signed' : 'Unsigned');
+  const isDoctor = isCurrentUserDoctor();
+  const isSigned = reportState.digitalSignature && !reportState.signatureRequired;
+  const isReq = Boolean(reportState.signatureRequired);
+  
+  let statusText = stateOverride;
+  if (!statusText) {
+    if (isReq) statusText = 'Signature Required';
+    else if (isSigned) statusText = 'Signed';
+    else statusText = 'Unsigned';
+  }
+
   if (dom.signatureStatus) {
     dom.signatureStatus.textContent = statusText;
+    if (isSigned) {
+      dom.signatureStatus.style.color = '#10b981';
+      dom.signatureStatus.style.fontWeight = '700';
+    } else if (isReq) {
+      dom.signatureStatus.style.color = '#f59e0b';
+      dom.signatureStatus.style.fontWeight = '700';
+    } else if (stateOverride === 'Failed') {
+      dom.signatureStatus.style.color = '#ef4444';
+      dom.signatureStatus.style.fontWeight = '700';
+    } else {
+      dom.signatureStatus.style.color = '';
+      dom.signatureStatus.style.fontWeight = '';
+    }
   }
+
   const success = document.getElementById('signatureSuccess');
+  const reqBadge = document.getElementById('signatureRequiredBadge');
+  const replaceBtn = document.getElementById('replaceSignatureBtn');
+  const historyBtn = document.getElementById('viewSignatureHistoryBtn');
   const btn = document.getElementById('digitalSignBtn');
+
   if (btn) {
     if (stateOverride === 'Signing') {
       btn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i>Signing...';
       btn.disabled = true;
+      btn.style.display = 'inline-flex';
+    } else if (isReq) {
+      btn.innerHTML = '<i data-lucide="signature"></i>Re-Sign Report';
+      btn.disabled = false;
+      btn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+      btn.style.color = '#ffffff';
+      btn.style.display = 'inline-flex';
     } else if (isSigned) {
       btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
       btn.disabled = false;
+      btn.style.background = '#10b981';
+      btn.style.color = '#ffffff';
+      btn.style.display = 'inline-flex';
+    } else if (stateOverride === 'Failed') {
+      btn.innerHTML = '<i data-lucide="alert-circle"></i>Retry Sign';
+      btn.disabled = false;
+      btn.style.background = '#ef4444';
+      btn.style.color = '#ffffff';
+      btn.style.display = 'inline-flex';
     } else {
       btn.innerHTML = '<i data-lucide="signature"></i>Digital Sign';
       btn.disabled = false;
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.display = 'inline-flex';
     }
   }
+
   if (success) {
     success.style.display = isSigned ? "flex" : "none";
   }
-  lucide.createIcons();
+  if (reqBadge) {
+    reqBadge.style.display = isReq ? "flex" : "none";
+  }
+  if (replaceBtn) {
+    replaceBtn.style.display = (isDoctor && (isSigned || isReq)) ? "flex" : "none";
+  }
+  if (historyBtn) {
+    historyBtn.style.display = (isSigned || isReq || reportState.signatureData) ? "flex" : "none";
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function setReportId(id) {
@@ -832,7 +900,9 @@ function populateReportPreviewDOM(reportData) {
   const previewReportId = document.getElementById('previewReportId');
   const previewReportDate = document.getElementById('previewReportDate');
   const previewPatientName = document.getElementById('previewPatientName');
+  const previewPatientId = document.getElementById('previewPatientId');
   const previewExamDate = document.getElementById('previewExamDate');
+  const previewTimestamp = document.getElementById('previewTimestamp');
   const previewScanType = document.getElementById('previewScanType');
   const previewDeviceName = document.getElementById('previewDeviceName');
   const previewLocationName = document.getElementById('previewLocationName');
@@ -847,16 +917,44 @@ function populateReportPreviewDOM(reportData) {
   const previewSigImg = document.getElementById('previewSignatureImg');
 
   const now = new Date();
-  const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric'
-  }) + ' ' + now.toLocaleTimeString(undefined, {
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-  });
+  const rawGenTime = (reportData && reportData.generatedAt) ||
+                     (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+                     (reportState.generatedAt) ||
+                     now.toISOString();
+  if (!reportState.generatedAt) {
+    reportState.generatedAt = rawGenTime;
+  }
+
+  let dynamicReportTimestamp = '';
+  if (rawGenTime) {
+    try {
+      const d = new Date(rawGenTime);
+      if (!isNaN(d.getTime())) {
+        dynamicReportTimestamp = d.toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+    } catch (_) {}
+  }
+  if (!dynamicReportTimestamp) {
+    dynamicReportTimestamp = now.toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    });
+  }
+
+  if (reportData.patientInfo) {
+    reportData.patientInfo.reportTimestamp = dynamicReportTimestamp;
+    reportData.patientInfo.timestamp = dynamicReportTimestamp;
+  }
+  reportData.reportTimestamp = dynamicReportTimestamp;
 
   if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
-  if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
+  if (previewReportDate) previewReportDate.innerHTML = '';
   if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
+  const resolvedPatId = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
+  if (previewPatientId) previewPatientId.textContent = (resolvedPatId && resolvedPatId !== 'P-1000') ? resolvedPatId : '--';
   if (previewExamDate) previewExamDate.textContent = reportData.patientInfo?.examDate || '--';
+  if (previewTimestamp) previewTimestamp.textContent = dynamicReportTimestamp;
   const scanType = reportData.patientInfo?.scanType || '--';
   if (previewScanType) previewScanType.textContent = scanType.toLowerCase().endsWith('ultrasound') ? scanType : `${scanType} Ultrasound`;
   if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo?.device || '--';
@@ -883,7 +981,7 @@ function populateReportPreviewDOM(reportData) {
     }
   }
 
-  const sigObj = reportData.signatureData || reportState.signatureData;
+  const sigObj = reportData.signature || reportState.signatureData || reportState.digitalSignature;
   if (isSigned) {
     const sigSrc = sigObj?.signatureData || sigObj?.dataUrl || (typeof sigObj === 'string' && sigObj.startsWith('data:') ? sigObj : '');
     if (previewSigImg) {
@@ -1084,15 +1182,11 @@ function generateWhiteMedicalPdfFallback(reportData) {
   doc.setTextColor(100, 116, 139); // #64748b
   doc.text('DIAGNOSTIC IMAGING CENTER', margin, y + 14);
 
-  // Header right: Report ID and date
+  // Header right: Report ID
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
   doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(100, 116, 139);
-  doc.text(`Preview Generated: ${new Date(reportData.generatedAt || Date.now()).toLocaleDateString()}`, width - margin, y + 14, { align: 'right' });
 
   // Header line
   doc.setDrawColor(15, 23, 42);
@@ -1104,7 +1198,7 @@ function generateWhiteMedicalPdfFallback(reportData) {
   doc.setFillColor(248, 250, 252); // #f8fafc
   doc.setDrawColor(226, 232, 240); // #e2e8f0
   doc.setLineWidth(1);
-  doc.roundedRect(margin, y, contentWidth, 110, 6, 6, 'FD');
+  doc.roundedRect(margin, y, contentWidth, 126, 6, 6, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -1127,13 +1221,20 @@ function generateWhiteMedicalPdfFallback(reportData) {
   const c1 = margin + 14;
   const c2 = margin + halfWidth + 14;
   drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
-  drawDetail('Exam Date: ', reportData.patientInfo?.examDate, c2, y + 42);
+  const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
+  drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
+
+  drawDetail('Exam Date: ', reportData.patientInfo?.examDate, c1, y + 64);
+  const tsVal = reportData.patientInfo?.reportTimestamp || reportData.patientInfo?.timestamp || (reportData.generatedAt ? new Date(reportData.generatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--');
+  drawDetail('Report Timestamp: ', tsVal, c2, y + 64);
+
   const st = reportData.patientInfo?.scanType || '--';
-  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
-  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
-  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
-  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
-  y += 126;
+  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 86);
+  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 86);
+
+  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 108);
+  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 108);
+  y += 142;
 
   // Captured Images
   const images = (reportData.selectedImages && reportData.selectedImages.length)
@@ -1248,19 +1349,6 @@ function generateWhiteMedicalPdfFallback(reportData) {
   doc.line(margin, y, width - margin, y);
   doc.setLineDashPattern([], 0);
   y += 16;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Referring Clinician:', margin, y);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(15, 23, 42);
-  doc.text(reportData.patientInfo?.doctor || 'Dr. Admin Doctor', margin, y + 14);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139);
-  doc.text(reportData.patientInfo?.location || '--', margin, y + 26);
 
   // Right side: Digitally Signed
   doc.setFillColor(220, 252, 231); // #dcfce7
@@ -1688,24 +1776,18 @@ if (dom.backBtn) {
 
 dom.findingsField.addEventListener('input', () => {
   localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
-  if (reportState.signatureData) {
-    reportState.signatureData.findings = dom.findingsField.value;
-    const repId = getCurrentReportId();
-    if (repId) {
-      localStorage.setItem('torus_signature_' + repId, JSON.stringify(reportState.signatureData));
-    }
+  if (reportState.digitalSignature) {
+    reportState.signatureRequired = true;
+    updateSignatureUI('Signature Required');
   }
   invalidateGeneratedReport();
 });
 
 dom.recommendationsField.addEventListener('input', () => {
   localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
-  if (reportState.signatureData) {
-    reportState.signatureData.recommendations = dom.recommendationsField.value;
-    const repId = getCurrentReportId();
-    if (repId) {
-      localStorage.setItem('torus_signature_' + repId, JSON.stringify(reportState.signatureData));
-    }
+  if (reportState.digitalSignature) {
+    reportState.signatureRequired = true;
+    updateSignatureUI('Signature Required');
   }
   invalidateGeneratedReport();
 });
@@ -1807,6 +1889,7 @@ function previewReportAction(force = false) {
   const previewReportDate = document.getElementById('previewReportDate');
   const previewPatientName = document.getElementById('previewPatientName');
   const previewExamDate = document.getElementById('previewExamDate');
+  const previewTimestamp = document.getElementById('previewTimestamp');
   const previewScanType = document.getElementById('previewScanType');
   const previewDeviceName = document.getElementById('previewDeviceName');
   const previewLocationName = document.getElementById('previewLocationName');
@@ -1819,16 +1902,32 @@ function previewReportAction(force = false) {
   const previewSignTime = document.getElementById('previewSignTime');
 
   const now = new Date();
-  const currentPreviewTimestamp = now.toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric'
-  }) + ' ' + now.toLocaleTimeString(undefined, {
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-  });
+  const rawGenTime = (reportData && reportData.generatedAt) ||
+                     (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+                     (reportState.generatedAt) ||
+                     now.toISOString();
+  let dynamicReportTimestamp = '';
+  if (rawGenTime) {
+    try {
+      const d = new Date(rawGenTime);
+      if (!isNaN(d.getTime())) {
+        dynamicReportTimestamp = d.toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+    } catch (_) {}
+  }
+  if (!dynamicReportTimestamp) {
+    dynamicReportTimestamp = now.toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    });
+  }
 
   if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
-  if (previewReportDate) previewReportDate.innerHTML = `<span style="color: #64748b;">Preview Generated:</span> <strong style="color: #0f172a;">${currentPreviewTimestamp}</strong>`;
+  if (previewReportDate) previewReportDate.innerHTML = '';
   if (previewPatientName) previewPatientName.textContent = reportData.patientInfo.patientName;
   if (previewExamDate) previewExamDate.textContent = reportData.patientInfo.examDate;
+  if (previewTimestamp) previewTimestamp.textContent = dynamicReportTimestamp;
   if (previewScanType) previewScanType.textContent = reportData.patientInfo.scanType;
   if (previewDeviceName) previewDeviceName.textContent = reportData.patientInfo.device;
   if (previewLocationName) previewLocationName.textContent = reportData.patientInfo.location;

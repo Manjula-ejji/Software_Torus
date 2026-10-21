@@ -2225,7 +2225,6 @@ function navigateToReportGeneration() {
   const patientName = rawPatName || "--";
 
   let rawPatId = activeSession?.patientId || patientUser?.uid || patientUser?.id || "";
-  if (rawPatId === "P-12345" || rawPatId === "P-8821") rawPatId = "";
   const patientId = rawPatId || "--";
 
   const rawScanType = activeSession?.scanType || "";
@@ -3226,8 +3225,12 @@ window.addEventListener("popstate", async (event) => {
   // 3. Screen navigation based on history state
   if (event.state && event.state.torusStationsView) {
     if (typeof navigateTorusStationView === "function") {
-      navigateTorusStationView(event.state.torusStationsView, {
-        stationId: event.state.stationId,
+      let targetView = event.state.torusStationsView;
+      if (targetView === "stations") {
+        targetView = "patients";
+      }
+      navigateTorusStationView(targetView, {
+        stationId: event.state.stationId || "TORUS-A12",
         patientId: event.state.patientId
       }, false);
     }
@@ -3245,10 +3248,19 @@ window.addEventListener("popstate", async (event) => {
     const patRepContent = document.getElementById("patientDiagnosticReportsContent");
     if (patRepContent && patRepContent.style.display !== "none" && typeof torusStationsState !== "undefined") {
       if (torusStationsState.currentView === "patient-history") {
-        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, false);
+        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId || "TORUS-A12" }, false);
         return;
       } else if (torusStationsState.currentView === "patients") {
-        navigateTorusStationView("stations", {}, false);
+        // Overview page is removed, navigate back to Patient Dashboard instead of stations
+        const patDashLink = document.querySelector('.ddash-sidebar-nav .ddash-nav-item[data-view="patient-dashboard"]');
+        if (patDashLink) {
+          patDashLink.click();
+        } else {
+          hideAllPortalSubViews();
+          const patContent = document.getElementById("patientDashboardContent");
+          if (patContent) patContent.style.display = "flex";
+          renderPatientDashboard(currentAuthenticatedUser);
+        }
         return;
       }
     }
@@ -6490,6 +6502,14 @@ let torusStationsState = {
  * Handles browser history pushState / replaceState seamlessly
  */
 function navigateTorusStationView(view, params = {}, pushToHistory = true) {
+  // Completely remove intermediate stations overview; directly route to individual station details
+  if (view === "stations") {
+    view = "patients";
+    if (!params.stationId) {
+      params.stationId = torusStationsState.selectedStationId || "TORUS-A12";
+    }
+  }
+
   torusStationsState.currentView = view;
   if (params.stationId) torusStationsState.selectedStationId = params.stationId;
   if (params.patientId) torusStationsState.selectedPatientId = params.patientId;
@@ -6497,51 +6517,20 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
   const dashboardView = document.getElementById("tstaDashboardView");
   const patientsView = document.getElementById("tstaPatientsView");
   const patientHistoryView = document.getElementById("tstaPatientHistoryView");
-  const breadcrumb = document.getElementById("tstaBreadcrumb");
   const docBackBtn = document.getElementById("docDashBackBtn");
 
-  const trailStationName = document.getElementById("tstaTrailStationName");
-  const trailPatientName = document.getElementById("tstaTrailPatientName");
-  const trailSep1 = document.getElementById("tstaTrailSep1");
-  const trailSep2 = document.getElementById("tstaTrailSep2");
-  const backBtnText = document.getElementById("tstaBackBtnText");
+  if (dashboardView) dashboardView.style.display = "none";
 
-  if (view === "stations") {
-    if (dashboardView) dashboardView.style.display = "block";
-    if (patientsView) patientsView.style.display = "none";
-    if (patientHistoryView) patientHistoryView.style.display = "none";
-    if (breadcrumb) breadcrumb.style.display = "none";
-    if (docBackBtn) docBackBtn.style.display = "";
-    document.body.classList.remove("torus-station-patients-active");
-    renderTorusStationsGrid();
-
-    if (pushToHistory && window.history) {
-      window.history.pushState(
-        { torusStationsView: "stations" },
-        "TORUS Stations",
-        "#stations"
-      );
-    }
-  } else if (view === "patients") {
+  if (view === "patients") {
     if (dashboardView) dashboardView.style.display = "none";
     if (patientsView) patientsView.style.display = "block";
     if (patientHistoryView) patientHistoryView.style.display = "none";
-    if (breadcrumb) breadcrumb.style.display = "flex";
 
     // Remove the unnecessary generic Back button from the top header on Image 2
     if (docBackBtn) docBackBtn.style.display = "none";
     document.body.classList.add("torus-station-patients-active");
 
     const stId = torusStationsState.selectedStationId || "TORUS-A12";
-    if (trailStationName) {
-      trailStationName.textContent = stId;
-      trailStationName.style.display = "inline";
-    }
-    if (trailSep1) trailSep1.style.display = "inline";
-    if (trailPatientName) trailPatientName.style.display = "none";
-    if (trailSep2) trailSep2.style.display = "none";
-    if (backBtnText) backBtnText.textContent = "Back to Stations";
-
     renderStationPatients(stId);
 
     if (pushToHistory && window.history) {
@@ -6555,9 +6544,8 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
     if (dashboardView) dashboardView.style.display = "none";
     if (patientsView) patientsView.style.display = "none";
     if (patientHistoryView) patientHistoryView.style.display = "block";
-    if (breadcrumb) breadcrumb.style.display = "flex";
 
-    // Restore top header back button if applicable, and ensure breadcrumb Back to Station Patients remains fully functional
+    // Restore top header back button if applicable to navigate back to station details
     if (docBackBtn) docBackBtn.style.display = "";
     document.body.classList.remove("torus-station-patients-active");
 
@@ -6565,18 +6553,6 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
     const patId = torusStationsState.selectedPatientId;
     const patients = TORUS_STATION_PATIENTS_DATABASE[stId] || [];
     const patient = patients.find(p => p.patientId === patId) || { patientName: "Patient A", patientId: patId || "P-12345" };
-
-    if (trailStationName) {
-      trailStationName.textContent = stId;
-      trailStationName.style.display = "inline";
-    }
-    if (trailSep1) trailSep1.style.display = "inline";
-    if (trailPatientName) {
-      trailPatientName.textContent = patient.patientName;
-      trailPatientName.style.display = "inline";
-    }
-    if (trailSep2) trailSep2.style.display = "inline";
-    if (backBtnText) backBtnText.textContent = `Back to ${stId} Patients`;
 
     renderPatientDetailedHistory(stId, patId);
 
@@ -6591,12 +6567,33 @@ function navigateTorusStationView(view, params = {}, pushToHistory = true) {
 }
 window.navigateTorusStationView = navigateTorusStationView;
 
+// Ensure #stations hash automatically routes to active station details
+function guardAgainstStationsOverviewHash() {
+  if (window.location.hash === "#stations") {
+    if (typeof navigateTorusStationView === "function") {
+      navigateTorusStationView("patients", { stationId: "TORUS-A12" }, false);
+    }
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(
+        { torusStationsView: "patients", stationId: "TORUS-A12" },
+        "Station TORUS-A12",
+        "#station-TORUS-A12"
+      );
+    }
+  }
+}
+window.addEventListener("hashchange", guardAgainstStationsOverviewHash);
+if (typeof window !== "undefined" && window.location && window.location.hash === "#stations") {
+  guardAgainstStationsOverviewHash();
+}
+
 /**
  * Render TORUS Stations Cards in a neat responsive grid layout
  * Following the Search TORUS Device modal reference design
  */
 function renderTorusStationsGrid() {
   const container = document.getElementById("tstaStationsGrid");
+  if (!container) return;
   const emptyEl = document.getElementById("patRepEmptyState");
   const totalCountEl = document.getElementById("patRepTotalCount");
   const finalizedCountEl = document.getElementById("patRepFinalizedCount");
@@ -7092,29 +7089,6 @@ function renderPatientDetailedHistory(stationId, patientId) {
           </div>
         </div>
 
-        <div class="tsta-hist-findings-box">
-          <div class="tsta-hist-findings-title">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-            <span>Ultrasound Findings & Telemetry</span>
-          </div>
-          <p class="tsta-hist-findings-text">${rec.findings}</p>
-        </div>
-
-        ${rec.impression ? `
-          <div class="tsta-hist-findings-box" style="margin-top: 10px; background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.3);">
-            <div class="tsta-hist-findings-title" style="color: #38bdf8;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              <span>Clinical Impression & Follow-up</span>
-            </div>
-            <p class="tsta-hist-findings-text" style="color: #e0f2fe; font-weight: 500;">${rec.impression}</p>
-          </div>
-        ` : ""}
-
         <!-- Consultation Event Timeline Stepper -->
         <div class="tsta-timeline-card">
           <div class="tsta-timeline-title">
@@ -7183,7 +7157,7 @@ function renderPatientDiagnosticReports(patient, query = "", typeFilter = "all")
   // Directly open the station-specific patient list (Image 2) for TORUS-A12
   const targetStationId = "TORUS-A12";
   torusStationsState.selectedStationId = targetStationId;
-  navigateTorusStationView("patients", { stationId: targetStationId }, false);
+  navigateTorusStationView("patients", { stationId: targetStationId }, true);
 }
 window.renderPatientDiagnosticReports = renderPatientDiagnosticReports;
 
@@ -7279,10 +7253,65 @@ function calculateTotalDuration(items) {
 }
 window.calculateTotalDuration = calculateTotalDuration;
 
+/**
+ * Retrieve authorized completed examinations for the active attendant/station
+ * without creating duplicate records or data stores.
+ */
+function getAuthorizedExaminations(user) {
+  loadTorusSessions();
+  const allCompleted = window.torusSessions?.completed || [];
+  const assignedStation = user?.assignedStation || torusStationsState?.selectedStationId || "TORUS-A12";
+
+  // Filter completed examinations for the authorized station
+  let exams = allCompleted.filter(s => {
+    if (s.deviceId && assignedStation) {
+      return s.deviceId.toUpperCase() === assignedStation.toUpperCase();
+    }
+    return true;
+  });
+
+  // If no station records found in torusSessions, retrieve from TORUS_STATION_PATIENTS_DATABASE
+  if (exams.length === 0 && typeof TORUS_STATION_PATIENTS_DATABASE !== "undefined" && TORUS_STATION_PATIENTS_DATABASE[assignedStation]) {
+    const stPatients = TORUS_STATION_PATIENTS_DATABASE[assignedStation];
+    exams = [];
+    stPatients.forEach(p => {
+      (p.records || []).forEach(r => {
+        if (r.recordType === "report" || r.status === "ready" || r.status === "Completed") {
+          exams.push({
+            sessionId: r.sessionId,
+            patientId: p.patientId,
+            patientName: p.patientName,
+            deviceId: assignedStation,
+            scanType: r.scanType || p.scanType,
+            diagnosticCenter: r.diagnosticCenter || "NYC Medical Center",
+            sessionDate: r.date || p.consultationDate,
+            sessionTime: r.time || p.consultationTime,
+            duration: r.duration || "20:00",
+            status: "completed",
+            doctorName: r.doctorName || p.doctorName,
+            reportStatus: r.status || "ready",
+            reportId: r.reportId
+          });
+        }
+      });
+    });
+  }
+
+  // Sort chronologically descending (newest first)
+  exams.sort((a, b) => {
+    const da = `${a.sessionDate || a.examDate || ''} ${a.sessionTime || a.examTime || ''}`;
+    const db = `${b.sessionDate || b.examDate || ''} ${b.sessionTime || b.examTime || ''}`;
+    return db.localeCompare(da);
+  });
+
+  return exams;
+}
+window.getAuthorizedExaminations = getAuthorizedExaminations;
+
 // Render Patient Examination History View
-function renderPatientHistory(patient, query = "", typeFilter = "all") {
-  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001" };
-  const { completedList } = getPatientSessionData(current);
+function renderPatientHistory(patient, query = "", typeFilter = "all", dateFilter = "all") {
+  const current = patient || currentAuthenticatedUser || { name: "Patient User", uid: "4001", role: "patient" };
+  const authorizedExams = getAuthorizedExaminations(current);
 
   const listEl = document.getElementById("patHistList");
   const emptyEl = document.getElementById("patHistEmptyState");
@@ -7292,14 +7321,43 @@ function renderPatientHistory(patient, query = "", typeFilter = "all") {
   const tableFooterEl = document.getElementById("patHistTableFooter");
 
   const q = (query || "").trim().toLowerCase();
-  const filtered = completedList.filter(item => {
+  const dFilter = (dateFilter || "all").toLowerCase();
+
+  const filtered = authorizedExams.filter(item => {
+    // Scan type filter
     if (typeFilter !== "all" && item.scanType.toLowerCase() !== typeFilter.toLowerCase()) return false;
+
+    // Date range filter
+    if (dFilter !== "all") {
+      const itemDateStr = item.sessionDate || item.examDate || "";
+      if (dFilter === "september-2026") {
+        if (!itemDateStr.startsWith("2026-09")) return false;
+      } else if (dFilter === "last7") {
+        const refDate = new Date("2026-09-14T23:59:59");
+        const itemDate = new Date(`${itemDateStr}T00:00:00`);
+        const diffDays = (refDate - itemDate) / (1000 * 60 * 60 * 24);
+        if (diffDays < 0 || diffDays > 7) return false;
+      } else if (dFilter === "last30") {
+        const refDate = new Date("2026-09-14T23:59:59");
+        const itemDate = new Date(`${itemDateStr}T00:00:00`);
+        const diffDays = (refDate - itemDate) / (1000 * 60 * 60 * 24);
+        if (diffDays < 0 || diffDays > 30) return false;
+      }
+    }
+
+    // Search query across ID, patient, scan type, physician, or center
     if (q) {
-      const match = (item.scanType && item.scanType.toLowerCase().includes(q)) ||
-        (item.doctorName && item.doctorName.toLowerCase().includes(q)) ||
-        (item.diagnosticCenter && item.diagnosticCenter.toLowerCase().includes(q)) ||
-        (item.sessionId && item.sessionId.toLowerCase().includes(q)) ||
-        (item.reportId && item.reportId.toLowerCase().includes(q));
+      const sess = (item.sessionId || "").toLowerCase();
+      const rep = (item.reportId || "").toLowerCase();
+      const pName = (item.patientName || "").toLowerCase();
+      const pId = (item.patientId || "").toLowerCase();
+      const sType = (item.scanType || "").toLowerCase();
+      const dName = (item.doctorName || "").toLowerCase();
+      const center = (item.diagnosticCenter || "").toLowerCase();
+      const dev = (item.deviceId || "").toLowerCase();
+
+      const match = sess.includes(q) || rep.includes(q) || pName.includes(q) ||
+        pId.includes(q) || sType.includes(q) || dName.includes(q) || center.includes(q) || dev.includes(q);
       if (!match) return false;
     }
     return true;
@@ -7309,8 +7367,8 @@ function renderPatientHistory(patient, query = "", typeFilter = "all") {
   if (durationTotalEl) durationTotalEl.textContent = calculateTotalDuration(filtered);
   if (recordsCountEl) {
     recordsCountEl.textContent = filtered.length === 1
-      ? "Showing 1 of 1 examination record"
-      : `Showing ${filtered.length} of ${completedList.length} examination records`;
+      ? "Showing 1 examination record"
+      : `Showing ${filtered.length} of ${authorizedExams.length} examination records`;
   }
 
   if (!listEl) return;
@@ -7335,62 +7393,77 @@ function renderPatientHistory(patient, query = "", typeFilter = "all") {
 
     const repId = item.reportId || `REP-2026-${(item.sessionId || '001').replace(/\D/g, '')}`;
     const sessId = item.sessionId || "S-101";
-    const patId = item.patientId || current.uid || "P-12345";
-    const duration = item.duration || "22:15";
+    const patId = item.patientId || "P-12345";
+    const patName = item.patientName || "Patient A";
+    const duration = item.duration || "20:00";
+    const dateStr = item.sessionDate || item.examDate || "2026-09-14";
+    const timeStr = item.sessionTime || item.examTime || "09:15 AM";
+    const docName = item.doctorName || "Dr. Admin Doctor";
+    const centerName = item.diagnosticCenter || "NYC Medical Center";
+    const isReady = (item.reportStatus === "ready" || item.status === "completed" || item.reportStatus === "Completed");
 
     return `
       <div class="pathist-grid-row pathist-data-row" data-session-id="${sessId}" data-report-id="${repId}">
+        <!-- 1. Examination Date & Time -->
         <div class="pathist-col pathist-col-date">
-          <div class="dhist-date-main-wrap">
-            <span class="dhist-date-main">${item.sessionDate || item.examDate || "2026-09-14"}</span>
-            <span class="dhist-session-pill" title="Clinical Session Reference ID">#${sessId}</span>
-          </div>
-          <span class="dhist-date-time">${item.sessionTime || item.examTime || "09:15 AM"}</span>
+          <span class="dhist-date-main">${dateStr}</span>
+          <span class="dhist-date-time">${timeStr}</span>
         </div>
+
+        <!-- 2. Examination ID -->
+        <div class="pathist-col pathist-col-id">
+          <span class="dhist-session-pill" title="Unique Examination ID">#${sessId}</span>
+        </div>
+
+        <!-- 3. Patient Name / ID -->
+        <div class="pathist-col pathist-col-patient">
+          <p class="dhist-pat-name">${patName}</p>
+          <p class="dhist-pat-id">ID: <strong>${patId}</strong></p>
+        </div>
+
+        <!-- 4. Scan Type -->
         <div class="pathist-col pathist-col-scan">
           <span class="ddash-scan-tag ${scanClass}">${item.scanType}</span>
         </div>
+
+        <!-- 5. Physician / Center -->
         <div class="pathist-col pathist-col-physician">
-          <p class="dhist-patient-name">${item.doctorName || "Dr. Admin Doctor"}</p>
-          <p class="dhist-patient-id">${item.diagnosticCenter || "Apex Diagnostic Center"}</p>
+          <p class="dhist-patient-name">${docName}</p>
+          <p class="dhist-patient-id">${centerName}</p>
         </div>
+
+        <!-- 6. Duration -->
         <div class="pathist-col pathist-col-duration">
           <span class="dhist-duration-pill">${duration}</span>
         </div>
+
+        <!-- 7. Report Status -->
         <div class="pathist-col pathist-col-status">
-          <span class="drep-badge-ready">
-            <span class="dhist-pulse-dot"></span>
-            Report Available
-          </span>
+          ${isReady ? `
+            <span class="drep-badge-ready">
+              <span class="dhist-pulse-dot"></span>
+              Report Available
+            </span>
+          ` : `
+            <span class="drep-badge-pending">
+              <span class="dhist-pulse-dot-pending"></span>
+              Pending Review
+            </span>
+          `}
         </div>
+
+        <!-- 8. Action (View Report only) -->
         <div class="pathist-col pathist-col-actions">
           <button type="button" class="dhist-btn-view" onclick="openPatientReportViewModal('${repId}')" title="View Detailed Diagnostic Report">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             <span>View Report</span>
-          </button>
-          <button type="button" class="dhist-btn-download" onclick="downloadPatientReport('${repId}', '${patId}')" title="Download Official Medical Report PDF">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <span>Download</span>
           </button>
         </div>
       </div>
     `;
   }).join("");
 
-  const singleNoteHtml = filtered.length === 1 ? `
-    <div class="pathist-single-record-note">
-      <div class="pathist-note-content">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
-        <span>Telemetry kinematics and cine loops for this session are securely archived in the TORUS clinical vault.</span>
-      </div>
-    </div>
-  ` : "";
-
-  listEl.innerHTML = rowsHtml + singleNoteHtml;
+  listEl.innerHTML = rowsHtml;
 }
 window.renderPatientHistory = renderPatientHistory;
 
@@ -7590,68 +7663,6 @@ function initPatientControls() {
     };
   }
 
-  // Reports (TORUS Stations) Search & Filter
-  const repSearch = document.getElementById("patRepSearchInput");
-  const repClear = document.getElementById("patRepSearchClearBtn");
-  const repLoc = document.getElementById("patRepLocationInput");
-  const repFilter = document.getElementById("patRepScanTypeFilter");
-  const repRefresh = document.getElementById("patRepRefreshBtn");
-
-  if (repSearch) {
-    repSearch.oninput = () => {
-      if (repClear) repClear.style.display = repSearch.value ? "block" : "none";
-      torusStationsState.stationSearchQuery = repSearch.value;
-      renderTorusStationsGrid();
-    };
-  }
-  if (repClear) {
-    repClear.onclick = () => {
-      repSearch.value = "";
-      repClear.style.display = "none";
-      torusStationsState.stationSearchQuery = "";
-      renderTorusStationsGrid();
-    };
-  }
-  if (repLoc) {
-    repLoc.oninput = () => {
-      torusStationsState.stationLocationQuery = repLoc.value;
-      renderTorusStationsGrid();
-    };
-  }
-  if (repFilter) {
-    repFilter.onchange = () => {
-      torusStationsState.stationStatusFilter = repFilter.value;
-      renderTorusStationsGrid();
-    };
-  }
-  const repScanFilter = document.getElementById("patRepStationScanFilter");
-  if (repScanFilter) {
-    repScanFilter.onchange = () => {
-      torusStationsState.stationScanFilter = repScanFilter.value;
-      renderTorusStationsGrid();
-    };
-  }
-  const repSort = document.getElementById("tstaStationSort");
-  if (repSort) {
-    repSort.onchange = () => {
-      torusStationsState.stationSort = repSort.value;
-      renderTorusStationsGrid();
-    };
-  }
-
-  if (repRefresh) {
-    repRefresh.onclick = () => {
-      repRefresh.classList.add("dact-refreshing");
-      torusStationsState.isLoading = true;
-      renderTorusStationsGrid();
-      setTimeout(() => {
-        torusStationsState.isLoading = false;
-        renderTorusStationsGrid();
-        repRefresh.classList.remove("dact-refreshing");
-        if (typeof showToastAlert === "function") showToastAlert("TORUS Stations & telemetry updated.", "info");
-      }, 450);
-    };
-  }
 
   // Station Patients View Search & Filter
   const patSearch = document.getElementById("tstaPatientSearchInput");
@@ -7745,61 +7756,50 @@ function initPatientControls() {
     };
   }
 
-  // Breadcrumb Back Button & Root Link
-  const tstaBackBtn = document.getElementById("tstaBackBtn");
-  if (tstaBackBtn) {
-    tstaBackBtn.onclick = () => {
-      if (torusStationsState.currentView === "patient-history") {
-        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, true);
-      } else {
-        navigateTorusStationView("stations", {}, true);
-      }
-    };
-  }
 
-  const tstaTrailStations = document.getElementById("tstaTrailStations");
-  if (tstaTrailStations) {
-    tstaTrailStations.onclick = () => {
-      navigateTorusStationView("stations", {}, true);
-    };
-  }
-
-  const tstaTrailStationName = document.getElementById("tstaTrailStationName");
-  if (tstaTrailStationName) {
-    tstaTrailStationName.onclick = () => {
-      if (torusStationsState.selectedStationId) {
-        navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, true);
-      }
-    };
-  }
 
   // History Search & Filter
   const histSearch = document.getElementById("patHistSearchInput");
   const histClear = document.getElementById("patHistSearchClearBtn");
   const histFilter = document.getElementById("patHistScanTypeFilter");
+  const histDateFilter = document.getElementById("patHistDateFilter");
   const histRefresh = document.getElementById("patHistRefreshBtn");
+
+  function triggerHistoryFilter() {
+    renderPatientHistory(
+      currentAuthenticatedUser,
+      histSearch?.value || "",
+      histFilter?.value || "all",
+      histDateFilter?.value || "all"
+    );
+  }
 
   if (histSearch) {
     histSearch.oninput = () => {
       if (histClear) histClear.style.display = histSearch.value ? "block" : "none";
-      renderPatientHistory(currentAuthenticatedUser, histSearch.value, histFilter?.value || "all");
+      triggerHistoryFilter();
     };
   }
   if (histClear) {
     histClear.onclick = () => {
       histSearch.value = "";
       histClear.style.display = "none";
-      renderPatientHistory(currentAuthenticatedUser, "", histFilter?.value || "all");
+      triggerHistoryFilter();
     };
   }
   if (histFilter) {
     histFilter.onchange = () => {
-      renderPatientHistory(currentAuthenticatedUser, histSearch?.value || "", histFilter.value);
+      triggerHistoryFilter();
+    };
+  }
+  if (histDateFilter) {
+    histDateFilter.onchange = () => {
+      triggerHistoryFilter();
     };
   }
   if (histRefresh) {
     histRefresh.onclick = () => {
-      renderPatientHistory(currentAuthenticatedUser, histSearch?.value || "", histFilter?.value || "all");
+      triggerHistoryFilter();
       if (typeof showToastAlert === "function") showToastAlert("Examination history updated.", "info");
     };
   }
@@ -14097,7 +14097,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const examTime = report.exam_time || report.examTime || "09:15 AM";
       const duration = report.duration || "22:15";
       const patName = report.patient_name || report.patientName || "Patient";
-      const patId = report.patient_id || report.patientId || "P-12345";
+      const patId = report.patient_id || report.patientId || "--";
       const repCode = report.report_id || report.reportId || reportId;
       const scanType = report.scan_type || report.scanType || "Abdominal";
       const devId = report.device_id || report.deviceId || "--";
@@ -14149,6 +14149,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const sigSrc = (typeof rawSig === "string" && rawSig.startsWith("data:image/")) ? rawSig : "";
       const sigTimeRaw = report.signed_at || report.telemetry?.signed_at || "";
       let sigFormattedTime = `${examDate} ${examTime}`;
+      let dynamicTime = "";
       if (sigTimeRaw) {
         try {
           const sd = new Date(sigTimeRaw);
@@ -14158,8 +14159,29 @@ document.addEventListener("DOMContentLoaded", async () => {
             }) + ' ' + sd.toLocaleTimeString(undefined, {
               hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
             });
+            dynamicTime = sd.toLocaleTimeString(undefined, {
+              hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+            });
           }
         } catch (_) {}
+      }
+      if (!dynamicTime) {
+        const rawGen = report.generated_at || report.generatedAt || report.created_at;
+        if (rawGen) {
+          try {
+            const gd = new Date(rawGen);
+            if (!isNaN(gd.getTime())) {
+              dynamicTime = gd.toLocaleTimeString(undefined, {
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+              });
+            }
+          } catch (_) {}
+        }
+      }
+      if (!dynamicTime) {
+        dynamicTime = new Date().toLocaleTimeString(undefined, {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
       }
 
       const cleanDocName = docName.replace(/^Dr\.\s*/, '');
@@ -14180,20 +14202,21 @@ document.addEventListener("DOMContentLoaded", async () => {
                 </div>
                 <div style="text-align: right; font-size: 12px; color: #64748b;">
                   <div style="font-weight: 600; color: #0f172a; font-size: 14px;">Report ID: ${repCode}</div>
-                  <div>Preview Generated: <strong style="color: #0f172a;">${sigFormattedTime}</strong></div>
                 </div>
               </div>
 
               <!-- Patient & Exam Details -->
-              <div style="background: #f8fafc; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
-                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">Patient & Case Details</h3>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px;">
-                  <div><strong style="color: #64748b;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
-                  <div><strong style="color: #64748b;">Exam Date:</strong> <span style="color: #0f172a;">${examDate}</span></div>
-                  <div><strong style="color: #64748b;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>
-                  <div><strong style="color: #64748b;">Device:</strong> <span style="color: #0f172a;">${devId}</span></div>
-                  <div><strong style="color: #64748b;">Location:</strong> <span style="color: #0f172a;">${center}</span></div>
-                  <div><strong style="color: #64748b;">Duration:</strong> <span style="color: #0f172a;">${duration}</span></div>
+              <div style="background: #f8fafc; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+                <h3 style="margin-top: 0; margin-bottom: 14px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">Patient & Case Details</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 24px; font-size: 13px;">
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span style="color: #0f172a; font-weight: 500;">${patId}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Exam Date:</strong> <span style="color: #0f172a;">${examDate}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Report Timestamp:</strong> <span style="color: #0f172a;">${dynamicTime}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span style="color: #0f172a;">${devId}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span style="color: #0f172a;">${center}</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span style="color: #0f172a;">${duration}</span></div>
                 </div>
               </div>
 
@@ -14232,11 +14255,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
               <!-- Doctor Details & Signature -->
               <div style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px dashed #cbd5e1; padding-top: 20px; font-size: 13px;">
-                <div>
-                  <strong style="color: #64748b;">Referring Clinician:</strong>
-                  <div style="font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 4px;">${docName}</div>
-                  <div style="color: #64748b; font-size: 12px;">${center}</div>
-                </div>
+                <div></div>
                 <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
                   <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> Digitally Signed
@@ -14523,10 +14542,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!isDoc && isPatSubOpen) {
           if (patRep && patRep.style.display !== "none" && typeof torusStationsState !== "undefined") {
             if (torusStationsState.currentView === "patient-history") {
-              navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId }, true);
-              return;
-            } else if (torusStationsState.currentView === "patients") {
-              navigateTorusStationView("stations", {}, true);
+              navigateTorusStationView("patients", { stationId: torusStationsState.selectedStationId || "TORUS-A12" }, true);
               return;
             }
           }

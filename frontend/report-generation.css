@@ -1427,11 +1427,13 @@
     padding: 14px 16px;
     gap: 8px;
   }
+
   .preview-footer-actions .action-btn {
     padding: 9px 6px;
     font-size: 12.5px;
     gap: 5px;
   }
+
   .preview-footer-actions .action-btn svg,
   .preview-footer-actions .action-btn i {
     width: 14px !important;
@@ -1446,11 +1448,13 @@
     padding: 12px 8px;
     gap: 6px;
   }
+
   .preview-footer-actions .action-btn {
     padding: 8px 4px;
     font-size: 11px;
     gap: 4px;
   }
+
   .preview-footer-actions .action-btn svg,
   .preview-footer-actions .action-btn i {
     width: 13px !important;
@@ -1458,4 +1462,4 @@
     min-width: 13px;
     min-height: 13px;
   }
-}
+}

@@ -18,16 +18,12 @@ def test_diagnostic_reports_summary_view():
     with open(js_path, "r", encoding="utf-8") as f:
         js = f.read()
 
-    # 1. HTML Verification: Patient Diagnostic Reports Summary Header
-    assert 'id="patientDiagnosticReportsHeaderCard"' in html, "patientDiagnosticReportsHeaderCard ID must exist"
-    assert '<h1 class="dact-title">Diagnostic Reports</h1>' in html, "Diagnostic Reports title must exist"
-    assert '<p class="dact-subtitle">Verified medical ultrasound examination reports and clinical findings</p>' in html, "Description must exist"
-    assert 'id="patRepTotalCount"' in html, "patRepTotalCount must exist"
-    assert 'id="patRepFinalizedCount"' in html, "patRepFinalizedCount must exist"
-    assert 'id="patRepCollapseToggleBtn"' in html, "patRepCollapseToggleBtn must exist"
+    # 1. HTML Verification: Doctor Diagnostic Reports Summary Header (overview card removed)
+    assert 'id="doctorReportsHeaderCard"' in html, "doctorReportsHeaderCard ID must exist"
     assert 'class="drep-collapse-btn"' in html, "drep-collapse-btn class must exist"
     assert 'class="drep-collapse-icon-minus"' in html, "Minus icon must exist"
     assert 'class="drep-collapse-icon-plus"' in html, "Plus icon must exist"
+    assert 'id="patientDiagnosticReportsHeaderCard"' not in html, "patientDiagnosticReportsHeaderCard was removed"
 
     # 2. CSS Verification: Expanded and Compact View Styles
     assert '.dact-header-card' in css, ".dact-header-card must be defined in CSS"

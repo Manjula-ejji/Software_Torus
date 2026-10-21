@@ -262,6 +262,93 @@ def _migrate_add_fingerprint_slot():
     finally:
         conn.close()
 
+def _migrate_signature_replacement_tables():
+    """
+    Ensures that report_signature_audit_history table and audit/versioning columns
+    in diagnostic_reports are present for the Digital Signature Replacement workflow.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS report_signature_audit_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id TEXT NOT NULL,
+                report_version INTEGER NOT NULL DEFAULT 1,
+                content_hash TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL,
+                previous_signature_hash TEXT,
+                previous_signature_data TEXT,
+                new_signature_hash TEXT,
+                new_signature_data TEXT,
+                doctor_id TEXT NOT NULL,
+                doctor_name TEXT NOT NULL,
+                doctor_license TEXT NOT NULL,
+                replacement_reason TEXT,
+                timestamp TEXT NOT NULL,
+                outcome TEXT NOT NULL DEFAULT 'SUCCESS',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+
+        cursor.execute("PRAGMA table_info(diagnostic_reports)")
+        cols = [row["name"] for row in cursor.fetchall()]
+        needed_cols = [
+            ("report_version", "INTEGER DEFAULT 1"),
+            ("content_hash", "TEXT DEFAULT ''"),
+            ("signature_hash", "TEXT DEFAULT ''"),
+            ("signature_valid", "INTEGER DEFAULT 0"),
+            ("signed_doctor_id", "TEXT DEFAULT ''"),
+            ("signed_at", "TEXT DEFAULT ''"),
+            ("signature_data", "TEXT DEFAULT ''"),
+            ("replacement_reason", "TEXT DEFAULT ''"),
+        ]
+        for col_name, col_type in needed_cols:
+            if col_name not in cols:
+                cursor.execute(f"ALTER TABLE diagnostic_reports ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+    except Exception as e:
+        print(f"[Database] Signature replacement migration error: {e}")
+    finally:
+        conn.close()
+
+def compute_report_content_hash(data: dict) -> str:
+    """
+    Calculates a deterministic SHA-256 hash over the canonical clinical content of a report.
+    Binds patient details, scan type, clinical findings, recommendations, and selected images.
+    """
+    if not isinstance(data, dict):
+        return ""
+    pat_id = str(data.get("patient_id") or data.get("patientId") or "").strip().lower()
+    pat_name = str(data.get("patient_name") or data.get("patientName") or "").strip().lower()
+    scan_type = str(data.get("scan_type") or data.get("scanType") or "").strip().lower()
+    findings = str(data.get("ultrasound_findings") or data.get("ultrasoundFindings") or data.get("findings") or "").strip()
+    recs = str(data.get("diagnosis_impression") or data.get("diagnosisImpression") or data.get("recommendations") or "").strip()
+    
+    # Handle images canonicalization
+    imgs = data.get("selected_images") or data.get("images") or []
+    if isinstance(imgs, str):
+        try:
+            imgs = json.loads(imgs)
+        except Exception:
+            imgs = [imgs]
+    img_refs = []
+    if isinstance(imgs, list):
+        for im in imgs:
+            if isinstance(im, dict):
+                ref = str(im.get("id") or im.get("url") or im.get("name") or "")
+            else:
+                ref = str(im)
+            if ref:
+                img_refs.append(ref)
+    img_refs.sort()
+    imgs_str = ",".join(img_refs)
+
+    canonical = f"PAT:{pat_id}|NAME:{pat_name}|SCAN:{scan_type}|FINDINGS:{findings}|RECS:{recs}|IMGS:{imgs_str}"
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def init_db():
     """
     Initializes the SQLite schema idempotently for all roles (doctors, patients, viewers)
@@ -691,6 +778,7 @@ def init_db():
     conn.close()
     _migrate_add_mobile_column()
     _migrate_add_fingerprint_slot()
+    _migrate_signature_replacement_tables()
 
 # -------------------- VALIDATION HELPERS --------------------
 def validate_strong_password(password: str) -> tuple:
@@ -2626,15 +2714,32 @@ def _normalize_report_dict(r: dict) -> dict:
 
     t = r.get("telemetry") or {}
     
-    # Only treat as signed if report_status is explicitly 'signed' and signature is non-empty and not just a placeholder
-    is_signed = str(r.get("report_status") or "").strip().lower() == "signed"
+    status = str(r.get("report_status") or "").strip().lower()
     raw_sig = r.get("signature_data") or t.get("signature")
-    if is_signed and raw_sig and raw_sig != "Digitally Signed" and (isinstance(raw_sig, str) and (raw_sig.startswith("data:image/") or raw_sig.startswith("TORUS-SIG-"))):
+    
+    # Determine validity
+    raw_valid = r.get("signature_valid")
+    if raw_valid is not None:
+        sig_valid = 1 if int(raw_valid) == 1 else 0
+    else:
+        sig_valid = 1 if (status == "signed" and raw_sig and raw_sig != "Digitally Signed") else 0
+        
+    is_signed = (status == "signed") and (sig_valid == 1) and bool(raw_sig) and (raw_sig != "Digitally Signed") and (
+        isinstance(raw_sig, str) and (raw_sig.startswith("data:image/") or raw_sig.startswith("TORUS-SIG-"))
+    )
+
+    r["signature_valid"] = 1 if is_signed else (0 if status in ["signature_required", "unsigned", "ready"] else sig_valid)
+    r["report_version"] = int(r.get("report_version") or 1)
+    r["content_hash"] = r.get("content_hash") or ""
+    
+    if is_signed:
         r["signature_data"] = raw_sig
         r["signatureData"] = raw_sig
-        r["signed_by"] = t.get("signed_by") or r.get("doctor_name")
-        r["signed_at"] = t.get("signed_at")
+        r["signed_by"] = r.get("signed_doctor_id") or t.get("signed_by") or r.get("doctor_name")
+        r["signed_at"] = r.get("signed_at") or t.get("signed_at")
+        r["signature_hash"] = r.get("signature_hash") or t.get("signature_hash") or ""
     else:
+        # Inactive or invalidated signature must not appear as valid signature
         r["signature_data"] = None
         r["signatureData"] = None
         r["signed_by"] = None
@@ -2651,6 +2756,7 @@ def _normalize_report_dict(r: dict) -> dict:
     if not r.get("images"):
         r["images"] = t.get("images") or t.get("selected_images") or []
     return r
+
 
 def get_diagnostic_report_by_id(report_id: str) -> dict | None:
     """Returns a single diagnostic report by report_id (e.g. REP-2026-001) or numeric ID."""
@@ -2683,13 +2789,24 @@ def create_diagnostic_report(data: dict) -> dict:
         next_num = cursor.fetchone()["cnt"] + 1
         report_id = f"REP-2026-{str(next_num).zfill(3)}"
         
-    session_id = data.get("session_id") or data.get("sessionId") or f"S-{report_id.replace('REP-2026-', '')}"
-    patient_id = data.get("patient_id") or data.get("patientId") or "P-1000"
+    session_id = data.get("session_id") or data.get("sessionId") or data.get("room") or "TORUS"
+    patient_id = data.get("patient_id") or data.get("patientId")
     patient_name = data.get("patient_name") or data.get("patientName") or "Patient"
+    if not patient_id or patient_id in ("P-1000", "--"):
+        if patient_name and patient_name not in ("Patient", "--"):
+            cursor.execute("SELECT uid FROM clinical_patients WHERE LOWER(name) = ? LIMIT 1", (patient_name.lower(),))
+            row = cursor.fetchone()
+            if not row:
+                cursor.execute("SELECT uid FROM patients WHERE LOWER(name) = ? LIMIT 1", (patient_name.lower(),))
+                row = cursor.fetchone()
+            if row and row["uid"]:
+                patient_id = row["uid"]
+    if not patient_id:
+        patient_id = "--"
     scan_type = data.get("scan_type") or data.get("scanType") or "General"
     device_id = data.get("device_id") or data.get("deviceId") or data.get("device") or "TORUS-A12"
     exam_date = data.get("exam_date") or data.get("examDate") or data.get("sessionDate") or "2026-09-25"
-    exam_time = data.get("exam_time") or data.get("examTime") or data.get("sessionTime") or "10:00 AM"
+    exam_time = data.get("report_timestamp") or data.get("reportTimestamp") or data.get("timestamp") or data.get("exam_time") or data.get("examTime") or data.get("sessionTime") or "10:00 AM"
     duration = data.get("duration") or data.get("examDuration") or "20:00"
     doctor_id = data.get("doctor_id") or data.get("doctorId") or "3001"
     doctor_name = data.get("doctor_name") or data.get("doctorName") or data.get("doctor") or "Dr. Admin Doctor"
@@ -2741,15 +2858,67 @@ def create_diagnostic_report(data: dict) -> dict:
         conn.close()
         return {"success": False, "error": str(e)}
 
-def update_diagnostic_report(report_id: str, updates: dict) -> dict:
-    """Updates fields of an existing diagnostic report."""
+def update_diagnostic_report(report_id: str, updates: dict, is_signing_action: bool = False) -> dict:
+    """Updates fields of an existing diagnostic report with cryptographic content invalidation."""
     existing = get_diagnostic_report_by_id(report_id)
     if not existing:
         return {"success": False, "error": f"Report '{report_id}' not found."}
         
     conn = get_db()
     cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
     
+    # Content Change Invalidation Detection
+    # If signed report content changes, mark signature as no longer valid for modified version and require re-signing
+    content_invalidation = False
+    next_version = int(existing.get("report_version") or 1)
+    new_content_hash = existing.get("content_hash") or ""
+
+    if not is_signing_action and str(existing.get("report_status") or "").strip().lower() == "signed" and int(existing.get("signature_valid") or 0) == 1:
+        new_f = updates.get("ultrasound_findings") or updates.get("ultrasoundFindings") or updates.get("findings")
+        old_f = existing.get("ultrasound_findings") or existing.get("findings") or ""
+        if new_f is not None and str(new_f).strip() != str(old_f).strip():
+            content_invalidation = True
+
+        new_r = updates.get("diagnosis_impression") or updates.get("diagnosisImpression") or updates.get("recommendations")
+        old_r = existing.get("diagnosis_impression") or existing.get("recommendations") or ""
+        if new_r is not None and str(new_r).strip() != str(old_r).strip():
+            content_invalidation = True
+
+        new_cs = updates.get("clinical_summary") or updates.get("clinicalSummary")
+        old_cs = existing.get("clinical_summary") or ""
+        if new_cs is not None and str(new_cs).strip() != str(old_cs).strip():
+            content_invalidation = True
+
+        if content_invalidation:
+            next_version = int(existing.get("report_version") or 1) + 1
+            merged_for_hash = dict(existing)
+            merged_for_hash.update(updates)
+            new_content_hash = compute_report_content_hash(merged_for_hash)
+            # Log audit trail for invalidation
+            try:
+                cursor.execute("""
+                    INSERT INTO report_signature_audit_history (
+                        report_id, report_version, content_hash, action,
+                        previous_signature_hash, previous_signature_data,
+                        new_signature_hash, new_signature_data,
+                        doctor_id, doctor_name, doctor_license, replacement_reason,
+                        timestamp, outcome
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    report_id, next_version, new_content_hash, "CONTENT_MODIFIED_INVALIDATION",
+                    existing.get("signature_hash"), existing.get("signature_data"),
+                    None, None,
+                    str(updates.get("doctor_id") or existing.get("doctor_id") or "SYSTEM"),
+                    str(updates.get("doctor_name") or existing.get("doctor_name") or "System Review"),
+                    str(existing.get("doctor_license") or ""),
+                    "Report clinical content modified after signature. Re-signature required.",
+                    now_iso, "SIGNATURE_INVALIDATED"
+                ))
+                conn.commit()
+            except Exception as audit_err:
+                print(f"[Database] Audit log error on invalidation: {audit_err}")
+
     allowed_fields = {
         "patient_name": ["patient_name", "patientName"],
         "patient_id": ["patient_id", "patientId"],
@@ -2764,13 +2933,23 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
         "clinical_summary": ["clinical_summary", "clinicalSummary"],
         "ultrasound_findings": ["ultrasound_findings", "ultrasoundFindings", "findings"],
         "diagnosis_impression": ["diagnosis_impression", "diagnosisImpression", "recommendations"],
-        "duration": ["duration", "examDuration"]
+        "duration": ["duration", "examDuration"],
+        "report_version": ["report_version", "reportVersion"],
+        "content_hash": ["content_hash", "contentHash"],
+        "signature_hash": ["signature_hash", "signatureHash"],
+        "signature_valid": ["signature_valid", "signatureValid"],
+        "signed_doctor_id": ["signed_doctor_id", "signedDoctorId"],
+        "signed_at": ["signed_at", "signedAt"],
+        "signature_data": ["signature_data", "signatureData"],
+        "replacement_reason": ["replacement_reason", "replacementReason"]
     }
     
     set_clauses = []
     params = []
     
     for db_col, keys in allowed_fields.items():
+        if content_invalidation and db_col in ["report_status", "signature_valid", "report_version", "content_hash"]:
+            continue  # Handled explicitly below
         for k in keys:
             if k in updates and updates[k] is not None:
                 val = updates[k]
@@ -2779,6 +2958,10 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
                 set_clauses.append(f"{db_col} = ?")
                 params.append(val)
                 break
+
+    if content_invalidation:
+        set_clauses.extend(["report_status = ?", "signature_valid = ?", "report_version = ?", "content_hash = ?"])
+        params.extend(["signature_required", 0, next_version, new_content_hash])
                 
     telemetry = existing.get("telemetry") or {}
     if not isinstance(telemetry, dict):
@@ -2811,6 +2994,12 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
         telemetry["images"] = updates.get("images") or updates.get("selected_images") or updates.get("selectedImages")
         telemetry_modified = True
 
+    if content_invalidation:
+        telemetry["signature_valid"] = 0
+        telemetry["report_status"] = "signature_required"
+        telemetry["report_version"] = next_version
+        telemetry_modified = True
+
     if telemetry_modified:
         set_clauses.append("telemetry_json = ?")
         params.append(json.dumps(telemetry))
@@ -2825,35 +3014,76 @@ def update_diagnostic_report(report_id: str, updates: dict) -> dict:
     try:
         cursor.execute(sql, params)
         conn.commit()
-        updated = get_diagnostic_report_by_id(report_id)
         conn.close()
-        return {"success": True, "report": updated}
+        updated = get_diagnostic_report_by_id(report_id)
+        return {
+            "success": True, 
+            "report": updated,
+            "signatureInvalidated": content_invalidation
+        }
     except Exception as e:
         conn.close()
         return {"success": False, "error": str(e)}
 
 def sign_diagnostic_report(report_id: str, data: dict) -> dict:
-    """Digitally signs and persists a diagnostic report in SQLite."""
-    from datetime import datetime
+    """Digitally signs and persists a diagnostic report in SQLite with cryptographic binding and audit trail."""
     import time
     sig_data = data.get("signatureData") or data.get("signature_data") or data.get("signature")
     if not sig_data or not str(sig_data).strip() or str(sig_data).strip() == "Digitally Signed":
         return {"success": False, "error": "Signature is required. An empty or invalid signature cannot be confirmed."}
 
     existing = get_diagnostic_report_by_id(report_id)
-    doctor_name = data.get("doctorName") or data.get("doctor_name") or "Dr. Admin Doctor"
-    doctor_license = data.get("doctorLicense") or data.get("doctor_license") or "TORUS-REG-3001"
+    doctor_name = data.get("doctorName") or data.get("doctor_name") or (existing.get("doctor_name") if existing else "Dr. Admin Doctor")
+    doctor_license = data.get("doctorLicense") or data.get("doctor_license") or (existing.get("doctor_license") if existing else "TORUS-REG-3001")
+    doctor_id = str(data.get("doctorId") or data.get("doctor_id") or (existing.get("doctor_id") if existing else "3001"))
     now_iso = datetime.now().isoformat()
     signed_at = data.get("signedAt") or now_iso
     sig_hash = data.get("signatureHash") or f"TORUS-SIG-{int(time.time())}"
+    
+    # Calculate canonical content hash
+    merged_data = dict(existing or {})
+    merged_data.update(data)
+    content_hash = compute_report_content_hash(merged_data)
+    curr_version = int(existing.get("report_version") or 1) if existing else 1
     
     sig_record = {
         "signature": sig_data,
         "signed_by": doctor_name,
         "doctor_license": doctor_license,
+        "doctor_id": doctor_id,
         "signed_at": signed_at,
-        "signature_hash": sig_hash
+        "signature_hash": sig_hash,
+        "report_version": curr_version,
+        "content_hash": content_hash
     }
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        action_name = "INITIAL_SIGN" if (not existing or not existing.get("signature_hash")) else "RE_SIGN"
+        cursor.execute("""
+            INSERT INTO report_signature_audit_history (
+                report_id, report_version, content_hash, action,
+                previous_signature_hash, previous_signature_data,
+                new_signature_hash, new_signature_data,
+                doctor_id, doctor_name, doctor_license, replacement_reason,
+                timestamp, outcome
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report_id, curr_version, content_hash, action_name,
+            existing.get("signature_hash") if existing else None,
+            existing.get("signature_data") if existing else None,
+            sig_hash, sig_data,
+            doctor_id, doctor_name, doctor_license,
+            data.get("reason") or "Initial digital signature",
+            signed_at, "SUCCESS"
+        ))
+        conn.commit()
+    except Exception as e:
+        print(f"[Database] Audit log insertion error during sign: {e}")
+
+    conn.close()
 
     if existing:
         telemetry = existing.get("telemetry") or {}
@@ -2861,6 +3091,9 @@ def sign_diagnostic_report(report_id: str, data: dict) -> dict:
         telemetry["signed_by"] = doctor_name
         telemetry["signed_at"] = signed_at
         telemetry["signature_hash"] = sig_hash
+        telemetry["content_hash"] = content_hash
+        telemetry["report_version"] = curr_version
+        telemetry["signature_valid"] = 1
         
         updates = {
             "report_status": "signed",
@@ -2868,27 +3101,41 @@ def sign_diagnostic_report(report_id: str, data: dict) -> dict:
             "doctor_license": doctor_license,
             "telemetry": telemetry,
             "signatureData": sig_data,
+            "signature_data": sig_data,
             "signedBy": doctor_name,
             "signedAt": signed_at,
-            "signatureHash": sig_hash
+            "signed_at": signed_at,
+            "signatureHash": sig_hash,
+            "signature_hash": sig_hash,
+            "signature_valid": 1,
+            "report_version": curr_version,
+            "content_hash": content_hash,
+            "signed_doctor_id": doctor_id
         }
         if data.get("findings") or data.get("ultrasoundFindings"):
             updates["ultrasound_findings"] = data.get("findings") or data.get("ultrasoundFindings")
         if data.get("recommendations") or data.get("diagnosisImpression"):
             updates["diagnosis_impression"] = data.get("recommendations") or data.get("diagnosisImpression")
             
-        res = update_diagnostic_report(report_id, updates)
+        res = update_diagnostic_report(report_id, updates, is_signing_action=True)
         if res.get("success"):
-            # Update signature_json column as well
             try:
-                conn = get_db()
-                c = conn.cursor()
-                c.execute("UPDATE diagnostic_reports SET signature_json = ? WHERE LOWER(report_id) = ?", (json.dumps(sig_record), report_id.strip().lower()))
-                conn.commit()
-                conn.close()
-            except Exception:
-                pass
+                c_conn = get_db()
+                c_cursor = c_conn.cursor()
+                c_cursor.execute("""
+                    UPDATE diagnostic_reports 
+                    SET signature_json = ?, signature_data = ?, signature_hash = ?, signature_valid = 1,
+                        report_status = 'signed', signed_doctor_id = ?, signed_at = ?, content_hash = ?, report_version = ?
+                    WHERE LOWER(report_id) = ? OR id = ?
+                """, (
+                    json.dumps(sig_record), sig_data, sig_hash, doctor_id, signed_at, content_hash, curr_version, report_id.strip().lower(), report_id.strip()
+                ))
+                c_conn.commit()
+                c_conn.close()
+            except Exception as e:
+                print(f"[Database] Error updating signature columns: {e}")
             res["message"] = "Report digitally signed and persisted successfully."
+            res["report"] = get_diagnostic_report_by_id(report_id)
         return res
     else:
         # Create new report with signed status
@@ -2899,21 +3146,200 @@ def sign_diagnostic_report(report_id: str, data: dict) -> dict:
         create_data["doctor_name"] = doctor_name
         create_data["doctor_license"] = doctor_license
         create_data["signatureData"] = sig_data
+        create_data["signature_data"] = sig_data
         create_data["signedBy"] = doctor_name
         create_data["signedAt"] = signed_at
         create_data["signatureHash"] = sig_hash
+        create_data["signature_hash"] = sig_hash
+        create_data["signature_valid"] = 1
+        create_data["report_version"] = curr_version
+        create_data["content_hash"] = content_hash
+        create_data["signed_doctor_id"] = doctor_id
         res = create_diagnostic_report(create_data)
         if res.get("success"):
             try:
-                conn = get_db()
-                c = conn.cursor()
-                c.execute("UPDATE diagnostic_reports SET signature_json = ? WHERE LOWER(report_id) = ?", (json.dumps(sig_record), report_id.strip().lower()))
-                conn.commit()
-                conn.close()
+                c_conn = get_db()
+                c_cursor = c_conn.cursor()
+                c_cursor.execute("""
+                    UPDATE diagnostic_reports 
+                    SET signature_json = ?, signature_data = ?, signature_hash = ?, signature_valid = 1,
+                        report_status = 'signed', signed_doctor_id = ?, signed_at = ?, content_hash = ?, report_version = ?
+                    WHERE LOWER(report_id) = ? OR id = ?
+                """, (
+                    json.dumps(sig_record), sig_data, sig_hash, doctor_id, signed_at, content_hash, curr_version, report_id.strip().lower(), report_id.strip()
+                ))
+                c_conn.commit()
+                c_conn.close()
             except Exception:
                 pass
             res["message"] = "Report created, digitally signed, and persisted successfully."
+            res["report"] = get_diagnostic_report_by_id(report_id)
         return res
+
+def replace_diagnostic_report_signature(report_id: str, data: dict) -> dict:
+    """
+    Authorized Signature Replacement workflow:
+    - Verifies doctor authentication credentials (password) against SQLite.
+    - Requires mandatory replacement reason (min 5 chars).
+    - Checks authorization (only authorized doctor can sign/replace).
+    - Preserves previous signature & metadata in immutable audit history.
+    - Binds new signature to report content hash, increments report version.
+    - Logs unauthorized attempts to audit trail.
+    """
+    import time
+    existing = get_diagnostic_report_by_id(report_id)
+    if not existing:
+        return {"success": False, "error": f"Diagnostic report '{report_id}' not found."}
+
+    # 1. Doctor Re-Authentication Verification
+    doctor_login = str(data.get("doctorId") or data.get("email") or data.get("loginId") or data.get("doctor_id") or "admin@gmail.com").strip()
+    password = str(data.get("password") or data.get("doctorPassword") or "").strip()
+    reason = str(data.get("reason") or data.get("replacementReason") or "").strip()
+    new_sig_data = data.get("signatureData") or data.get("signature_data") or data.get("signature")
+
+    now_iso = datetime.now().isoformat()
+    curr_version = int(existing.get("report_version") or 1)
+    next_version = curr_version + 1
+    content_hash = compute_report_content_hash(existing)
+
+    # Re-authenticate doctor credentials
+    auth_result = authenticate_doctor(doctor_login, password) if (doctor_login and password) else {"success": False, "error": "Missing doctor password."}
+    if not auth_result.get("success"):
+        # Log unauthorized replacement attempt in audit trail
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO report_signature_audit_history (
+                    report_id, report_version, content_hash, action,
+                    previous_signature_hash, previous_signature_data,
+                    new_signature_hash, new_signature_data,
+                    doctor_id, doctor_name, doctor_license, replacement_reason,
+                    timestamp, outcome
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                report_id, curr_version, content_hash, "REPLACE_SIGNATURE_ATTEMPT",
+                existing.get("signature_hash"), existing.get("signature_data"),
+                None, None,
+                doctor_login or "unknown",
+                data.get("doctorName") or "Unauthorized User",
+                data.get("doctorLicense") or "",
+                reason or "Failed re-authentication attempt",
+                now_iso, "UNAUTHORIZED_ATTEMPT"
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Database] Error logging unauthorized replacement: {e}")
+            
+        return {
+            "success": False,
+            "error": "Re-authentication failed: Valid authorized doctor credentials (password) are required to replace a digital signature."
+        }
+
+    authenticated_doctor = auth_result["doctor"]
+
+    # 2. Check Mandatory Replacement Reason
+    if not reason or len(reason) < 5:
+        return {
+            "success": False,
+            "error": "A mandatory, detailed reason for signature replacement is required (minimum 5 characters)."
+        }
+
+    # 3. Check New Signature
+    if not new_sig_data or not str(new_sig_data).strip() or str(new_sig_data).strip() == "Digitally Signed":
+        return {
+            "success": False,
+            "error": "New digital signature is required. An empty or invalid signature cannot be confirmed."
+        }
+
+    # 4. Prepare New Signature Metadata
+    doctor_name = authenticated_doctor.get("name") or data.get("doctorName") or "Dr. Admin Doctor"
+    doctor_uid = str(authenticated_doctor.get("uid"))
+    doctor_license = data.get("doctorLicense") or f"TORUS-REG-{doctor_uid}"
+    new_sig_hash = data.get("signatureHash") or f"TORUS-SIG-REP-{int(time.time())}"
+
+    # 5. Insert Immutable Audit History Record
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO report_signature_audit_history (
+                report_id, report_version, content_hash, action,
+                previous_signature_hash, previous_signature_data,
+                new_signature_hash, new_signature_data,
+                doctor_id, doctor_name, doctor_license, replacement_reason,
+                timestamp, outcome
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report_id, next_version, content_hash, "REPLACE_SIGNATURE",
+            existing.get("signature_hash"), existing.get("signature_data"),
+            new_sig_hash, new_sig_data,
+            doctor_uid, doctor_name, doctor_license,
+            reason, now_iso, "SUCCESS"
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[Database] Error logging audit history for signature replacement: {e}")
+        return {"success": False, "error": f"Failed to record audit trail: {e}"}
+
+    # 6. Update Report in SQLite
+    sig_record = {
+        "signature": new_sig_data,
+        "signed_by": doctor_name,
+        "doctor_license": doctor_license,
+        "doctor_id": doctor_uid,
+        "signed_at": now_iso,
+        "signature_hash": new_sig_hash,
+        "report_version": next_version,
+        "content_hash": content_hash,
+        "replacement_reason": reason
+    }
+
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
+            UPDATE diagnostic_reports 
+            SET signature_data = ?, signature_hash = ?, signature_valid = 1,
+                report_status = 'signed', report_version = ?, content_hash = ?,
+                signed_doctor_id = ?, doctor_name = ?, doctor_license = ?,
+                signed_at = ?, replacement_reason = ?, signature_json = ?
+            WHERE LOWER(report_id) = ? OR id = ?
+        """, (
+            new_sig_data, new_sig_hash, next_version, content_hash,
+            doctor_uid, doctor_name, doctor_license,
+            now_iso, reason, json.dumps(sig_record),
+            report_id.strip().lower(), report_id.strip()
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return {"success": False, "error": f"Failed to update report record: {e}"}
+
+    updated_report = get_diagnostic_report_by_id(report_id)
+    return {
+        "success": True,
+        "message": "Digital signature replaced successfully. Audit history preserved.",
+        "report": updated_report,
+        "version": next_version,
+        "signatureHash": new_sig_hash
+    }
+
+def get_report_signature_audit_history(report_id: str) -> list:
+    """Returns the immutable signature audit trail for a report in chronological order."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM report_signature_audit_history 
+        WHERE LOWER(report_id) = ? OR report_id = ?
+        ORDER BY id ASC
+    """, (report_id.strip().lower(), report_id.strip()))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 
 def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]:
     """Generates official medical PDF bytes for a diagnostic report matching Image 2 design."""
@@ -2966,10 +3392,27 @@ def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]
         exam_d = str(report.get("exam_date", ""))
         rep_id_str = str(report.get("report_id", report_id))
         
+        # Derive dynamic timestamp string (with AM/PM and seconds if available)
+        exam_t = str(report.get("report_timestamp") or report.get("reportTimestamp") or report.get("timestamp") or "")
+        if not exam_t:
+            created_raw = report.get("created_at") or report.get("signed_at") or report.get("generatedAt")
+            if created_raw:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(str(created_raw).replace('Z', '+00:00'))
+                    exam_t = dt.strftime("%I:%M:%S %p")
+                except Exception:
+                    pass
+        if not exam_t:
+            exam_t = str(report.get("exam_time") or report.get("examTime") or "")
+        if not exam_t or ":" not in exam_t:
+            from datetime import datetime
+            exam_t = datetime.now().strftime("%I:%M:%S %p")
+
         header_table = Table([
             [
                 Paragraph("<b>TORUS MEDICAL</b><br/><font color='#64748b' size='8'>DIAGNOSTIC IMAGING CENTER</font>", h_title),
-                Paragraph(f"<b>Report ID: {rep_id_str}</b><br/><font color='#64748b'>Preview Generated: {exam_d}</font>", h_meta)
+                Paragraph(f"<b>Report ID: {rep_id_str}</b>", h_meta)
             ]
         ], colWidths=[340, 200])
         header_table.setStyle(TableStyle([
@@ -2981,6 +3424,25 @@ def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]
         
         # 2. Patient & Case Details Box
         pat_name = str(report.get("patient_name", "--"))
+        pat_id = str(report.get("patient_id") or report.get("patientId") or "")
+        if not pat_id or pat_id in ("P-1000", "--"):
+            if pat_name and pat_name not in ("Patient", "--"):
+                try:
+                    conn_tmp = get_db()
+                    c_tmp = conn_tmp.cursor()
+                    c_tmp.execute("SELECT uid FROM clinical_patients WHERE LOWER(name) = ? LIMIT 1", (pat_name.lower(),))
+                    row_tmp = c_tmp.fetchone()
+                    if not row_tmp:
+                        c_tmp.execute("SELECT uid FROM patients WHERE LOWER(name) = ? LIMIT 1", (pat_name.lower(),))
+                        row_tmp = c_tmp.fetchone()
+                    if row_tmp and row_tmp["uid"]:
+                        pat_id = row_tmp["uid"]
+                    conn_tmp.close()
+                except Exception:
+                    pass
+        if not pat_id or pat_id == "P-1000":
+            pat_id = "--" if pat_name in ("Patient", "--") else (pat_id or "--")
+
         scan_t = str(report.get("scan_type", "--"))
         if not scan_t.lower().endswith("ultrasound"):
             scan_t = f"{scan_t} Ultrasound"
@@ -2995,7 +3457,11 @@ def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]
             ],
             [
                 Paragraph(f"<font color='#64748b'><b>Patient Name:</b></font> {pat_name}", cell_val),
-                Paragraph(f"<font color='#64748b'><b>Exam Date:</b></font> {exam_d}", cell_val)
+                Paragraph(f"<font color='#64748b'><b>Patient ID:</b></font> {pat_id}", cell_val)
+            ],
+            [
+                Paragraph(f"<font color='#64748b'><b>Exam Date:</b></font> {exam_d}", cell_val),
+                Paragraph(f"<font color='#64748b'><b>Report Timestamp:</b></font> {exam_t}", cell_val)
             ],
             [
                 Paragraph(f"<font color='#64748b'><b>Scan Type:</b></font> {scan_t}", cell_val),
@@ -3155,22 +3621,38 @@ def generate_report_pdf_bytes(report_id: str) -> tuple[bytes | None, str | None]
         # 7. Doctor Details & Digital Signature
         doc_n = str(report.get("doctor_name", "Dr. Admin Doctor"))
         raw_sig = report.get("signature_data")
-        sig_img_elem = safe_rl_image(raw_sig, width=110, height=30)
+        sig_valid = int(report.get("signature_valid", 0)) == 1
+        rep_status = str(report.get("report_status", "")).strip().lower()
+        is_sig_valid = sig_valid and (rep_status == "signed") and raw_sig and (raw_sig != "Digitally Signed")
+        
+        sig_img_elem = safe_rl_image(raw_sig, width=110, height=30) if is_sig_valid else None
                 
         sig_right_content = []
-        sig_right_content.append(Paragraph("<font color='#16a34a'><b>✓ DIGITALLY SIGNED</b></font>", badge_style))
-        if sig_img_elem:
-            sig_right_content.append(sig_img_elem)
-        sig_right_content.append(Paragraph(f"<b>{doc_n}</b>", ParagraphStyle('SigDName', parent=h_meta_id, fontSize=8.5, leading=11)))
-        sig_right_content.append(Paragraph(f"{exam_d}", h_meta))
+        if is_sig_valid:
+            sig_right_content.append(Paragraph("<font color='#16a34a'><b>✓ DIGITALLY SIGNED</b></font>", badge_style))
+            if sig_img_elem:
+                sig_right_content.append(sig_img_elem)
+            sig_right_content.append(Paragraph(f"<b>{doc_n}</b>", ParagraphStyle('SigDName', parent=h_meta_id, fontSize=8.5, leading=11)))
+            sig_date_str = report.get("signed_at") or exam_d
+            if "T" in str(sig_date_str):
+                try:
+                    dt = datetime.fromisoformat(str(sig_date_str).replace("Z", "+00:00"))
+                    sig_date_str = dt.strftime("%b %d, %Y %I:%M:%S %p")
+                except Exception:
+                    pass
+            sig_right_content.append(Paragraph(f"Signed: {sig_date_str}", h_meta))
+        elif rep_status == "signature_required":
+            sig_right_content.append(Paragraph("<font color='#d97706'><b>⚠ SIGNATURE REQUIRED (Modified)</b></font>", badge_style))
+            sig_right_content.append(Paragraph(f"<b>{doc_n}</b>", ParagraphStyle('SigDName', parent=h_meta_id, fontSize=8.5, leading=11)))
+            sig_right_content.append(Paragraph(f"{exam_d}", h_meta))
+        else:
+            sig_right_content.append(Paragraph("<font color='#64748b'><b>UNSIGNED</b></font>", badge_style))
+            sig_right_content.append(Paragraph(f"<b>{doc_n}</b>", ParagraphStyle('SigDName', parent=h_meta_id, fontSize=8.5, leading=11)))
+            sig_right_content.append(Paragraph(f"{exam_d}", h_meta))
         
         footer_table = Table([
             [
-                [
-                    Paragraph("<font color='#64748b'><b>Referring Clinician:</b></font>", cell_lbl),
-                    Paragraph(f"<b>{doc_n}</b>", doc_name_style),
-                    Paragraph(loc_name, doc_loc_style)
-                ],
+                "",
                 sig_right_content
             ]
         ], colWidths=[320, 220])
