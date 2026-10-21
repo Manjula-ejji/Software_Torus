@@ -7482,6 +7482,38 @@ body[data-role="viewer"] #settings-uid-wrapper {
   font-size: 12px;
 }
 
+.device-filter-select,
+.device-filter-select:focus,
+.device-filter-select:focus-visible {
+  width: 100%;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.device-filter-select option {
+  background: #0a0e1a;
+  color: #f8fafc;
+}
+
+.device-filter-chevron {
+  color: #a78bfa;
+  pointer-events: none;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .device-results-scroll {
   height: 250px;
   max-height: 250px;

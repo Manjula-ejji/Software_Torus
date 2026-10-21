@@ -3894,23 +3894,32 @@
       </div>
 
       <div class="device-modal-filters">
-        <label class="device-filter-input-wrap" aria-label="Search devices">
+        <label class="device-filter-input-wrap" for="deviceScanTypeFilter" aria-label="Filter devices by scan type">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <select id="deviceScanTypeFilter" class="device-filter-select" aria-label="Scan Type">
+            <option value="all">All Scan Types</option>
+            <option value="Abdominal">Abdominal</option>
+            <option value="Cardiac">Cardiac</option>
+            <option value="Pelvic">Pelvic</option>
+            <option value="Vascular">Vascular</option>
+            <option value="Thyroid">Thyroid</option>
+          </select>
+          <svg class="device-filter-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </label>
+        <label class="device-filter-input-wrap cyan" for="deviceNameSearchInput" aria-label="Search devices by name or ID">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input id="deviceSearchInput" class="device-filter-input" type="text"
-            placeholder="Search by ID, hospital, city..." />
-        </label>
-        <label class="device-filter-input-wrap cyan" aria-label="Filter devices by location">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-            <circle cx="12" cy="10" r="3"></circle>
-          </svg>
-          <input id="deviceLocationInput" class="device-filter-input" type="text"
-            placeholder="Filter by country or city..." />
+          <input id="deviceNameSearchInput" class="device-filter-input" type="text"
+            placeholder="Search by device name or ID..." />
         </label>
       </div>
 

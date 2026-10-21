@@ -9379,7 +9379,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "India",
     status: "online",
     latency: "38ms",
-    signal: "97%"
+    signal: "97%",
+    supportedScans: ["Pelvic"]
   },
   {
     id: "TORUS-D22",
@@ -9389,7 +9390,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "India",
     status: "standby",
     latency: "55ms",
-    signal: "89%"
+    signal: "89%",
+    supportedScans: ["Cardiac", "Pelvic"]
   },
   {
     id: "TORUS-E18",
@@ -9399,7 +9401,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "India",
     status: "online",
     latency: "45ms",
-    signal: "92%"
+    signal: "92%",
+    supportedScans: ["Abdominal", "Thyroid"]
   },
   {
     id: "TORUS-F09",
@@ -9409,7 +9412,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "USA",
     status: "online",
     latency: "48ms",
-    signal: "94%"
+    signal: "94%",
+    supportedScans: ["Vascular", "Pelvic"]
   },
   {
     id: "TORUS-A12",
@@ -9419,7 +9423,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "USA",
     status: "online",
     latency: "35ms",
-    signal: "98%"
+    signal: "98%",
+    supportedScans: ["Abdominal", "Vascular"]
   },
   {
     id: "TORUS-B08",
@@ -9429,7 +9434,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "USA",
     status: "standby",
     latency: "42ms",
-    signal: "95%"
+    signal: "95%",
+    supportedScans: ["Cardiac", "Thyroid"]
   },
   {
     id: "TORUS-G04",
@@ -9439,7 +9445,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "India",
     status: "online",
     latency: "40ms",
-    signal: "96%"
+    signal: "96%",
+    supportedScans: ["Abdominal", "Cardiac"]
   },
   {
     id: "TORUS-H17",
@@ -9449,7 +9456,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "USA",
     status: "standby",
     latency: "52ms",
-    signal: "90%"
+    signal: "90%",
+    supportedScans: ["Vascular", "Abdominal"]
   },
   {
     id: "TORUS-K03",
@@ -9459,7 +9467,8 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "India",
     status: "online",
     latency: "36ms",
-    signal: "98%"
+    signal: "98%",
+    supportedScans: ["Abdominal"]
   },
   {
     id: "TORUS-Z99",
@@ -9469,9 +9478,38 @@ const TORUS_AVAILABLE_DEVICES = [
     country: "USA",
     status: "offline",
     latency: "--",
-    signal: "0%"
+    signal: "0%",
+    supportedScans: ["Cardiac"]
   }
 ];
+
+// Retrieve actual configured scan types for a given TORUS device from system data
+function getDeviceConfiguredScanTypes(deviceId) {
+  const scans = new Set();
+  const dev = TORUS_AVAILABLE_DEVICES.find(d => d.id === deviceId);
+  if (dev && Array.isArray(dev.supportedScans)) {
+    dev.supportedScans.forEach(s => scans.add(s));
+  }
+  if (typeof TORUS_STATION_PATIENTS_DATABASE !== "undefined" && TORUS_STATION_PATIENTS_DATABASE[deviceId]) {
+    TORUS_STATION_PATIENTS_DATABASE[deviceId].forEach(p => {
+      if (p.scanType) scans.add(p.scanType);
+      if (Array.isArray(p.records)) {
+        p.records.forEach(r => { if (r.scanType) scans.add(r.scanType); });
+      }
+    });
+  }
+  if (window.torusSessions) {
+    ["active", "upcoming", "completed"].forEach(listKey => {
+      const list = window.torusSessions[listKey];
+      if (Array.isArray(list)) {
+        list.forEach(s => {
+          if (s.deviceId === deviceId && s.scanType) scans.add(s.scanType);
+        });
+      }
+    });
+  }
+  return Array.from(scans);
+}
 
 // Single state variable for the selected TORUS device ID (Requirement 3 & 9)
 let selectedTorUSDeviceId = null;
@@ -9501,23 +9539,32 @@ function ensureDeviceModalInDOM() {
         </div>
 
         <div class="device-modal-filters">
-          <label class="device-filter-input-wrap" aria-label="Search devices">
+          <label class="device-filter-input-wrap" for="deviceScanTypeFilter" aria-label="Filter devices by scan type">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            <select id="deviceScanTypeFilter" class="device-filter-select" aria-label="Scan Type">
+              <option value="all">All Scan Types</option>
+              <option value="Abdominal">Abdominal</option>
+              <option value="Cardiac">Cardiac</option>
+              <option value="Pelvic">Pelvic</option>
+              <option value="Vascular">Vascular</option>
+              <option value="Thyroid">Thyroid</option>
+            </select>
+            <svg class="device-filter-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </label>
+          <label class="device-filter-input-wrap cyan" for="deviceNameSearchInput" aria-label="Search devices by name or ID">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <input id="deviceSearchInput" class="device-filter-input" type="text"
-              placeholder="Search by ID, hospital, city..." />
-          </label>
-          <label class="device-filter-input-wrap cyan" aria-label="Filter devices by location">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-              <circle cx="12" cy="10" r="3"></circle>
-            </svg>
-            <input id="deviceLocationInput" class="device-filter-input" type="text"
-              placeholder="Filter by country or city..." />
+            <input id="deviceNameSearchInput" class="device-filter-input" type="text"
+              placeholder="Search by device name or ID..." />
           </label>
         </div>
 
@@ -9575,17 +9622,17 @@ function bindDeviceModalEvents() {
     };
   }
 
-  const devSearchInput = document.getElementById("deviceSearchInput");
-  const devLocationInput = document.getElementById("deviceLocationInput");
-  const handleDeviceFilterInput = () => {
-    const sVal = devSearchInput ? devSearchInput.value : "";
-    const lVal = devLocationInput ? devLocationInput.value : "";
-    const filtered = getFilteredDevices(sVal, lVal);
+  const scanTypeSelect = document.getElementById("deviceScanTypeFilter");
+  const devNameInput = document.getElementById("deviceNameSearchInput") || document.getElementById("deviceSearchInput");
+  const handleDeviceFilterChange = () => {
+    const sVal = scanTypeSelect ? scanTypeSelect.value : "all";
+    const nVal = devNameInput ? devNameInput.value : "";
+    const filtered = getFilteredDevices(sVal, nVal);
     renderDeviceResults(filtered);
     updateDeviceActionButtons();
   };
-  if (devSearchInput) devSearchInput.oninput = handleDeviceFilterInput;
-  if (devLocationInput) devLocationInput.oninput = handleDeviceFilterInput;
+  if (scanTypeSelect) scanTypeSelect.onchange = handleDeviceFilterChange;
+  if (devNameInput) devNameInput.oninput = handleDeviceFilterChange;
 
   const connectDevBtn = document.getElementById("connectDeviceBtn");
   if (connectDevBtn) {
@@ -9614,8 +9661,8 @@ function openDeviceModal() {
   bindDeviceModalEvents();
 
   const modalOverlay = document.getElementById("deviceModalOverlay");
-  const searchInput = document.getElementById("deviceSearchInput");
-  const locationInput = document.getElementById("deviceLocationInput");
+  const scanTypeSelect = document.getElementById("deviceScanTypeFilter");
+  const nameSearchInput = document.getElementById("deviceNameSearchInput") || document.getElementById("deviceSearchInput");
   const modalTitle = document.getElementById("deviceModalTitle");
   if (!modalOverlay) return;
 
@@ -9634,8 +9681,8 @@ function openDeviceModal() {
   // Reset selection on open
   selectedTorUSDeviceId = null;
 
-  if (searchInput) searchInput.value = "";
-  if (locationInput) locationInput.value = "";
+  if (scanTypeSelect) scanTypeSelect.value = "all";
+  if (nameSearchInput) nameSearchInput.value = "";
 
   renderDeviceResults(currentDeviceList);
   updateDeviceActionButtons();
@@ -9643,8 +9690,8 @@ function openDeviceModal() {
   modalOverlay.style.display = "flex";
   document.body.classList.add("no-scroll");
 
-  if (searchInput) {
-    setTimeout(() => searchInput.focus(), 80);
+  if (nameSearchInput) {
+    setTimeout(() => nameSearchInput.focus(), 80);
   }
 }
 
@@ -9726,22 +9773,56 @@ function selectDevice(deviceId) {
   updateDeviceActionButtons();
 }
 
-// Filter devices by text and location
-function getFilteredDevices(searchText, locationText) {
-  const search = (searchText || "").trim().toLowerCase();
-  const loc = (locationText || "").trim().toLowerCase();
+// Filter devices by scan type and device name/ID
+function getFilteredDevices(param1, param2) {
+  const scanSelect = document.getElementById("deviceScanTypeFilter");
+  const nameInput = document.getElementById("deviceNameSearchInput") || document.getElementById("deviceSearchInput");
+
+  let scanType = scanSelect ? scanSelect.value : "all";
+  let nameSearch = nameInput ? nameInput.value : "";
+
+  const KNOWN_SCANS = ["all", "abdominal", "cardiac", "pelvic", "vascular", "thyroid"];
+
+  if (param1 !== undefined && param2 !== undefined) {
+    if (KNOWN_SCANS.includes(String(param1).trim().toLowerCase())) {
+      scanType = param1;
+      nameSearch = param2;
+    } else if (KNOWN_SCANS.includes(String(param2).trim().toLowerCase())) {
+      nameSearch = param1;
+      scanType = param2;
+    } else {
+      nameSearch = param1;
+    }
+  } else if (param1 !== undefined) {
+    if (KNOWN_SCANS.includes(String(param1).trim().toLowerCase())) {
+      scanType = param1;
+    } else {
+      nameSearch = param1;
+    }
+  }
+
+  const selectedScan = (scanType || "all").trim();
+  const search = (nameSearch || "").trim().toLowerCase();
 
   return currentDeviceList.filter(device => {
-    const idMatch = device.id.toLowerCase().includes(search);
-    const hospitalMatch = device.hospital.toLowerCase().includes(search);
-    const cityMatch = device.city.toLowerCase().includes(search);
-    const countryMatch = device.country.toLowerCase().includes(search);
-    const locationMatch = device.location.toLowerCase().includes(search);
+    // 1. Scan Type Filter: display only TORUS devices configured & available for that scan type
+    let matchesScan = true;
+    if (selectedScan && selectedScan.toLowerCase() !== "all") {
+      const configuredScans = getDeviceConfiguredScanTypes(device.id);
+      matchesScan = configuredScans.some(
+        st => st.toLowerCase() === selectedScan.toLowerCase()
+      );
+    }
 
-    const matchesSearch = !search || idMatch || hospitalMatch || cityMatch || countryMatch || locationMatch;
-    const matchesLocation = !loc || locationMatch.includes(loc) || cityMatch.includes(loc) || countryMatch.includes(loc);
+    // 2. Device Name Search: allow searching by device name or ID, such as TORUS-A12, TORUS-F09, or TORUS-G04
+    let matchesName = true;
+    if (search) {
+      const idMatch = device.id.toLowerCase().includes(search);
+      const hospitalMatch = device.hospital && device.hospital.toLowerCase().includes(search);
+      matchesName = idMatch || hospitalMatch;
+    }
 
-    return matchesSearch && matchesLocation;
+    return matchesScan && matchesName;
   });
 }
 
@@ -9749,6 +9830,12 @@ function getFilteredDevices(searchText, locationText) {
 function renderDeviceResults(list) {
   const container = document.getElementById("deviceResultsGrid");
   if (!container) return;
+
+  // Clear selection if selected device is filtered out
+  if (selectedTorUSDeviceId && list && !list.some(d => d.id === selectedTorUSDeviceId)) {
+    selectedTorUSDeviceId = null;
+    updateDeviceActionButtons();
+  }
 
   if (!list || list.length === 0) {
     container.innerHTML = `<div class="device-empty-state">No TORUS devices match your search criteria.</div>`;
@@ -10464,18 +10551,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Filter Handlers (Search & Location)
-  const devSearchInput = document.getElementById("deviceSearchInput");
-  const devLocationInput = document.getElementById("deviceLocationInput");
-  const handleDeviceFilterInput = () => {
-    const sVal = devSearchInput ? devSearchInput.value : "";
-    const lVal = devLocationInput ? devLocationInput.value : "";
-    const filtered = getFilteredDevices(sVal, lVal);
+  // Filter Handlers (Scan Type & Device Name)
+  const devScanTypeSelect = document.getElementById("deviceScanTypeFilter");
+  const devNameInput = document.getElementById("deviceNameSearchInput") || document.getElementById("deviceSearchInput");
+  const handleDeviceFilterChange = () => {
+    const sVal = devScanTypeSelect ? devScanTypeSelect.value : "all";
+    const nVal = devNameInput ? devNameInput.value : "";
+    const filtered = getFilteredDevices(sVal, nVal);
     renderDeviceResults(filtered);
     updateDeviceActionButtons();
   };
-  if (devSearchInput) devSearchInput.addEventListener("input", handleDeviceFilterInput);
-  if (devLocationInput) devLocationInput.addEventListener("input", handleDeviceFilterInput);
+  if (devScanTypeSelect) devScanTypeSelect.addEventListener("change", handleDeviceFilterChange);
+  if (devNameInput) devNameInput.addEventListener("input", handleDeviceFilterChange);
 
   // Connect Button Handler
   const connectDevBtn = document.getElementById("connectDeviceBtn");
