@@ -47,6 +47,10 @@ def test_report_generation_markup_and_logic():
     # 6. Medical Report Accuracy & Clinical Notice
     assert 'AI Preliminary Analysis is an automated assistive interpretation tool' in html, "Clinical notice must be present in report preview"
 
+    # 7. Report Generated Success Modal
+    assert "The report is now available to the patient." in html, "Success modal must state report is now available"
+    assert "after 2 hours" not in html, "2-hour delay message must be removed"
+
     print("All Report Generation Page checks passed successfully!")
 
 if __name__ == "__main__":
