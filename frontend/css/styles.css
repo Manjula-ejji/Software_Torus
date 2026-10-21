@@ -11480,6 +11480,14 @@ body.torus-station-patients-active #docDashBackBtn {
   white-space: nowrap !important;
   display: inline-flex !important;
   align-items: center !important;
+  gap: 0 !important;
+}
+
+/* Remove only the smaller pseudo-element dot from status badges in Examination History table */
+.pathist-data-row .pathist-col-status .drep-badge-ready::before,
+.pathist-data-row .pathist-col-status .drep-badge-pending::before {
+  display: none !important;
+  content: none !important;
 }
 
 .dhist-pulse-dot {

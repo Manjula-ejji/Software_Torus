@@ -62,5 +62,13 @@ class TestExaminationHistoryRefactor(unittest.TestCase):
         self.assertIn('window.torusSessions?.completed', self.app_js)
         self.assertIn('calculateTotalDuration', self.app_js)
 
+    def test_07_single_dot_in_report_available_badge(self):
+        # The smaller ::before dot must be removed in Examination History status badges
+        self.assertIn('.pathist-data-row .pathist-col-status .drep-badge-ready::before', self.styles_css)
+        self.assertIn('content: none !important;', self.styles_css)
+        # The larger glowing dot (.dhist-pulse-dot) must be preserved
+        self.assertIn('.dhist-pulse-dot', self.styles_css)
+        self.assertIn('dhistDotPulse', self.styles_css)
+
 if __name__ == "__main__":
     unittest.main()
