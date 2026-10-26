@@ -2125,11 +2125,12 @@
     </button>
     <div class="report-preview-card" style="position: relative;">
       <div class="report-preview-body">
-        <!-- Clinic Header -->
+        <!-- Clinic Header & Patient Details (Opposite-Side Layout) -->
         <div
-          style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="logo.png" alt="TORUS Logo" style="width: 45px; height: auto;" />
+          style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 16px;">
+          <!-- Left side: Existing logo and branding remain unchanged -->
+          <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding-top: 6px;">
+            <img src="logo.png" alt="TORUS Logo" style="width: 48px; height: auto;" />
             <div>
               <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: #0f172a;">TORUS
                 MEDICAL</h2>
@@ -2137,39 +2138,46 @@
                 Imaging Center</span>
             </div>
           </div>
-          <div style="text-align: right; font-size: 12px; color: #64748b;">
-            <div id="previewReportId" style="font-weight: 600; color: #0f172a; font-size: 14px;"></div>
-            <div id="previewReportDate" style="display: none;"></div>
+
+          <!-- Right side: Report ID at top, with Patient & Case Details directly below it -->
+          <div style="display: flex; flex-direction: column; align-items: flex-end; width: 440px; max-width: 62%; flex-shrink: 0;">
+            <div style="text-align: right; margin-bottom: 8px;">
+              <div id="previewReportId" style="font-weight: 600; color: #0f172a; font-size: 14px;"></div>
+              <div id="previewReportDate" style="display: none;"></div>
+            </div>
+
+            <!-- Patient & Case Details Card (Right Side) -->
+            <div
+              style="background: #f8fafc; border-radius: 8px; padding: 12px 16px; border: 1px solid #e2e8f0; width: 100%; box-sizing: border-box; text-align: left;">
+              <h3
+                style="margin-top: 0; margin-bottom: 10px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; letter-spacing: 0.3px;">
+                Patient & Case Details</h3>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; font-size: 12px;">
+                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
+                    style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span
+                    id="previewPatientName" style="color: #0f172a; font-weight: 500;"></span></div>
+                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
+                    style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span
+                    id="previewPatientId" style="color: #0f172a; font-weight: 500;"></span></div>
+                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
+                    style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span
+                    id="previewScanType" style="color: #0f172a; font-weight: 500;"></span></div>
+                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
+                    style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span
+                    id="previewDeviceName" style="color: #0f172a;"></span></div>
+                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
+                    style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span
+                    id="previewLocationName" style="color: #0f172a;"></span></div>
+                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
+                    style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span
+                    id="previewDuration" style="color: #0f172a;"></span></div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Patient & Exam Details -->
-        <div
-          style="background: #f8fafc; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
-          <h3
-            style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">
-            Patient & Case Details</h3>
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; font-size: 13px;">
-            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
-                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span
-                id="previewPatientName" style="color: #0f172a; font-weight: 500;"></span></div>
-            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
-                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span
-                id="previewPatientId" style="color: #0f172a; font-weight: 500;"></span></div>
-            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
-                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span
-                id="previewScanType" style="color: #0f172a; font-weight: 500;"></span></div>
-            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
-                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span
-                id="previewDeviceName" style="color: #0f172a;"></span></div>
-            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
-                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span
-                id="previewLocationName" style="color: #0f172a;"></span></div>
-            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
-                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span
-                id="previewDuration" style="color: #0f172a;"></span></div>
-          </div>
-        </div>
+        <!-- Horizontal divider line across full report width -->
+        <div style="border-bottom: 2px solid #0f172a; margin-bottom: 20px;"></div>
 
         <!-- Captured Images Section -->
         <div style="margin-bottom: 20px;">
@@ -4529,55 +4537,60 @@
         } catch (_) { }
       }
 
-      // Header right: Report ID and signing date/time directly below it
+      // Header right: Report ID at top-right
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
+      doc.setFontSize(10.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
+      doc.text(`Report ID: ${reportData.reportId}`, width - margin, y + 6, { align: 'right' });
 
-      // Header line
-      doc.setDrawColor(15, 23, 42);
-      doc.setLineWidth(2);
-      doc.line(margin, y + 16, width - margin, y + 16);
-      y += 28;
+      // Section: Patient & Case Details Box on Right side directly below Report ID
+      const cardWidth = Math.round(contentWidth * 0.58);
+      const cardX = width - margin - cardWidth;
+      const cardY = y + 14;
+      const cardH = 76;
 
-      // Section: Patient & Case Details Box
-      doc.setFillColor(248, 250, 252); // #f8fafc
-      doc.setDrawColor(226, 232, 240); // #e2e8f0
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
       doc.setLineWidth(1);
-      doc.roundedRect(margin, y, contentWidth, 104, 6, 6, 'FD');
+      doc.roundedRect(cardX, cardY, cardWidth, cardH, 4, 4, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(71, 85, 105); // #475569
-      doc.text('PATIENT & CASE DETAILS', margin + 12, y + 16);
-      doc.setDrawColor(203, 213, 225); // #cbd5e1
-      doc.line(margin + 12, y + 22, width - margin - 12, y + 22);
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('PATIENT & CASE DETAILS', cardX + 8, cardY + 12);
+      doc.setDrawColor(203, 213, 225);
+      doc.line(cardX + 8, cardY + 16, cardX + cardWidth - 8, cardY + 16);
 
       const drawDetail = (lbl, val, x, top) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(7.8);
         doc.setTextColor(100, 116, 139);
         doc.text(lbl, x, top);
         const lblW = doc.getTextWidth(lbl);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(15, 23, 42);
-        doc.text(String(val || '--'), x + lblW + 4, top);
+        doc.text(String(val || '--'), x + lblW + 3, top);
       };
 
-      const c1 = margin + 14;
-      const c2 = margin + halfWidth + 14;
-      drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
+      const c1 = cardX + 8;
+      const c2 = cardX + Math.round(cardWidth * 0.52);
+      drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, cardY + 28);
       const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
-      drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
+      drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, cardY + 28);
 
       const st = reportData.patientInfo?.scanType || '--';
-      drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
-      drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
+      drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, cardY + 44);
+      drawDetail('Device: ', reportData.patientInfo?.device, c2, cardY + 44);
 
-      drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
-      drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
-      y += 120;
+      drawDetail('Location: ', reportData.patientInfo?.location, c1, cardY + 60);
+      drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, cardY + 60);
+
+      // Horizontal Divider Line below entire top section across full report width
+      const dividerY = cardY + cardH + 12;
+      doc.setDrawColor(15, 23, 42);
+      doc.setLineWidth(2);
+      doc.line(margin, dividerY, width - margin, dividerY);
+      y = dividerY + 18;
 
       // Captured Images
       const images = (reportData.selectedImages && reportData.selectedImages.length)

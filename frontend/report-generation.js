@@ -1483,55 +1483,60 @@ function generateWhiteMedicalPdfFallback(reportData) {
     } catch (_) { }
   }
 
-  // Header right: Report ID (date/time below Report ID removed as requested)
+  // Header right: Report ID at top-right
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
+  doc.text(`Report ID: ${reportData.reportId}`, width - margin, y + 6, { align: 'right' });
 
-  // Header line
-  doc.setDrawColor(15, 23, 42);
-  doc.setLineWidth(2);
-  doc.line(margin, y + 16, width - margin, y + 16);
-  y += 28;
+  // Section: Patient & Case Details Box on Right side directly below Report ID
+  const cardWidth = Math.round(contentWidth * 0.58);
+  const cardX = width - margin - cardWidth;
+  const cardY = y + 14;
+  const cardH = 76;
 
-  // Section: Patient & Case Details Box
-  doc.setFillColor(248, 250, 252); // #f8fafc
-  doc.setDrawColor(226, 232, 240); // #e2e8f0
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(1);
-  doc.roundedRect(margin, y, contentWidth, 104, 6, 6, 'FD');
+  doc.roundedRect(cardX, cardY, cardWidth, cardH, 4, 4, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105); // #475569
-  doc.text('PATIENT & CASE DETAILS', margin + 12, y + 16);
-  doc.setDrawColor(203, 213, 225); // #cbd5e1
-  doc.line(margin + 12, y + 22, width - margin - 12, y + 22);
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('PATIENT & CASE DETAILS', cardX + 8, cardY + 12);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(cardX + 8, cardY + 16, cardX + cardWidth - 8, cardY + 16);
 
   const drawDetail = (lbl, val, x, top) => {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(7.8);
     doc.setTextColor(100, 116, 139);
     doc.text(lbl, x, top);
     const lblW = doc.getTextWidth(lbl);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(15, 23, 42);
-    doc.text(String(val || '--'), x + lblW + 4, top);
+    doc.text(String(val || '--'), x + lblW + 3, top);
   };
 
-  const c1 = margin + 14;
-  const c2 = margin + halfWidth + 14;
-  drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
+  const c1 = cardX + 8;
+  const c2 = cardX + Math.round(cardWidth * 0.52);
+  drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, cardY + 28);
   const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
-  drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
+  drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, cardY + 28);
 
   const st = reportData.patientInfo?.scanType || '--';
-  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
-  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
+  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, cardY + 44);
+  drawDetail('Device: ', reportData.patientInfo?.device, c2, cardY + 44);
 
-  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
-  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
-  y += 120;
+  drawDetail('Location: ', reportData.patientInfo?.location, c1, cardY + 60);
+  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, cardY + 60);
+
+  // Horizontal Divider Line below entire top section across full report width
+  const dividerY = cardY + cardH + 12;
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(2);
+  doc.line(margin, dividerY, width - margin, dividerY);
+  y = dividerY + 18;
 
   // Captured Images
   const images = (reportData.selectedImages && reportData.selectedImages.length)

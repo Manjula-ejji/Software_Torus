@@ -14333,32 +14333,40 @@ document.addEventListener("DOMContentLoaded", async () => {
         body.innerHTML = `
           <div class="report-preview-card" style="background: #ffffff !important; color: #0f172a !important; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); width: 100%; box-sizing: border-box; overflow: visible;">
             <div class="report-preview-body" style="padding: 36px 44px; font-family: 'Inter', sans-serif; line-height: 1.6; color: #0f172a !important; background: #ffffff !important;">
-              <!-- Clinic Header -->
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                  <img src="logo.png" alt="TORUS Logo" style="width: 45px; height: auto;" />
+              <!-- Clinic Header & Patient Details (Opposite-Side Layout) -->
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 16px;">
+                <!-- Left side: Existing logo and branding remain unchanged -->
+                <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding-top: 6px;">
+                  <img src="logo.png" alt="TORUS Logo" style="width: 48px; height: auto;" />
                   <div>
                     <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: #0f172a;">TORUS MEDICAL</h2>
                     <span style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 500;">Diagnostic Imaging Center</span>
                   </div>
                 </div>
-                <div style="text-align: right; font-size: 12px; color: #64748b;">
-                  <div style="font-weight: 600; color: #0f172a; font-size: 14px;">Report ID: ${repCode}</div>
+
+                <!-- Right side: Report ID at top, with Patient & Case Details directly below it -->
+                <div style="display: flex; flex-direction: column; align-items: flex-end; width: 440px; max-width: 62%; flex-shrink: 0;">
+                  <div style="text-align: right; margin-bottom: 8px;">
+                    <div style="font-weight: 600; color: #0f172a; font-size: 14px;">Report ID: ${repCode}</div>
+                  </div>
+
+                  <!-- Patient & Case Details Card (Right Side) -->
+                  <div style="background: #f8fafc; border-radius: 8px; padding: 12px 16px; border: 1px solid #e2e8f0; width: 100%; box-sizing: border-box; text-align: left;">
+                    <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; letter-spacing: 0.3px;">Patient & Case Details</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; font-size: 12px;">
+                      <div style="display: flex; align-items: baseline; gap: 4px;"><strong style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
+                      <div style="display: flex; align-items: baseline; gap: 4px;"><strong style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span style="color: #0f172a; font-weight: 500;">${patId}</span></div>
+                      <div style="display: flex; align-items: baseline; gap: 4px;"><strong style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>
+                      <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span style="color: #0f172a;">${devId}</span></div>
+                      <div style="display: flex; align-items: baseline; gap: 4px;"><strong style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span style="color: #0f172a;">${center}</span></div>
+                      <div style="display: flex; align-items: baseline; gap: 4px;"><strong style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span style="color: #0f172a;">${duration}</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <!-- Patient & Exam Details -->
-              <div style="background: #f8fafc; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
-                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">Patient & Case Details</h3>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; font-size: 13px;">
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span style="color: #0f172a; font-weight: 500;">${patId}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span style="color: #0f172a;">${devId}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span style="color: #0f172a;">${center}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span style="color: #0f172a;">${duration}</span></div>
-                </div>
-              </div>
+              <!-- Horizontal divider line across full report width -->
+              <div style="border-bottom: 2px solid #0f172a; margin-bottom: 20px;"></div>
 
               <!-- Captured Images Section -->
               <div style="margin-bottom: 20px;">
