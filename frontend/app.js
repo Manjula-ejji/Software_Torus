@@ -4782,9 +4782,43 @@ async function validateClinicalSessionAPI(sessionCode) {
   return { success: false, error: "Unable to connect to the clinical session. Please try again." };
 }
 
+// Reset current session's report signing state on fresh doctor login
+function resetDoctorReportSigningSession() {
+  try {
+    sessionStorage.setItem("torus_session_signing_state", "fresh");
+    localStorage.setItem("torus_session_signing_state", "fresh");
+    sessionStorage.setItem("torus_doctor_login_time", Date.now().toString());
+    localStorage.setItem("torus_doctor_login_time", Date.now().toString());
+
+    // Clean up transient room-level signature & active report caches without deleting saved report signatures
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key === "torus_signature_latest" || key === "torus_signature_DEFAULT" || key === "torus_signature_TORUS") {
+        keysToRemove.push(key);
+      } else if (key.startsWith("torus_signature_") && !key.startsWith("torus_signature_RPT-")) {
+        keysToRemove.push(key);
+      } else if (key.startsWith("torus-report-generated-") || key.startsWith("torus-report-id-") || key.startsWith("torus-report-delivery-status-")) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => {
+      localStorage.removeItem(k);
+      sessionStorage.removeItem(k);
+    });
+    localStorage.removeItem("torus-report-meta");
+    sessionStorage.removeItem("torus-report-meta");
+  } catch (err) {
+    console.warn("[Session Reset Warning]", err);
+  }
+}
+window.resetDoctorReportSigningSession = resetDoctorReportSigningSession;
+
 // Set Active Authenticated Doctor Session & Launch Dashboard
 async function setAuthenticatedDoctorSession(doctor) {
   currentAuthenticatedUser = doctor;
+  resetDoctorReportSigningSession();
 
   // Bind values to settings inputs
   if (roleInput) {
@@ -5271,6 +5305,16 @@ function renderPortalSidebar(role = "doctor") {
         <span class="ddash-nav-label">Examination History</span>
       </a>
 
+      <a href="#messages" class="ddash-nav-item" data-view="chat" id="patDashSidebarChatBtn">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Messages & Support</span>
+        <span class="ddash-chat-badge" id="patDashSidebarChatBadge" style="display: none;">0</span>
+      </a>
+
       <a href="#logout" id="docDashSidebarLogoutBtn" class="ddash-nav-item ddash-nav-logout" data-view="logout">
         <span class="ddash-nav-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -5337,6 +5381,16 @@ function renderPortalSidebar(role = "doctor") {
           </svg>
         </span>
         <span class="ddash-nav-label">Patient Reports</span>
+      </a>
+
+      <a href="#messages" class="ddash-nav-item" data-view="chat" id="docDashSidebarChatBtn">
+        <span class="ddash-nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </span>
+        <span class="ddash-nav-label">Messages & Chat</span>
+        <span class="ddash-chat-badge" id="docDashSidebarChatBadge" style="display: none;">0</span>
       </a>
 
       <a href="#history" class="ddash-nav-item" data-view="history">
@@ -7132,7 +7186,7 @@ function renderPatientDetailedHistory(stationId, patientId) {
             <div class="tsta-timeline-step ${isReport && rec.status === 'ready' ? 'completed' : (isReport ? '' : 'completed')}">
               <div class="tsta-timeline-step-header">
                 <div class="tsta-timeline-dot">${isReport && rec.status !== 'ready' ? '○' : '✓'}</div>
-                <h4 class="tsta-timeline-step-title">Report Sent to Portal</h4>
+                <h4 class="tsta-timeline-step-title">Report Received</h4>
               </div>
               <div class="tsta-timeline-step-content">
                 <p class="tsta-timeline-step-time">${isReport && rec.status !== 'ready' ? 'Awaiting Final Approval' : 'Available in Patient Portal'}</p>
@@ -10676,6 +10730,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         localStorage.removeItem("authenticated_doctor");
         sessionStorage.removeItem("authenticated_user");
         localStorage.removeItem("authenticated_user");
+        resetDoctorReportSigningSession();
       } catch (e) { }
 
       torusScreenHistory = ["role-selection-screen"];
@@ -14220,7 +14275,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         try {
           const rawImgs = localStorage.getItem("torus_captured_images_torus_live_run") || localStorage.getItem("torus_captured_images");
           if (rawImgs) fallbackImgs = JSON.parse(rawImgs);
-        } catch (_) {}
+        } catch (_) { }
         if (fallbackImgs && fallbackImgs.length > 0) {
           renderedImagesHtml = fallbackImgs.slice(0, 4).map(img => {
             const src = img.dataUrl || img.url || img;
@@ -14250,7 +14305,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
             });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       if (!dynamicTime) {
         const rawGen = report.generated_at || report.generatedAt || report.created_at;
@@ -14262,7 +14317,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
               });
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       }
       if (!dynamicTime) {
@@ -14289,6 +14344,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 </div>
                 <div style="text-align: right; font-size: 12px; color: #64748b;">
                   <div style="font-weight: 600; color: #0f172a; font-size: 14px;">Report ID: ${repCode}</div>
+                  ${sigFormattedTime ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">${sigFormattedTime}</div>` : ''}
                 </div>
               </div>
 
@@ -14298,8 +14354,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 24px; font-size: 13px;">
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span style="color: #0f172a; font-weight: 500;">${patId}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Exam Date:</strong> <span style="color: #0f172a;">${examDate}</span></div>
-                  <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Report Timestamp:</strong> <span style="color: #0f172a;">${dynamicTime}</span></div>
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span style="color: #0f172a;">${devId}</span></div>
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span style="color: #0f172a;">${center}</span></div>
@@ -14347,8 +14401,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                   <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> Digitally Signed
                   </div>
-                  ${sigSrc ? `<img src="${sigSrc}" style="height: 38px; max-width: 140px; object-fit: contain; margin-bottom: 4px; border-bottom: 1px solid #cbd5e1;" alt="Doctor Signature" />` : ''}
-                  <div style="font-size: 12px; color: #0f172a; font-weight: 500;">Dr. ${cleanDocName}</div>
+                  ${sigSrc ? `<img src="${sigSrc}" style="height: 48px; max-width: 170px; object-fit: contain; margin-bottom: 4px; border-bottom: 1px solid #cbd5e1;" alt="Doctor Signature" />` : ''}
                   <div style="font-size: 11px; color: #64748b;">${sigFormattedTime}</div>
                 </div>
               </div>
@@ -14715,6 +14768,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (!isDoc && doctorOnlyViews.includes(view)) {
             if (typeof showToastAlert === "function") {
               showToastAlert("Access Restricted: Doctor credentials required.", "error");
+            }
+            return;
+          }
+
+          if (view === "chat") {
+            if (typeof window.toggleTorusChatDrawer === "function") {
+              window.toggleTorusChatDrawer(true);
             }
             return;
           }

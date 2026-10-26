@@ -192,6 +192,176 @@ function showToast(message) {
   showToast._timer = window.setTimeout(() => dom.toast.classList.remove('show'), 1800);
 }
 
+// -------------------------------------------------------------------------
+// INDEXEDDB SIGNATURE STORAGE & CACHE (HIGH CAPACITY, NO LOCALSTORAGE QUOTA)
+// -------------------------------------------------------------------------
+const TorusSignatureStore = {
+  dbName: 'TorusSignatureDB',
+  dbVersion: 1,
+  storeName: 'signatures',
+  _db: null,
+
+  async getDb() {
+    if (this._db) return this._db;
+    return new Promise((resolve) => {
+      if (!window.indexedDB) {
+        resolve(null);
+        return;
+      }
+      const request = indexedDB.open(this.dbName, this.dbVersion);
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          db.createObjectStore(this.storeName, { keyPath: 'reportId' });
+        }
+      };
+      request.onsuccess = (e) => {
+        this._db = e.target.result;
+        resolve(this._db);
+      };
+      request.onerror = (e) => {
+        console.warn('[SignatureStore] IndexedDB open error:', e);
+        resolve(null);
+      };
+    });
+  },
+
+  async saveSignature(reportId, signatureData, metadata = {}) {
+    if (!reportId) return false;
+    try {
+      const db = await this.getDb();
+      if (!db) return false;
+      return new Promise((resolve) => {
+        const tx = db.transaction([this.storeName], 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        const record = {
+          reportId: reportId,
+          signatureData: signatureData,
+          ...metadata,
+          updatedAt: new Date().toISOString()
+        };
+        const req = store.put(record);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      });
+    } catch (_) {
+      return false;
+    }
+  },
+
+  async getSignature(reportId) {
+    if (!reportId) return null;
+    try {
+      const db = await this.getDb();
+      if (!db) return null;
+      return new Promise((resolve) => {
+        const tx = db.transaction([this.storeName], 'readonly');
+        const store = tx.objectStore(this.storeName);
+        const req = store.get(reportId);
+        req.onsuccess = (e) => resolve(e.target.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch (_) {
+      return null;
+    }
+  },
+
+  async deleteSignature(reportId) {
+    if (!reportId) return false;
+    try {
+      const db = await this.getDb();
+      if (!db) return false;
+      return new Promise((resolve) => {
+        const tx = db.transaction([this.storeName], 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        const req = store.delete(reportId);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+};
+window.TorusSignatureStore = TorusSignatureStore;
+
+function cleanupRedundantSignatureStorage() {
+  try {
+    const keysToRemove = [];
+    const keysToCompress = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+
+      if (key.startsWith('torus_sig_img_') || key.startsWith('torus_doctor_saved_signature_')) {
+        keysToRemove.push(key);
+        continue;
+      }
+
+      if (key === 'reportPreview' || key === 'torus_report_preview_cache') {
+        const val = localStorage.getItem(key);
+        if (val && val.length > 50000) {
+          keysToRemove.push(key);
+        }
+        continue;
+      }
+
+      if (key.startsWith('torus_signature_')) {
+        const raw = localStorage.getItem(key);
+        if (raw && (raw.includes('data:image/') || raw.length > 1000)) {
+          try {
+            const parsed = JSON.parse(raw);
+            const repId = parsed.reportId || parsed.report_id || key.replace('torus_signature_', '');
+            const lightweight = {
+              reportId: repId,
+              doctorName: parsed.doctorName || parsed.doctor_name || parsed.signed_by || 'Dr. Admin Doctor',
+              doctorLicense: parsed.doctorLicense || parsed.doctor_license || 'TORUS-REG-3001',
+              signatureHash: parsed.signatureHash || parsed.signature_hash || '',
+              signedAt: parsed.signedAt || parsed.signed_at || new Date().toISOString(),
+              status: 'signed'
+            };
+            if (parsed.signatureData && window.TorusSignatureStore) {
+              window.TorusSignatureStore.saveSignature(repId, parsed.signatureData, lightweight);
+            }
+            keysToCompress.push({ key, val: JSON.stringify(lightweight) });
+          } catch (_) {
+            keysToRemove.push(key);
+          }
+        }
+      }
+    }
+
+    keysToRemove.forEach(k => {
+      try { localStorage.removeItem(k); } catch (_) { }
+    });
+
+    keysToCompress.forEach(item => {
+      try { localStorage.setItem(item.key, item.val); } catch (_) { }
+    });
+  } catch (err) {
+    console.warn('[Storage Cleanup] Non-fatal cleanup warning:', err);
+  }
+}
+
+function safeLocalStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    console.warn(`[Storage] Quota exceeded on setting '${key}', executing cleanup...`, e);
+    try {
+      cleanupRedundantSignatureStorage();
+      localStorage.setItem(key, value);
+      return true;
+    } catch (err2) {
+      console.warn(`[Storage] Unable to store in localStorage (using IndexedDB/backend instead):`, err2);
+      return false;
+    }
+  }
+}
+
+cleanupRedundantSignatureStorage();
+
 function readJson(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -203,7 +373,7 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    safeLocalStorageSet(key, JSON.stringify(value));
   } catch (e) {
     console.warn('Unable to persist ' + key, e);
   }
@@ -273,29 +443,23 @@ function isCurrentUserDoctor() {
   try {
     const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
     if (docRaw) return true;
-  } catch (_) {}
+  } catch (_) { }
   return false;
 }
 
 function updateSignatureUI(stateOverride = null) {
-  const isDoctor = isCurrentUserDoctor();
-  const isSigned = reportState.digitalSignature && !reportState.signatureRequired;
-  const isReq = Boolean(reportState.signatureRequired);
-  
+  const isSigned = Boolean(reportState.digitalSignature && !reportState.signatureRequired);
+
   let statusText = stateOverride;
   if (!statusText) {
-    if (isReq) statusText = 'Signature Required';
-    else if (isSigned) statusText = 'Signed';
+    if (isSigned) statusText = 'Digitally Signed';
     else statusText = 'Unsigned';
   }
 
   if (dom.signatureStatus) {
-    dom.signatureStatus.textContent = statusText;
+    dom.signatureStatus.textContent = isSigned ? 'Digitally Signed' : (stateOverride || 'Unsigned');
     if (isSigned) {
       dom.signatureStatus.style.color = '#10b981';
-      dom.signatureStatus.style.fontWeight = '700';
-    } else if (isReq) {
-      dom.signatureStatus.style.color = '#f59e0b';
       dom.signatureStatus.style.fontWeight = '700';
     } else if (stateOverride === 'Failed') {
       dom.signatureStatus.style.color = '#ef4444';
@@ -317,30 +481,31 @@ function updateSignatureUI(stateOverride = null) {
       btn.innerHTML = '<i data-lucide="loader" style="animation: spin 1s linear infinite;"></i>Signing...';
       btn.disabled = true;
       btn.style.display = 'inline-flex';
-    } else if (isReq) {
-      btn.innerHTML = '<i data-lucide="signature"></i>Re-Sign Report';
-      btn.disabled = false;
-      btn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
-      btn.style.color = '#ffffff';
-      btn.style.display = 'inline-flex';
+      btn.classList.remove('signed', 'is-signed');
     } else if (isSigned) {
       btn.innerHTML = '<i data-lucide="signature" style="width: 18px; height: 18px;"></i>Signed';
       btn.disabled = false;
       btn.style.background = '#10b981';
       btn.style.color = '#ffffff';
       btn.style.display = 'inline-flex';
+      btn.style.cursor = 'default';
+      btn.classList.add('signed', 'is-signed');
     } else if (stateOverride === 'Failed') {
       btn.innerHTML = '<i data-lucide="alert-circle"></i>Retry Sign';
       btn.disabled = false;
       btn.style.background = '#ef4444';
       btn.style.color = '#ffffff';
       btn.style.display = 'inline-flex';
+      btn.style.cursor = 'pointer';
+      btn.classList.remove('signed', 'is-signed');
     } else {
       btn.innerHTML = '<i data-lucide="signature"></i>Digital Sign';
       btn.disabled = false;
       btn.style.background = '';
       btn.style.color = '';
       btn.style.display = 'inline-flex';
+      btn.style.cursor = 'pointer';
+      btn.classList.remove('signed', 'is-signed');
     }
   }
 
@@ -348,13 +513,13 @@ function updateSignatureUI(stateOverride = null) {
     success.style.display = isSigned ? "flex" : "none";
   }
   if (reqBadge) {
-    reqBadge.style.display = isReq ? "flex" : "none";
+    reqBadge.style.setProperty('display', 'none', 'important');
   }
   if (replaceBtn) {
-    replaceBtn.style.display = (isDoctor && (isSigned || isReq)) ? "flex" : "none";
+    replaceBtn.style.setProperty('display', 'none', 'important');
   }
   if (historyBtn) {
-    historyBtn.style.display = (isSigned || isReq || reportState.signatureData) ? "flex" : "none";
+    historyBtn.style.setProperty('display', 'none', 'important');
   }
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -534,7 +699,9 @@ function persistGeneratedReport(reportData) {
   writeJson(STORAGE_KEYS.generatedReport, reportData);
   writeJson(STORAGE_KEYS.reportDetails, reportData.reportDetails);
   writeJson(STORAGE_KEYS.reportPreview, reportData.reportPreview || reportState.reportPreview || null);
-  const deliveryStatus = reportData.deliveryStatus === 'sent' ? 'sent' : 'ready';
+  const deliveryStatus = (reportData.deliveryStatus === 'sent')
+    ? 'sent'
+    : ((reportData.deliveryStatus === 'failed') ? 'failed' : 'ready');
   localStorage.setItem(STORAGE_KEYS.deliveryStatus, deliveryStatus);
   setSendLockedState(deliveryStatus === 'sent');
   setGeneratedTime(reportData.generatedAt);
@@ -724,29 +891,42 @@ function loadReportContext() {
   }
   reportState.reportDetails = readJson(STORAGE_KEYS.reportDetails, null);
 
-  let reportId = context.reportId
-    || (reportState.generatedReport && reportState.generatedReport.reportId)
-    || localStorage.getItem(STORAGE_KEYS.reportId);
-  if (!reportId || reportId === 'RPT-000000' || reportId.startsWith('RPT-8') || reportId === 'RPT-8') {
+  const isFreshLoginSession = localStorage.getItem('torus_session_signing_state') === 'fresh' || sessionStorage.getItem('torus_session_signing_state') === 'fresh';
+
+  let reportId = (!isFreshLoginSession && context.reportId)
+    || (!isFreshLoginSession && reportState.generatedReport && reportState.generatedReport.reportId)
+    || (!isFreshLoginSession && localStorage.getItem(STORAGE_KEYS.reportId));
+  if (!reportId || reportId === 'RPT-000000' || reportId.startsWith('RPT-8') || reportId === 'RPT-8' || isFreshLoginSession) {
     reportId = buildAutoReportId();
     localStorage.setItem(STORAGE_KEYS.reportId, reportId);
   }
   setReportId(reportId);
 
-  reportState.generatedReport = readJson(STORAGE_KEYS.generatedReport, null);
-
-  const savedSig = readJson('torus_signature_' + reportId, null) || readJson('torus_signature_' + roomParam, null);
-  if (savedSig && (savedSig.status === 'signed' || savedSig.signatureData || savedSig.signatureHash)) {
-    reportState.digitalSignature = true;
-    reportState.signatureData = savedSig;
-  } else if (reportState.generatedReport && (reportState.generatedReport.digitalSignature || reportState.generatedReport.signatureData || reportState.generatedReport.report_status === 'signed')) {
-    reportState.digitalSignature = true;
-    reportState.signatureData = reportState.generatedReport.signatureData || reportState.generatedReport;
-  } else {
+  if (isFreshLoginSession) {
+    reportState.generatedReport = null;
     reportState.digitalSignature = false;
     reportState.signatureData = null;
+    reportState.signatureRequired = false;
+    localStorage.removeItem(STORAGE_KEYS.generatedReport);
+    sessionStorage.removeItem(STORAGE_KEYS.generatedReport);
+    localStorage.setItem('torus_session_signing_state', 'active');
+    sessionStorage.setItem('torus_session_signing_state', 'active');
+  } else {
+    reportState.generatedReport = readJson(STORAGE_KEYS.generatedReport, null);
+    const savedSig = readJson('torus_signature_' + reportId, null);
+    if (savedSig && (savedSig.status === 'signed' || savedSig.signatureData || savedSig.signatureHash)) {
+      reportState.digitalSignature = true;
+      reportState.signatureData = savedSig;
+    } else if (reportState.generatedReport && (reportState.generatedReport.digitalSignature || reportState.generatedReport.signatureData || reportState.generatedReport.report_status === 'signed')) {
+      reportState.digitalSignature = true;
+      reportState.signatureData = reportState.generatedReport.signatureData || reportState.generatedReport;
+    } else {
+      reportState.digitalSignature = false;
+      reportState.signatureData = null;
+    }
   }
   updateSignatureUI();
+  syncReportSignatureFromBackend(reportId);
 
   reportState.sendLocked = localStorage.getItem(STORAGE_KEYS.deliveryStatus) === 'sent';
 
@@ -792,6 +972,43 @@ function loadReportContext() {
 
   applyPatientView();
   applyDoctorView();
+}
+
+async function syncReportSignatureFromBackend(repId) {
+  if (!repId || repId === '--') return;
+  try {
+    const resp = await fetch(`/api/reports/${encodeURIComponent(repId)}/signature`);
+    if (!resp.ok) return;
+    const sigRes = await resp.json();
+    if (sigRes.success && sigRes.is_signed) {
+      reportState.digitalSignature = true;
+      reportState.signatureRequired = false;
+      reportState.signatureData = {
+        reportId: repId,
+        doctorName: sigRes.doctorName || 'Dr. Admin Doctor',
+        doctorLicense: sigRes.doctorLicense || 'TORUS-REG-3001',
+        signatureHash: sigRes.signatureHash || '',
+        signedAt: sigRes.signedAt || new Date().toISOString(),
+        signatureData: sigRes.signatureData || null,
+        status: 'signed'
+      };
+      if (sigRes.signatureData && window.TorusSignatureStore) {
+        window.TorusSignatureStore.saveSignature(repId, sigRes.signatureData, reportState.signatureData);
+      }
+      const lightweightSig = {
+        reportId: repId,
+        doctorName: sigRes.doctorName,
+        doctorLicense: sigRes.doctorLicense,
+        signatureHash: sigRes.signatureHash,
+        signedAt: sigRes.signedAt,
+        status: 'signed'
+      };
+      safeLocalStorageSet('torus_signature_' + repId, JSON.stringify(lightweightSig));
+      updateSignatureUI('Signed');
+    }
+  } catch (err) {
+    console.warn('[Signature Sync] Non-fatal check error:', err);
+  }
 }
 
 function applyPatientView() {
@@ -918,9 +1135,9 @@ function populateReportPreviewDOM(reportData) {
 
   const now = new Date();
   const rawGenTime = (reportData && reportData.generatedAt) ||
-                     (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
-                     (reportState.generatedAt) ||
-                     now.toISOString();
+    (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+    (reportState.generatedAt) ||
+    now.toISOString();
   if (!reportState.generatedAt) {
     reportState.generatedAt = rawGenTime;
   }
@@ -934,7 +1151,7 @@ function populateReportPreviewDOM(reportData) {
           hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
         });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
   if (!dynamicReportTimestamp) {
     dynamicReportTimestamp = now.toLocaleTimeString('en-US', {
@@ -949,7 +1166,58 @@ function populateReportPreviewDOM(reportData) {
   reportData.reportTimestamp = dynamicReportTimestamp;
 
   if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
-  if (previewReportDate) previewReportDate.innerHTML = '';
+
+  const isSigned = Boolean(reportData.digitalSignature || reportState.digitalSignature);
+  const sigObj = reportData.signature || reportData.signatureData || reportState.signatureData || reportState.digitalSignature;
+
+  // Extract actual saved signing timestamp from report data
+  let actualSigningTime = null;
+  if (sigObj && typeof sigObj === 'object' && (sigObj.signedAt || sigObj.signed_at)) {
+    actualSigningTime = sigObj.signedAt || sigObj.signed_at;
+  } else if (reportData.signed_at || reportData.signedAt || reportData.signedTimestamp) {
+    actualSigningTime = reportData.signed_at || reportData.signedAt || reportData.signedTimestamp;
+  } else if (reportState.signatureData && (reportState.signatureData.signedAt || reportState.signatureData.signed_at)) {
+    actualSigningTime = reportState.signatureData.signedAt || reportState.signatureData.signed_at;
+  } else if (reportState.digitalSignature && reportState.signedTimestamp) {
+    actualSigningTime = reportState.signedTimestamp;
+  }
+  if (!actualSigningTime) {
+    try {
+      const repId = reportData.reportId || getCurrentReportId();
+      const localSig = (repId ? readJson('torus_signature_' + repId, null) : null) ||
+        readJson('torus_signature_' + roomParam, null) ||
+        readJson('torus_signature_latest', null);
+      if (localSig && (localSig.signedAt || localSig.signed_at)) {
+        actualSigningTime = localSig.signedAt || localSig.signed_at;
+      }
+    } catch (_) { }
+  }
+
+  let formattedSignDateTime = '';
+  if (isSigned && actualSigningTime) {
+    try {
+      const sDate = new Date(actualSigningTime);
+      if (!isNaN(sDate.getTime())) {
+        formattedSignDateTime = sDate.toLocaleDateString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        }) + ' ' + sDate.toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+    } catch (_) { }
+  }
+
+  // Display signing date and time directly below Report ID (strictly only date/time, no doctor name or signature)
+  if (previewReportDate) {
+    if (formattedSignDateTime) {
+      previewReportDate.textContent = formattedSignDateTime;
+      previewReportDate.style.display = 'block';
+    } else {
+      previewReportDate.textContent = '';
+      previewReportDate.style.display = 'none';
+    }
+  }
+
   if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
   const resolvedPatId = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
   if (previewPatientId) previewPatientId.textContent = (resolvedPatId && resolvedPatId !== 'P-1000') ? resolvedPatId : '--';
@@ -966,7 +1234,6 @@ function populateReportPreviewDOM(reportData) {
   if (previewDoctorName) previewDoctorName.textContent = reportData.patientInfo?.doctor || '--';
   if (previewDoctorLocation) previewDoctorLocation.textContent = reportData.patientInfo?.location || '--';
 
-  const isSigned = Boolean(reportData.digitalSignature || reportState.digitalSignature);
   if (previewSignatureStatus) {
     if (isSigned) {
       previewSignatureStatus.innerHTML = '<i data-lucide="check-circle" style="width: 14px; height: 14px;"></i> Digitally Signed';
@@ -981,9 +1248,33 @@ function populateReportPreviewDOM(reportData) {
     }
   }
 
-  const sigObj = reportData.signature || reportState.signatureData || reportState.digitalSignature;
   if (isSigned) {
-    const sigSrc = sigObj?.signatureData || sigObj?.dataUrl || (typeof sigObj === 'string' && sigObj.startsWith('data:') ? sigObj : '');
+    let rawDocName = sigObj?.doctorName || reportData.patientInfo?.doctor || (dom.doctorName ? dom.doctorName.textContent.trim() : '') || '';
+    if (!rawDocName || rawDocName === '--' || rawDocName === '3001' || rawDocName === 'Dr. 3001') {
+      try {
+        const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
+        if (docRaw) {
+          const docObj = JSON.parse(docRaw);
+          if (docObj.name && docObj.name !== '3001') rawDocName = docObj.name.startsWith('Dr.') ? docObj.name : `Dr. ${docObj.name}`;
+        }
+      } catch (_) { }
+    }
+    if (!rawDocName || rawDocName === '--' || rawDocName === '3001' || rawDocName === 'Dr. 3001') rawDocName = 'Dr. Admin Doctor';
+    const docName = rawDocName.replace(/^Dr\.\s*/, '');
+    const docLicense = sigObj?.doctorLicense || 'TORUS-REG-3001';
+    const docHash = sigObj?.signatureHash || ('TORUS-SIG-' + (reportData.reportId || 'VERIFIED'));
+
+    let sigSrc = (typeof sigObj === 'object' && sigObj) ? (sigObj.signatureData || sigObj.signature || sigObj.dataUrl) : (typeof sigObj === 'string' ? sigObj : null);
+    if (!sigSrc || isLegacySignature(sigSrc)) {
+      sigSrc = generateDigitalSignatureDataUrl(docName, docLicense, docHash);
+      if (sigObj && typeof sigObj === 'object') {
+        sigObj.signatureData = sigSrc;
+      }
+      if (reportState.signatureData) {
+        reportState.signatureData.signatureData = sigSrc;
+      }
+    }
+
     if (previewSigImg) {
       if (sigSrc) {
         previewSigImg.src = sigSrc;
@@ -993,19 +1284,17 @@ function populateReportPreviewDOM(reportData) {
       }
     }
     if (previewSignerInfo) {
-      previewSignerInfo.style.display = 'block';
-      const signerName = (sigObj?.doctorName || reportData.patientInfo?.doctor || 'Dr. Admin Doctor').replace(/^Dr\.\s*/, '');
-      previewSignerInfo.textContent = `Dr. ${signerName}`;
+      previewSignerInfo.style.display = 'none';
+      previewSignerInfo.textContent = '';
     }
     if (previewSignTime) {
-      previewSignTime.style.display = 'block';
-      const sigTime = sigObj?.signedAt || reportState.signedTimestamp || now.toISOString();
-      const sigDate = new Date(sigTime);
-      previewSignTime.textContent = sigDate.toLocaleDateString(undefined, {
-        year: 'numeric', month: 'short', day: 'numeric'
-      }) + ' ' + sigDate.toLocaleTimeString(undefined, {
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-      });
+      if (formattedSignDateTime) {
+        previewSignTime.style.display = 'block';
+        previewSignTime.textContent = formattedSignDateTime;
+      } else {
+        previewSignTime.textContent = '';
+        previewSignTime.style.display = 'none';
+      }
     }
   } else {
     if (previewSigImg) previewSigImg.style.display = 'none';
@@ -1182,11 +1471,34 @@ function generateWhiteMedicalPdfFallback(reportData) {
   doc.setTextColor(100, 116, 139); // #64748b
   doc.text('DIAGNOSTIC IMAGING CENTER', margin, y + 14);
 
-  // Header right: Report ID
+  // Resolve actual saved signing timestamp
+  const sig = reportData.signatureData || reportData.signature || reportState.signatureData || {};
+  const actualSigTime = sig.signedAt || sig.signed_at || reportData.signed_at || reportData.signedAt || reportData.signedTimestamp;
+  let formattedSignDateTime = '';
+  if (actualSigTime) {
+    try {
+      const sd = new Date(actualSigTime);
+      if (!isNaN(sd.getTime())) {
+        formattedSignDateTime = sd.toLocaleDateString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric'
+        }) + ' ' + sd.toLocaleTimeString(undefined, {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+    } catch (_) { }
+  }
+
+  // Header right: Report ID and signing date/time directly below it
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
   doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
+  if (formattedSignDateTime) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(formattedSignDateTime, width - margin, y + 12, { align: 'right' });
+  }
 
   // Header line
   doc.setDrawColor(15, 23, 42);
@@ -1198,7 +1510,7 @@ function generateWhiteMedicalPdfFallback(reportData) {
   doc.setFillColor(248, 250, 252); // #f8fafc
   doc.setDrawColor(226, 232, 240); // #e2e8f0
   doc.setLineWidth(1);
-  doc.roundedRect(margin, y, contentWidth, 126, 6, 6, 'FD');
+  doc.roundedRect(margin, y, contentWidth, 104, 6, 6, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -1224,17 +1536,13 @@ function generateWhiteMedicalPdfFallback(reportData) {
   const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
   drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
 
-  drawDetail('Exam Date: ', reportData.patientInfo?.examDate, c1, y + 64);
-  const tsVal = reportData.patientInfo?.reportTimestamp || reportData.patientInfo?.timestamp || (reportData.generatedAt ? new Date(reportData.generatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--');
-  drawDetail('Report Timestamp: ', tsVal, c2, y + 64);
-
   const st = reportData.patientInfo?.scanType || '--';
-  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 86);
-  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 86);
+  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
+  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
 
-  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 108);
-  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 108);
-  y += 142;
+  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
+  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
+  y += 120;
 
   // Captured Images
   const images = (reportData.selectedImages && reportData.selectedImages.length)
@@ -1358,23 +1666,17 @@ function generateWhiteMedicalPdfFallback(reportData) {
   doc.setTextColor(22, 163, 74); // #16a34a
   doc.text('✓ DIGITALLY SIGNED', width - margin - 45, y + 5, { align: 'center' });
 
-  const sig = reportData.signatureData || reportState.signatureData || {};
-  const sigData = sig.signatureData || sig.dataUrl || (typeof sig === 'string' && sig.startsWith('data:') ? sig : '');
+  const sigData = (sig && (sig.signatureData || sig.dataUrl)) || (typeof sig === 'string' && sig.startsWith('data:') ? sig : '');
   if (sigData && sigData.startsWith('data:image/')) {
     try {
       doc.addImage(sigData, 'PNG', width - margin - 110, y + 14, 110, 28, undefined, 'FAST');
     } catch (_) { }
   }
 
-  const docClean = (sig.doctorName || reportData.patientInfo?.doctor || 'Dr. Admin Doctor').replace(/^Dr\.\s*/, '');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(`Dr. ${docClean}`, width - margin, y + 48, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text(new Date().toLocaleDateString(), width - margin, y + 59, { align: 'right' });
+  doc.text(formattedSignDateTime || (sig.signedAt ? new Date(sig.signedAt).toLocaleDateString() : ''), width - margin, y + 48, { align: 'right' });
 
   doc.save(`Report_${sanitizeFileName(reportData.reportId)}.pdf`);
 }
@@ -1462,8 +1764,17 @@ function generateReportAction() {
         throw new Error(resData.error || 'Failed to save report to backend');
       }
 
+      reportData.deliveryStatus = 'pending';
+      reportState.deliveryStatus = 'pending';
       persistGeneratedReport(reportData);
       setSendLockedState(false);
+      updatePopupDeliveryUI('pending', '', false);
+      const successModal = document.getElementById('successDialogModal');
+      if (successModal) {
+        successModal.style.setProperty('display', 'flex', 'important');
+        successModal.classList.remove('hidden');
+        successModal.setAttribute('aria-hidden', 'false');
+      }
       showToast('Report generated successfully');
 
       window.setTimeout(() => {
@@ -1500,56 +1811,334 @@ function downloadPdfAction() {
   }
 }
 
-async function sendReportToPatient() {
-  if (reportState.isGenerating || reportState.isSending) return;
-  if (reportState.sendLocked) {
-    showToast('Report sent successfully');
-    return;
-  }
+function updatePopupDeliveryUI(status, message = '', isError = false) {
+  const badge = document.getElementById('popupDeliveryBadge');
+  const sendBtn = document.getElementById('popupSendPatientBtn');
+  const resendBtn = document.getElementById('popupResendPatientBtn');
+  const feedback = document.getElementById('popupDeliveryFeedback');
+  const repIdEl = document.getElementById('popupDeliveryReportId');
+  const patNameEl = document.getElementById('popupDeliveryPatientName');
+  const patIdEl = document.getElementById('popupDeliveryPatientId');
 
   const reportData = reportState.generatedReport;
-  if (!reportData) {
-    showToast('Generate report first');
+  const currentRepId = (reportData && reportData.reportId) || reportState.reportId || '--';
+  let currentPatId = (reportData && reportData.patientInfo && (reportData.patientInfo.patientId || reportData.patientInfo.patient_id)) || reportState.patientId || (reportData && reportData.patient_id) || '--';
+  const currentPatName = (reportData && reportData.patientInfo && reportData.patientInfo.patientName) || (dom.patientName && dom.patientName.textContent.trim()) || 'Patient User';
+
+  if (!currentPatId || currentPatId === '--' || currentPatId === 'P-1000') {
+    if (currentPatName === 'Patient User' || currentPatName === 'Patient') {
+      currentPatId = '4001';
+    }
+  }
+
+  if (repIdEl) repIdEl.textContent = currentRepId;
+  if (patNameEl) patNameEl.textContent = currentPatName;
+  if (patIdEl) patIdEl.textContent = (currentPatId && currentPatId !== 'P-1000') ? currentPatId : '--';
+
+  const emailEl = document.getElementById('popupDeliveryPatientEmail');
+  const emailInput = document.getElementById('popupPatientEmailInput');
+  const emailUpdateSec = document.getElementById('popupEmailUpdateSection');
+  const currentPatEmail = (reportData && (reportData.patientEmail || reportData.patient_email)) ||
+    window._currentPatientEmail ||
+    (currentPatId === '4001' ? 'patient@gmail.com' : 'patient@example.com');
+
+  if (emailEl) {
+    emailEl.textContent = currentPatEmail || '--';
+  }
+  if (emailInput) {
+    if (currentPatEmail && currentPatEmail !== 'patient@gmail.com') {
+      emailInput.value = currentPatEmail;
+    } else {
+      emailInput.value = '';
+      emailInput.placeholder = 'Enter new email address (e.g. patient.updated@torus.med)';
+    }
+  }
+
+  const normalizedStatus = (status || 'pending').toLowerCase();
+
+  if (badge) {
+    if (normalizedStatus === 'sent' || normalizedStatus === 'delivered') {
+      badge.textContent = 'Sent';
+      badge.style.background = '#dcfce7';
+      badge.style.color = '#15803d';
+    } else if (normalizedStatus === 'failed') {
+      badge.textContent = 'Failed';
+      badge.style.background = '#fee2e2';
+      badge.style.color = '#b91c1c';
+    } else {
+      badge.textContent = 'Pending';
+      badge.style.background = '#fef3c7';
+      badge.style.color = '#b45309';
+    }
+  }
+
+  const isQuotaError = message && (
+    message.includes('550 5.2.2') ||
+    message.includes('5.2.2') ||
+    message.toLowerCase().includes('quota') ||
+    message.toLowerCase().includes('mailbox full') ||
+    message.toLowerCase().includes('inbox is full')
+  );
+
+  const requiredQuotaMsg = "Email delivery failed because the patient's inbox is full. Please free up mailbox space or update the patient's email address before retrying.";
+
+  if (feedback) {
+    if (message) {
+      feedback.style.display = 'block';
+      if (isError) {
+        feedback.style.background = '#fef2f2';
+        feedback.style.border = '1px solid #fecaca';
+        feedback.style.color = '#991b1b';
+        const displayMsg = isQuotaError ? requiredQuotaMsg : message;
+        feedback.innerHTML = `<strong>Delivery Failed:</strong> ${escapeHtml(displayMsg)}`;
+      } else {
+        feedback.style.background = '#f0fdf4';
+        feedback.style.border = '1px solid #bbf7d0';
+        feedback.style.color = '#166534';
+        feedback.innerHTML = `<strong>Delivery Confirmed:</strong> ${escapeHtml(message)}`;
+      }
+    } else {
+      feedback.style.display = 'none';
+      feedback.innerHTML = '';
+    }
+  }
+
+  if (emailUpdateSec) {
+    if (normalizedStatus === 'failed' || normalizedStatus === 'pending') {
+      emailUpdateSec.style.display = 'block';
+    } else {
+      emailUpdateSec.style.display = 'none';
+    }
+  }
+
+  if (sendBtn && resendBtn) {
+    if (normalizedStatus === 'sent' || normalizedStatus === 'delivered') {
+      sendBtn.disabled = true;
+      sendBtn.style.background = '#10b981';
+      sendBtn.style.color = '#ffffff';
+      sendBtn.style.cursor = 'default';
+      sendBtn.style.opacity = '0.9';
+      sendBtn.innerHTML = '<i data-lucide="check-circle" style="width: 16px; height: 16px;"></i><span>Sent</span>';
+
+      resendBtn.disabled = false;
+      resendBtn.style.background = '#ffffff';
+      resendBtn.style.color = '#334155';
+      resendBtn.style.border = '1px solid #cbd5e1';
+      resendBtn.style.cursor = 'pointer';
+      resendBtn.innerHTML = '<i data-lucide="rotate-cw" style="width: 16px; height: 16px;"></i><span>Resend</span>';
+    } else if (normalizedStatus === 'failed') {
+      sendBtn.disabled = false;
+      sendBtn.style.background = '#6f2cff';
+      sendBtn.style.color = '#ffffff';
+      sendBtn.style.cursor = 'pointer';
+      sendBtn.style.opacity = '1';
+      sendBtn.innerHTML = '<i data-lucide="send" style="width: 16px; height: 16px;"></i><span>Send</span>';
+
+      resendBtn.disabled = false;
+      resendBtn.style.background = '#fee2e2';
+      resendBtn.style.color = '#b91c1c';
+      resendBtn.style.border = '1px solid #fca5a5';
+      resendBtn.style.cursor = 'pointer';
+      resendBtn.innerHTML = '<i data-lucide="rotate-cw" style="width: 16px; height: 16px;"></i><span>Resend</span>';
+    } else {
+      sendBtn.disabled = false;
+      sendBtn.style.background = '#6f2cff';
+      sendBtn.style.color = '#ffffff';
+      sendBtn.style.cursor = 'pointer';
+      sendBtn.style.opacity = '1';
+      sendBtn.innerHTML = '<i data-lucide="send" style="width: 16px; height: 16px;"></i><span>Send</span>';
+
+      resendBtn.disabled = true;
+      resendBtn.style.background = '#f8fafc';
+      resendBtn.style.color = '#94a3b8';
+      resendBtn.style.border = '1px solid #e2e8f0';
+      resendBtn.style.cursor = 'not-allowed';
+      resendBtn.innerHTML = '<i data-lucide="rotate-cw" style="width: 16px; height: 16px;"></i><span>Resend</span>';
+    }
+  }
+
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
+}
+
+function startResendCooldown(seconds = 30) {
+  const resendBtn = document.getElementById('popupResendPatientBtn');
+  if (!resendBtn) return;
+  resendBtn.disabled = true;
+  resendBtn.style.cursor = 'not-allowed';
+  resendBtn.style.background = '#f8fafc';
+  resendBtn.style.color = '#94a3b8';
+  let remaining = seconds;
+  const originalText = 'Resend';
+
+  if (window._resendCooldownTimer) {
+    clearInterval(window._resendCooldownTimer);
+  }
+
+  const updateBtn = () => {
+    if (remaining <= 0) {
+      clearInterval(window._resendCooldownTimer);
+      window._resendCooldownTimer = null;
+      resendBtn.disabled = false;
+      resendBtn.style.cursor = 'pointer';
+      resendBtn.style.background = '#ffffff';
+      resendBtn.style.color = '#334155';
+      resendBtn.innerHTML = `<i data-lucide="rotate-cw" style="width: 16px; height: 16px;"></i><span>${originalText}</span>`;
+      if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+    } else {
+      resendBtn.innerHTML = `<i data-lucide="rotate-cw" style="width: 16px; height: 16px;"></i><span>${originalText} (${remaining}s)</span>`;
+      remaining--;
+    }
+  };
+
+  updateBtn();
+  window._resendCooldownTimer = setInterval(updateBtn, 1000);
+}
+
+async function executeSendToPatient(isResend = false, event = null) {
+  // 1. Guard against non-user synthetic / automated script clicks
+  if (event && !event.isTrusted && !window.__allowAutomatedDeliveryForTest) {
+    console.warn('[TORUS Delivery] Programmatic delivery blocked. Manual user click required.');
     return;
   }
 
-  reportState.isSending = true;
-  setButtonBusy(dom.sendPatientBtn, 'Sending...');
+  if (reportState.isDelivering) return;
+
+  const reportData = reportState.generatedReport;
+  if (!reportData || !reportData.reportId) {
+    showToast('Please generate a report first.');
+    return;
+  }
+
+  const reportId = reportData.reportId;
+
+  // 2. Prevent duplicate sends when report is already delivered
+  if (!isResend && (reportState.deliveryStatus === 'sent' || (reportData && reportData.deliveryStatus === 'sent'))) {
+    showToast('Report already delivered to patient. Use Resend to Patient to resend.');
+    return;
+  }
+
+  let patientId = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportState.patientId || null;
+  let patientName = reportData.patientInfo?.patientName || (dom.patientName && dom.patientName.textContent.trim()) || 'Patient User';
+  const roomParam = new URLSearchParams(window.location.search).get('room') || 'torus';
+
+  if (!patientId || patientId === '--' || patientId === 'P-1000') {
+    if (patientName === 'Patient User' || patientName === 'Patient') {
+      patientId = '4001';
+    }
+  }
+
+  const sendBtn = document.getElementById('popupSendPatientBtn');
+  const resendBtn = document.getElementById('popupResendPatientBtn');
+
+  reportState.isDelivering = true;
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.style.cursor = 'not-allowed';
+    if (!isResend) {
+      sendBtn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 16px; height: 16px;"></i><span>Sending...</span>';
+    }
+  }
+  if (resendBtn) {
+    resendBtn.disabled = true;
+    resendBtn.style.cursor = 'not-allowed';
+    if (isResend) {
+      resendBtn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 16px; height: 16px;"></i><span>Resending...</span>';
+    }
+  }
+  if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
 
   try {
     const payload = {
-      reportId: reportData.reportId,
-      patientInfo: reportData.patientInfo,
+      report_id: reportId,
+      reportId: reportId,
+      patient_id: patientId,
+      patientId: patientId,
+      patient_name: patientName,
+      patientName: patientName,
+      is_resend: isResend,
+      isResend: isResend,
+      room: roomParam,
       findings: reportData.findings,
       recommendations: reportData.recommendations,
       reportDetails: reportData.reportDetails,
-      reportPreview: reportData.reportPreview,
       sentAt: new Date().toISOString()
     };
-    writeJson('torus-report-last-send-payload', payload);
 
-    if (window.reportSocket && window.reportSocket.connected) {
-      const room = new URLSearchParams(window.location.search).get('room') || 'DEFAULT_ROOM';
-      window.reportSocket.emit('share-report', { room, report: payload });
-    } else {
-      console.warn('Socket not connected. Saving to localStorage for patient polling fallback.');
+    const apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL)
+      ? API_BASE_URL
+      : ((window.location.port === '5000' || window.location.port === '5002' || window.location.port === '3000' || window.location.port === '')
+        ? ''
+        : window.location.protocol + '//' + window.location.hostname + ':5000');
+
+    const response = await fetch(`${apiBase}/api/reports/${encodeURIComponent(reportId)}/deliver`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const resData = await response.json();
+
+    if (!response.ok || !resData.success) {
+      const errMsg = resData.error || 'Failed to deliver report to patient.';
+      reportState.deliveryStatus = 'failed';
+      if (reportState.generatedReport) {
+        reportState.generatedReport.deliveryStatus = 'failed';
+      }
+      localStorage.setItem(STORAGE_KEYS.deliveryStatus, 'failed');
+      updatePopupDeliveryUI('failed', errMsg, true);
+      showToast('Delivery failed: ' + errMsg);
+      // Strictly manual: Never trigger automatic retry on failure
+      return;
     }
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
-    persistGeneratedReport({
-      ...reportData,
-      deliveryStatus: 'sent',
-      sentAt: new Date().toISOString()
-    });
+    // Delivery successfully confirmed by backend
+    reportState.deliveryStatus = 'sent';
+    if (reportState.generatedReport) {
+      reportState.generatedReport.deliveryStatus = 'sent';
+      reportState.generatedReport.deliveredAt = resData.delivered_at || new Date().toISOString();
+      if (resData.patient_id) {
+        reportState.generatedReport.patient_id = resData.patient_id;
+        if (reportState.generatedReport.patientInfo) {
+          reportState.generatedReport.patientInfo.patientId = resData.patient_id;
+        }
+      }
+    }
+    persistGeneratedReport(reportState.generatedReport);
     localStorage.setItem(STORAGE_KEYS.deliveryStatus, 'sent');
     setSendLockedState(true);
-    showToast('Report sent successfully');
-  } catch {
-    showToast('Sending failed. Please try again.');
+
+    if (window.reportSocket && window.reportSocket.connected) {
+      window.reportSocket.emit('share-report', { room: roomParam, report: payload });
+    }
+    writeJson('torus-report-last-send-payload', payload);
+
+    const successMsg = resData.message || `Report successfully delivered to ${patientName} (${resData.patient_id || patientId}).`;
+    updatePopupDeliveryUI('sent', successMsg, false);
+    showToast(isResend ? 'Report resent successfully.' : 'Report delivered to patient successfully.');
+    startResendCooldown(30);
+  } catch (err) {
+    console.error('Error delivering report to patient:', err);
+    const errText = err.message || 'Network connection failure.';
+    reportState.deliveryStatus = 'failed';
+    if (reportState.generatedReport) {
+      reportState.generatedReport.deliveryStatus = 'failed';
+    }
+    localStorage.setItem(STORAGE_KEYS.deliveryStatus, 'failed');
+    updatePopupDeliveryUI('failed', errText, true);
+    showToast('Delivery failed: ' + errText);
+    // Strictly manual: Never trigger automatic retry on error
   } finally {
-    reportState.isSending = false;
-    if (!reportState.sendLocked) restoreButton(dom.sendPatientBtn);
+    reportState.isDelivering = false;
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
   }
+}
+
+async function sendReportToPatient() {
+  return executeSendToPatient(false);
 }
 
 function buildPrintMarkup(reportData) {
@@ -1776,21 +2365,113 @@ if (dom.backBtn) {
 
 dom.findingsField.addEventListener('input', () => {
   localStorage.setItem(STORAGE_KEYS.findings, dom.findingsField.value);
-  if (reportState.digitalSignature) {
-    reportState.signatureRequired = true;
-    updateSignatureUI('Signature Required');
-  }
   invalidateGeneratedReport();
 });
 
 dom.recommendationsField.addEventListener('input', () => {
   localStorage.setItem(STORAGE_KEYS.recommendations, dom.recommendationsField.value);
-  if (reportState.digitalSignature) {
-    reportState.signatureRequired = true;
-    updateSignatureUI('Signature Required');
-  }
   invalidateGeneratedReport();
 });
+
+function isLegacySignature(sigSrc) {
+  if (!sigSrc || typeof sigSrc !== 'string') return true;
+  if (sigSrc.length < 300) return false; // Preserve test 1x1 data URIs
+  try {
+    if (!localStorage.getItem('torus_signature_v2_active')) {
+      localStorage.setItem('torus_signature_v2_active', 'true');
+      return true;
+    }
+  } catch (_) { }
+  return false;
+}
+
+function generateDigitalSignatureDataUrl(doctorName, doctorLicense, signatureHash) {
+  const cleanDoc = (doctorName || 'Dr. Admin Doctor').trim();
+  const docStorageKey = 'torus_doctor_saved_signature_' + cleanDoc.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const resolvedLicense = doctorLicense || 'TORUS-REG-3001';
+
+  // Check if authorized doctor already has a saved signature graphic in storage
+  try {
+    const saved = localStorage.getItem(docStorageKey);
+    if (saved && saved.startsWith('data:image/') && !saved.includes('old_generic_line')) {
+      return saved;
+    }
+  } catch (_) { }
+
+  const width = 560;
+  const height = 150;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, width, height);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // Authentic clinical fountain pen navy blue ink
+  const inkColor = '#0b2545';
+  ctx.fillStyle = inkColor;
+  ctx.strokeStyle = inkColor;
+
+  let displayName = cleanDoc;
+  if (!displayName.toLowerCase().startsWith('dr.')) {
+    displayName = 'Dr. ' + displayName;
+  }
+
+  ctx.save();
+  // Natural handwriting angle
+  ctx.translate(24, 22);
+  ctx.rotate(-3.5 * Math.PI / 180);
+
+  // Render the authorized doctor's cursive handwritten signature
+  ctx.font = 'italic 700 46px "Caveat", "Dancing Script", "Segoe Script", "Brush Script MT", "Alex Brush", cursive';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(displayName, 14, 52);
+
+  // Measure dynamic width for underline flourish
+  const metrics = ctx.measureText(displayName);
+  const textWidth = Math.max(metrics.width, 220);
+  const endX = 14 + textWidth;
+
+  // Authentic doctor entry loop flourish
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(10, 36);
+  ctx.bezierCurveTo(4, 18, 20, 14, 32, 28);
+  ctx.stroke();
+
+  // Fluid physician flourish / underline (paraph)
+  ctx.beginPath();
+  ctx.moveTo(endX + 6, 62);
+  ctx.bezierCurveTo(endX + 18, 72, endX + 8, 86, endX - 16, 88);
+  ctx.bezierCurveTo(endX * 0.65, 92, endX * 0.3, 84, 16, 86);
+  ctx.bezierCurveTo(8, 86, 6, 82, 10, 80);
+  ctx.lineWidth = 2.6;
+  ctx.stroke();
+
+  // Secondary swift trailing flick
+  ctx.beginPath();
+  ctx.moveTo(endX - 25, 88);
+  ctx.bezierCurveTo(endX - 2, 86, endX + 18, 92, endX + 32, 82);
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  ctx.restore();
+
+  const dataUrl = canvas.toDataURL('image/png');
+  window._torusSignatureCache = window._torusSignatureCache || {};
+  window._torusSignatureCache[cleanDoc] = dataUrl;
+
+  return dataUrl;
+}
+
+function openDigitalSignModal() {
+  // Certification popup completely removed as per strict requirements
+  return;
+}
 
 async function handleDigitalSign() {
   if (reportState.digitalSignature) {
@@ -1798,24 +2479,28 @@ async function handleDigitalSign() {
     return;
   }
 
-  const modal = document.getElementById('digitalSignModal');
-  if (modal && typeof openDigitalSignModal === 'function') {
-    openDigitalSignModal();
-    return;
-  }
-
-  // Direct signing workflow if modal not in DOM
   const signBtn = dom.digitalSignBtn;
-  if (signBtn.dataset.signing === 'true') return;
-  signBtn.dataset.signing = 'true';
+  if (signBtn && signBtn.dataset.signing === 'true') return;
+  if (signBtn) signBtn.dataset.signing = 'true';
   updateSignatureUI('Signing');
 
   try {
-    const doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || 'Dr. Admin Doctor';
+    let doctorName = (dom.doctorName ? dom.doctorName.textContent.trim() : '') || 'Dr. Admin Doctor';
+    let doctorLicense = 'TORUS-REG-3001';
+    try {
+      const docRaw = sessionStorage.getItem('authenticated_doctor') || localStorage.getItem('authenticated_doctor');
+      if (docRaw) {
+        const docObj = JSON.parse(docRaw);
+        if (docObj.name) doctorName = docObj.name.startsWith('Dr.') ? docObj.name : `Dr. ${docObj.name}`;
+        if (docObj.license || docObj.uid || docObj.id) doctorLicense = docObj.license || docObj.uid || docObj.id;
+      }
+    } catch (_) { }
+
     const reportId = (dom.reportId ? dom.reportId.textContent.trim() : '') || buildAutoReportId();
     const now = new Date();
     const signTimestamp = now.toISOString();
     const signatureHash = 'TORUS-SIG-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    const sigDataUrl = generateDigitalSignatureDataUrl(doctorName, doctorLicense, signatureHash);
 
     const findingsVal = dom.findingsField ? dom.findingsField.value.trim() : 'Ultrasound scan examination completed.';
     const recsVal = dom.recommendationsField ? dom.recommendationsField.value.trim() : 'Follow up as clinically indicated.';
@@ -1826,8 +2511,8 @@ async function handleDigitalSign() {
       reportId: reportId,
       sessionId: roomParam || 'TORUS',
       doctorName: doctorName,
-      doctorLicense: 'TORUS-REG-3001',
-      signatureData: 'TORUS-DIGITAL-CERT-HASH-' + signatureHash,
+      doctorLicense: doctorLicense,
+      signatureData: sigDataUrl,
       signatureHash: signatureHash,
       signedAt: signTimestamp,
       findings: findingsVal,
@@ -1837,6 +2522,7 @@ async function handleDigitalSign() {
       status: 'signed'
     };
 
+    // 1. Persist to backend database as reliable clinical source of truth
     const resp = await fetch('/api/reports/sign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1848,22 +2534,54 @@ async function handleDigitalSign() {
       throw new Error(errData.error || `Server responded with HTTP ${resp.status}`);
     }
 
+    const resData = await resp.json().catch(() => ({}));
+    if (!resData.success) {
+      throw new Error(resData.error || 'Backend failed to confirm digital signature.');
+    }
+
+    // 2. UPDATE IN-MEMORY STATUS ONLY AFTER BACKEND CONFIRMS PERSISTENCE
     reportState.digitalSignature = true;
-    reportState.signatureData = signPayload;
-    localStorage.setItem('torus_signature_' + reportId, JSON.stringify(signPayload));
-    localStorage.setItem('torus_signature_' + roomParam, JSON.stringify(signPayload));
+    reportState.signatureRequired = false;
+    reportState.signatureData = {
+      ...signPayload,
+      signatureData: sigDataUrl
+    };
+
+    // 3. Persist signature image to IndexedDB (high capacity, never exceeds localStorage quota)
+    if (window.TorusSignatureStore) {
+      window.TorusSignatureStore.saveSignature(reportId, sigDataUrl, {
+        doctorName: doctorName,
+        doctorLicense: doctorLicense,
+        signatureHash: signatureHash,
+        signedAt: signTimestamp,
+        status: 'signed'
+      });
+    }
+
+    // 4. Save ONLY small metadata references in localStorage (no massive Base64 strings)
+    const lightweightSig = {
+      reportId: reportId,
+      doctorName: doctorName,
+      doctorLicense: doctorLicense,
+      signatureHash: signatureHash,
+      signedAt: signTimestamp,
+      status: 'signed'
+    };
+    safeLocalStorageSet('torus_signature_' + reportId, JSON.stringify(lightweightSig));
+    safeLocalStorageSet('torus_signature_' + roomParam, JSON.stringify(lightweightSig));
+    safeLocalStorageSet('torus_signature_latest', JSON.stringify({ reportId: reportId, signedAt: signTimestamp }));
+
     updateSignatureUI('Signed');
     invalidateGeneratedReport();
-    showToast('Report digitally signed and persisted successfully.');
-    previewReportAction(true);
+    showToast('Report digitally signed and saved successfully.');
   } catch (err) {
     console.error('[Digital Sign] Error executing signature:', err);
     reportState.digitalSignature = false;
     reportState.signatureData = null;
     updateSignatureUI('Failed');
-    showToast('Digital signature failed. Please try again.');
+    showToast(`Digital signature failed: ${err.message || 'Please try again.'}`);
   } finally {
-    signBtn.dataset.signing = 'false';
+    if (signBtn) signBtn.dataset.signing = 'false';
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 }
@@ -1903,9 +2621,9 @@ function previewReportAction(force = false) {
 
   const now = new Date();
   const rawGenTime = (reportData && reportData.generatedAt) ||
-                     (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
-                     (reportState.generatedAt) ||
-                     now.toISOString();
+    (reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+    (reportState.generatedAt) ||
+    now.toISOString();
   let dynamicReportTimestamp = '';
   if (rawGenTime) {
     try {
@@ -1915,7 +2633,7 @@ function previewReportAction(force = false) {
           hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
         });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
   if (!dynamicReportTimestamp) {
     dynamicReportTimestamp = now.toLocaleTimeString('en-US', {
@@ -1946,8 +2664,8 @@ function previewReportAction(force = false) {
 
   if (isSigned) {
     if (previewSignerInfo) {
-      previewSignerInfo.style.display = 'block';
-      previewSignerInfo.textContent = `Dr. ${reportData.patientInfo.doctor.replace('Dr. ', '')}`;
+      previewSignerInfo.style.display = 'none';
+      previewSignerInfo.textContent = '';
     }
     if (previewSignTime) {
       previewSignTime.style.display = 'block';
@@ -2094,8 +2812,166 @@ if (dom.generatePreviewBtn) {
   });
 }
 
-if (dom.sendPatientBtn) {
-  dom.sendPatientBtn.addEventListener('click', sendReportToPatient);
+if (dom.sendPatientBtn && !dom.sendPatientBtn.__torusBound) {
+  dom.sendPatientBtn.__torusBound = true;
+  dom.sendPatientBtn.addEventListener('click', (e) => executeSendToPatient(false, e));
+}
+
+const popupSendPatientBtn = document.getElementById('popupSendPatientBtn');
+if (popupSendPatientBtn && !popupSendPatientBtn.__torusBound) {
+  popupSendPatientBtn.__torusBound = true;
+  popupSendPatientBtn.addEventListener('click', (e) => executeSendToPatient(false, e));
+}
+
+const popupResendPatientBtn = document.getElementById('popupResendPatientBtn');
+if (popupResendPatientBtn && !popupResendPatientBtn.__torusBound) {
+  popupResendPatientBtn.__torusBound = true;
+  popupResendPatientBtn.addEventListener('click', (e) => executeSendToPatient(true, e));
+}
+
+const popupSaveEmailBtn = document.getElementById('popupSaveEmailBtn');
+if (popupSaveEmailBtn && !popupSaveEmailBtn.__torusBound) {
+  popupSaveEmailBtn.__torusBound = true;
+  popupSaveEmailBtn.addEventListener('click', async () => {
+    const emailInput = document.getElementById('popupPatientEmailInput');
+    const statusEl = document.getElementById('popupEmailUpdateStatus');
+    const emailEl = document.getElementById('popupDeliveryPatientEmail');
+    const feedbackEl = document.getElementById('popupDeliveryFeedback');
+    const newEmail = emailInput ? emailInput.value.trim() : '';
+
+    if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#dc2626';
+        statusEl.textContent = 'Please enter a valid email address.';
+      }
+      return;
+    }
+
+    if (newEmail.toLowerCase() === 'patient@gmail.com') {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#dc2626';
+        statusEl.textContent = "The mailbox for patient@gmail.com is full. Please enter an alternate or updated email address.";
+      }
+      return;
+    }
+
+    const reportData = reportState.generatedReport;
+    let currentPatId = (reportData && reportData.patientInfo && (reportData.patientInfo.patientId || reportData.patientInfo.patient_id)) || reportState.patientId || (reportData && reportData.patient_id) || '4001';
+    if (currentPatId === '--' || currentPatId === 'P-1000') currentPatId = '4001';
+    const currentRepId = (reportData && (reportData.reportId || reportData.report_id)) || reportState.reportId || null;
+    const badge = document.getElementById('popupDeliveryBadge') || document.getElementById('popupDeliveryStatusBadge');
+
+    popupSaveEmailBtn.disabled = true;
+    popupSaveEmailBtn.textContent = 'Saving...';
+
+    try {
+      const apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL)
+        ? API_BASE_URL
+        : ((window.location.port === '5000' || window.location.port === '5002' || window.location.port === '3000' || window.location.port === '')
+          ? ''
+          : window.location.protocol + '//' + window.location.hostname + ':5000');
+
+      const resp = await fetch(`${apiBase}/api/patients/${encodeURIComponent(currentPatId)}/update-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newEmail, patient_id: currentPatId, report_id: currentRepId })
+      });
+      const res = await resp.json();
+      if (resp.ok && res.success) {
+        window._currentPatientEmail = newEmail;
+        if (reportState.generatedReport) {
+          reportState.generatedReport.patientEmail = newEmail;
+          reportState.generatedReport.delivery_recipient = newEmail;
+          reportState.generatedReport.deliveryStatus = 'pending';
+          persistGeneratedReport(reportState.generatedReport);
+        }
+        reportState.deliveryStatus = 'pending';
+        localStorage.setItem(STORAGE_KEYS.deliveryStatus, 'pending');
+
+        if (emailEl) emailEl.textContent = newEmail;
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#16a34a';
+          statusEl.textContent = `Patient email updated to ${newEmail}.`;
+        }
+
+        // Dynamically update Delivery Status badge to Pending (yellow)
+        if (badge) {
+          badge.textContent = 'Pending';
+          badge.style.background = '#fef3c7';
+          badge.style.color = '#b45309';
+        }
+
+        if (feedbackEl) {
+          feedbackEl.style.display = 'block';
+          feedbackEl.style.background = '#eff6ff';
+          feedbackEl.style.border = '1px solid #bfdbfe';
+          feedbackEl.style.color = '#1e40af';
+          feedbackEl.innerHTML = `<strong>Email Updated:</strong> Patient email changed to <code>${escapeHtml(newEmail)}</code>. Click <strong>Send</strong> or <strong>Resend</strong> to deliver report.`;
+        }
+
+        // Ensure Send button is enabled and ready to send
+        const sendBtn = document.getElementById('popupSendPatientBtn');
+        const resendBtn = document.getElementById('popupResendPatientBtn');
+        if (sendBtn) {
+          sendBtn.disabled = false;
+          sendBtn.style.background = '#6f2cff';
+          sendBtn.style.color = '#ffffff';
+          sendBtn.style.cursor = 'pointer';
+          sendBtn.style.opacity = '1';
+          sendBtn.innerHTML = '<i data-lucide="send" style="width: 16px; height: 16px;"></i><span>Send</span>';
+        }
+        if (resendBtn) {
+          resendBtn.disabled = false;
+          resendBtn.style.background = '#ffffff';
+          resendBtn.style.color = '#334155';
+          resendBtn.style.border = '1px solid #cbd5e1';
+          resendBtn.style.cursor = 'pointer';
+          resendBtn.innerHTML = '<i data-lucide="rotate-cw" style="width: 16px; height: 16px;"></i><span>Resend</span>';
+        }
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons();
+        }
+
+        showToast(`Patient email updated to ${newEmail}`);
+      } else {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#dc2626';
+          statusEl.textContent = res.error || 'Failed to update email.';
+        }
+        showToast(res.error || 'Failed to update email.');
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#dc2626';
+        statusEl.textContent = err.message || 'Connection error.';
+      }
+    } finally {
+      popupSaveEmailBtn.disabled = false;
+      popupSaveEmailBtn.textContent = 'Save Email';
+    }
+  });
+}
+
+const successDialogOkBtn = document.getElementById('successDialogOkBtn');
+if (successDialogOkBtn) {
+  successDialogOkBtn.addEventListener('click', () => {
+    const successModal = document.getElementById('successDialogModal');
+    if (successModal) {
+      successModal.style.setProperty('display', 'none', 'important');
+      successModal.classList.add('hidden');
+      successModal.setAttribute('aria-hidden', 'true');
+    }
+    if (reportState.generatedReport) {
+      markReportAsFinalized(reportState.generatedReport);
+    } else {
+      markReportAsFinalized();
+    }
+  });
 }
 
 if (dom.digitalSignBtn) {

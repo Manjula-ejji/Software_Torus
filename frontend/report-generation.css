@@ -559,10 +559,12 @@
     cursor: pointer;
   }
 
-  .sign-btn.is-signed {
-    background: linear-gradient(90deg, #6D1BFF, #7E2FFF);
+  .sign-btn.is-signed,
+  .sign-btn.signed {
+    background: #10b981 !important;
+    box-shadow: 0 0.9em 2em rgba(16, 185, 129, 0.22), inset 0 0 0 0.06em rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
     cursor: default;
-    pointer-events: none;
   }
 
   .signature-section {

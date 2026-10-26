@@ -1,0 +1,1297 @@
+/* ==============================================================================
+   TORUS CLINICAL NOTIFICATIONS & TWO-WAY CHAT SYSTEM STYLES
+   PlebC TORUS - Tele Operated Robotic Ultrasound System
+   ============================================================================== */
+
+/* ── 1. HEADER NOTIFICATION BELL & BADGE ── */
+.ddash-notif-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.ddash-notif-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  padding: 0;
+  outline: none;
+}
+
+.ddash-notif-btn:hover {
+  color: #00e5ff;
+  border-color: rgba(0, 229, 255, 0.35);
+  background: rgba(0, 229, 255, 0.08);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.ddash-notif-btn:focus-visible {
+  outline: 2px solid #00e5ff;
+  outline-offset: 2px;
+}
+
+.ddash-notif-btn:active {
+  transform: scale(0.96);
+}
+
+.ddash-notif-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 2px solid #0b0f19;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.55);
+  animation: notif-badge-pulse 2.2s infinite ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes notif-badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+/* ── 2. NOTIFICATION POPOVER PANEL ── */
+.ddash-notif-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 430px;
+  max-width: min(440px, calc(100vw - 20px));
+  max-height: 480px;
+  background: #0d1322;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 16px 45px -10px rgba(0, 0, 0, 0.85), 0 0 20px rgba(0, 200, 255, 0.08);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: ddash-popover-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes ddash-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header: Fixed clean row */
+.ddash-notif-header {
+  height: 52px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(13, 19, 34, 0.98);
+  flex-shrink: 0;
+}
+
+.ddash-notif-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ddash-notif-title {
+  font-family: 'Poppins', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f8fafc;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+.ddash-notif-unread-count-pill {
+  background: rgba(0, 200, 255, 0.12);
+  color: #00C8FF;
+  border: 1px solid rgba(0, 200, 255, 0.28);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 99px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.ddash-notif-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ddash-notif-mark-read-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ddash-notif-mark-read-btn:hover {
+  color: #00C8FF;
+  background: rgba(0, 200, 255, 0.08);
+  border-color: rgba(0, 200, 255, 0.2);
+}
+
+/* Scrollable Body: Contained within max-height */
+.ddash-notif-body {
+  flex: 1;
+  max-height: calc(480px - 52px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ddash-notif-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ddash-notif-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 99px;
+}
+
+.ddash-notif-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Empty State */
+.ddash-notif-empty {
+  padding: 40px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+}
+
+.ddash-notif-empty-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  color: #475569;
+}
+
+.ddash-notif-empty-text {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #94a3b8;
+  margin-bottom: 2px;
+}
+
+.ddash-notif-empty-subtext {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+/* ── 3. NOTIFICATION CARDS / ITEMS ── */
+.ddash-notif-item,
+.ddash-notif-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.15s ease;
+  position: relative;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+.ddash-notif-item:hover,
+.ddash-notif-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.ddash-notif-item.unread,
+.ddash-notif-card.unread {
+  background: rgba(0, 200, 255, 0.035);
+  border-color: rgba(0, 200, 255, 0.2);
+}
+
+.ddash-notif-item.unread:hover,
+.ddash-notif-card.unread:hover {
+  background: rgba(0, 200, 255, 0.055);
+  border-color: rgba(0, 200, 255, 0.32);
+}
+
+/* Left Icon Box */
+.ddash-notif-item-left,
+.ddash-notif-card-left {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.ddash-notif-item-icon,
+.ddash-notif-card-icon,
+.ddash-notif-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.ddash-notif-item:hover .ddash-notif-item-icon,
+.ddash-notif-card:hover .ddash-notif-card-icon,
+.ddash-notif-item:hover .ddash-notif-icon-box,
+.ddash-notif-card:hover .ddash-notif-icon-box {
+  transform: scale(1.05);
+}
+
+/* Semantic Icon Styling */
+.ddash-notif-item-icon.type-danger,
+.ddash-notif-item-icon.email_failed,
+.ddash-notif-item-icon.email_failure,
+.ddash-notif-icon-box.type-danger {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.ddash-notif-item-icon.type-success,
+.ddash-notif-item-icon.report_delivered,
+.ddash-notif-item-icon.report_generated,
+.ddash-notif-icon-box.type-success {
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.ddash-notif-item-icon.type-chat,
+.ddash-notif-item-icon.chat,
+.ddash-notif-item-icon.chat_message,
+.ddash-notif-icon-box.type-chat {
+  background: rgba(139, 92, 246, 0.14);
+  color: #a855f7;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+}
+
+.ddash-notif-item-icon.type-appointment,
+.ddash-notif-item-icon.appointment,
+.ddash-notif-icon-box.type-appointment {
+  background: rgba(14, 165, 233, 0.14);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.28);
+}
+
+.ddash-notif-item-icon.type-system,
+.ddash-notif-item-icon.system,
+.ddash-notif-icon-box.type-system {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* Card Content Area */
+.ddash-notif-item-content,
+.ddash-notif-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top Meta Row (Source Label & Timestamp) */
+.ddash-notif-top-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.ddash-notif-source-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.4;
+}
+
+.ddash-notif-source-badge.type-danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.ddash-notif-source-badge.type-success {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.ddash-notif-source-badge.type-chat {
+  background: rgba(139, 92, 246, 0.16);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.ddash-notif-source-badge.type-appointment {
+  background: rgba(14, 165, 233, 0.16);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+
+.ddash-notif-source-badge.type-system {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.ddash-notif-item-title,
+.ddash-notif-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.ddash-notif-item-time,
+.ddash-notif-card-time {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Entity Metadata Tags (Patient & Report) */
+.ddash-notif-entity-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.ddash-tag {
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  line-height: 1.35;
+}
+
+.ddash-tag strong {
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.ddash-tag.patient-tag strong {
+  color: #38bdf8;
+}
+
+.ddash-tag.report-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.22);
+  letter-spacing: -0.2px;
+}
+
+.ddash-tag.attender-tag strong {
+  color: #c084fc;
+}
+
+.ddash-tag.status-delivered strong {
+  color: #34d399;
+}
+
+.ddash-tag.status-failed strong {
+  color: #f87171;
+}
+
+.ddash-tag.demo-tag {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+/* Issue Explanation Box */
+.ddash-notif-issue-box {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e2e8f0;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-left: 3px solid #ef4444;
+  padding: 5px 8px;
+  border-radius: 4px;
+  margin-bottom: 5px;
+}
+
+.ddash-issue-label {
+  font-weight: 700;
+  color: #f87171;
+  margin-right: 3px;
+}
+
+/* Recommended Action Box */
+.ddash-notif-rec-action {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-left: 3px solid #00C8FF;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 7px;
+}
+
+.ddash-rec-label {
+  font-weight: 700;
+  color: #00C8FF;
+  margin-right: 3px;
+}
+
+/* Patient Message Quote Box */
+.ddash-notif-message-quote {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #f1f5f9;
+  font-style: italic;
+  background: rgba(139, 92, 246, 0.08);
+  border-left: 3px solid #8b5cf6;
+  padding: 5px 9px;
+  border-radius: 4px;
+  margin-bottom: 7px;
+}
+
+/* Description Text (clamped to 2 lines) */
+.ddash-notif-item-desc,
+.ddash-notif-card-desc,
+.ddash-notif-card-msg {
+  font-size: 12px;
+  font-weight: 400;
+  color: #94a3b8;
+  line-height: 1.45;
+  margin-bottom: 7px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Footer: Actions Row */
+.ddash-notif-item-footer,
+.ddash-notif-card-footer,
+.ddash-notif-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ddash-notif-footer-left,
+.ddash-notif-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Contextual Action Button ("View Report", "Open Chat", etc.) */
+.ddash-notif-action-btn,
+.ddash-notif-item-action {
+  background: rgba(0, 200, 255, 0.08);
+  border: 1px solid rgba(0, 200, 255, 0.24);
+  color: #00C8FF;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.35;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.ddash-notif-action-btn:hover,
+.ddash-notif-item-action:hover {
+  background: rgba(0, 200, 255, 0.18);
+  border-color: rgba(0, 200, 255, 0.48);
+  color: #ffffff;
+  text-decoration: none;
+}
+
+/* Individual Mark Read Button */
+.ddash-notif-mark-item-btn,
+.ddash-notif-card-read-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  line-height: 1.35;
+  box-sizing: border-box;
+}
+
+.ddash-notif-mark-item-btn:hover,
+.ddash-notif-card-read-btn:hover {
+  color: #00C8FF;
+  background: rgba(0, 200, 255, 0.1);
+  border-color: rgba(0, 200, 255, 0.3);
+}
+
+.ddash-notif-mark-item-btn svg,
+.ddash-notif-card-read-btn svg {
+  flex-shrink: 0;
+}
+
+/* Unread Cyan Dot */
+.ddash-notif-unread-dot,
+.ddash-notif-card-dot {
+  position: absolute;
+  top: 13px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00C8FF;
+  box-shadow: 0 0 6px #00C8FF;
+  pointer-events: none;
+}
+
+/* ── 4. FLOATING CHAT SUPPORT BUTTON & MODERN DOCKED CHAT PANEL ── */
+.torus-floating-chat-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 50%, #06b6d4 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.5), 0 0 16px rgba(6, 182, 212, 0.35);
+  z-index: 1050;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0;
+  outline: none;
+}
+
+.torus-floating-chat-btn:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 14px 30px -5px rgba(37, 99, 235, 0.65), 0 0 22px rgba(6, 182, 212, 0.5);
+}
+
+.torus-floating-chat-btn:focus-visible {
+  outline: 2px solid #00e5ff;
+  outline-offset: 3px;
+}
+
+.torus-floating-chat-btn:active {
+  transform: scale(0.96);
+}
+
+.torus-floating-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #060B18;
+  padding: 0 4px;
+}
+
+/* Chat Container: Docked Floating Widget on Desktop */
+.torus-chat-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: none;
+  pointer-events: none;
+}
+
+.torus-chat-backdrop {
+  display: none; /* Keep desktop background interactive */
+}
+
+.torus-chat-panel {
+  position: fixed;
+  bottom: 86px;
+  right: 24px;
+  width: 388px;
+  height: 560px;
+  max-height: calc(100vh - 110px);
+  background: #0f1524;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.85), 0 0 35px rgba(124, 58, 237, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 100000;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: torus-chat-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes torus-chat-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Chat Header */
+.torus-chat-header {
+  padding: 12px 16px 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(15, 21, 36, 0.98);
+  flex-shrink: 0;
+}
+
+.torus-chat-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.torus-chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.torus-chat-header-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.torus-chat-header-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.torus-chat-header-title {
+  font-family: 'Poppins', 'Inter', sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.2px;
+}
+
+.torus-chat-header-subtitle {
+  font-size: 10.5px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.torus-chat-close-btn,
+.torus-chat-ctrl-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.torus-chat-close-btn:hover,
+.torus-chat-ctrl-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.torus-chat-header-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  width: 100%;
+}
+
+.torus-chat-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.torus-chat-tab-btn.active {
+  background: rgba(124, 58, 237, 0.4);
+  color: #ffffff;
+  border: 1px solid rgba(124, 58, 237, 0.6);
+  box-shadow: 0 1px 4px rgba(124, 58, 237, 0.3);
+}
+
+/* Chat Body */
+.torus-chat-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #090e1b;
+}
+
+.torus-chat-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Conversation Selector Bar */
+.torus-chat-conv-bar {
+  padding: 8px 14px;
+  background: rgba(17, 25, 43, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.torus-chat-recipient-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  min-width: 0;
+}
+
+.torus-chat-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  flex-shrink: 0;
+}
+
+.torus-chat-conv-select {
+  background: rgba(14, 22, 38, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  outline: none;
+  cursor: pointer;
+  max-width: 170px;
+}
+
+/* Messages Feed */
+.torus-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overscroll-behavior: contain;
+}
+
+.torus-chat-messages::-webkit-scrollbar {
+  width: 4px;
+}
+.torus-chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+}
+
+.torus-chat-feed-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: #64748b;
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.torus-chat-feed-empty-icon {
+  font-size: 28px;
+  opacity: 0.6;
+}
+
+/* Message Rows & Bubbles (WhatsApp Style) */
+.torus-msg-row,
+.torus-message-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
+  animation: torus-msg-fade 0.15s ease-out;
+}
+
+@keyframes torus-msg-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.torus-msg-row.outgoing,
+.torus-message-row.outgoing {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.torus-msg-row.incoming,
+.torus-message-row.incoming {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.torus-msg-sender,
+.torus-message-sender-name {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.torus-msg-bubble,
+.torus-message-bubble {
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.torus-msg-row.outgoing .torus-msg-bubble,
+.torus-message-row.outgoing .torus-message-bubble,
+.bubble-mine {
+  background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+  color: #ffffff;
+  border-bottom-right-radius: 3px;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.25);
+}
+
+.torus-msg-row.incoming .torus-msg-bubble,
+.torus-message-row.incoming .torus-message-bubble,
+.bubble-theirs {
+  background: #192233;
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom-left-radius: 3px;
+}
+
+.torus-msg-meta,
+.torus-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 3px;
+}
+
+.torus-msg-row.incoming .torus-msg-meta,
+.torus-message-row.incoming .torus-message-meta {
+  color: #64748b;
+}
+
+.torus-msg-status,
+.torus-message-status {
+  color: #00e5ff;
+  font-size: 9.5px;
+}
+
+/* Chat Input Composer */
+.torus-chat-footer {
+  padding: 10px 14px;
+  background: #0f1524;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.torus-chat-form {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+
+.torus-chat-input-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  position: relative;
+}
+
+.torus-chat-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 9px 42px 9px 14px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  resize: none;
+}
+
+.torus-chat-input:focus {
+  border-color: #00e5ff;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+}
+
+.torus-chat-send-btn {
+  position: absolute;
+  right: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00e5ff, #3b82f6);
+  border: none;
+  color: #0b1120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  padding: 0;
+}
+
+.torus-chat-send-btn:hover:not(:disabled) {
+  transform: scale(1.06);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+}
+
+.torus-chat-send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── 5. AI SUPPORT ASSISTANT TAB VIEWS ── */
+.torus-ai-banner {
+  padding: 10px 14px;
+  background: rgba(0, 229, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 229, 255, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.torus-ai-banner-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.torus-ai-banner-text strong {
+  font-size: 12.5px;
+  color: #00e5ff;
+  display: block;
+}
+
+.torus-ai-banner-text p {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 1px 0 0 0;
+  line-height: 1.35;
+}
+
+.torus-ai-quick-chips {
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: rgba(17, 25, 43, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.torus-ai-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.torus-ai-chip:hover {
+  background: rgba(0, 229, 255, 0.12);
+  border-color: rgba(0, 229, 255, 0.35);
+  color: #00e5ff;
+  transform: translateY(-1px);
+}
+
+.torus-msg-bubble.bubble-ai,
+.torus-message-bubble.bubble-ai {
+  background: #141d30;
+  color: #f1f5f9;
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-bottom-left-radius: 3px;
+  max-width: 90%;
+}
+
+.torus-ai-badge,
+.torus-ai-bubble-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #00e5ff;
+}
+
+.torus-ai-actions-wrap {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.torus-ai-action-btn {
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  color: #00e5ff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.torus-ai-action-btn:hover {
+  background: rgba(0, 229, 255, 0.2);
+  border-color: rgba(0, 229, 255, 0.5);
+  color: #ffffff;
+}
+
+.torus-ai-disclaimer {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 6px;
+}
+
+.torus-ai-thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #00e5ff;
+}
+
+.torus-ai-thinking span {
+  width: 5px;
+  height: 5px;
+  background: #00e5ff;
+  border-radius: 50%;
+  animation: ai-pulse 1s infinite alternate;
+}
+.torus-ai-thinking span:nth-child(2) { animation-delay: 0.2s; }
+.torus-ai-thinking span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ai-pulse {
+  from { opacity: 0.3; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+/* Sidebar Badges */
+.ddash-chat-badge {
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  margin-left: auto;
+}
+
+/* ── 6. MOBILE RESPONSIVENESS ── */
+@media (max-width: 768px) {
+  .ddash-notif-popover {
+    position: fixed;
+    top: 68px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 90px);
+  }
+
+  .torus-chat-drawer {
+    pointer-events: auto;
+  }
+
+  .torus-chat-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 11, 24, 0.7);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .torus-chat-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 85vh;
+    max-height: 85vh;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+  }
+}

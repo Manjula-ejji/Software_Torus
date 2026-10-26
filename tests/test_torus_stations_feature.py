@@ -52,7 +52,7 @@ class TestTorusStationsDashboardFeature(unittest.TestCase):
         self.assertIn('Consultation Started', self.app_js)
         self.assertIn('Scan Completed', self.app_js)
         self.assertIn('Report Generated', self.app_js)
-        self.assertIn('Report Sent', self.app_js)
+        self.assertIn('Report Received', self.app_js)
         self.assertIn('tsta-timeline-stepper', self.app_js)
 
     def test_05_views_and_navigation(self):
@@ -74,7 +74,7 @@ class TestTorusStationsDashboardFeature(unittest.TestCase):
         self.assertIn('Consultation Started', self.app_js)
         self.assertIn('Scan Completed', self.app_js)
         self.assertIn('Report Generated', self.app_js)
-        self.assertIn('Report Sent to Portal', self.app_js)
+        self.assertIn('Report Received', self.app_js)
 
         # Blue/cyan horizontal connecting line in timeline must be removed/disabled
         self.assertNotIn('background: linear-gradient(90deg, #10b981 0%, #06b6d4 100%);', self.styles_css)

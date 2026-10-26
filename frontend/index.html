@@ -10,7 +10,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=119" />
+  <link rel="stylesheet" href="css/styles.css?v=140" />
+  <link rel="stylesheet" href="css/notifications-chat.css?v=140" />
   <style>
     :root {
       --bg-main: #060B18;
@@ -1770,6 +1771,17 @@
             <span class="ddash-nav-label">Patient Reports</span>
           </a>
 
+          <a href="#messages" class="ddash-nav-item" data-view="chat" id="docDashSidebarChatBtn">
+            <span class="ddash-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </span>
+            <span class="ddash-nav-label">Messages & Chat</span>
+            <span class="ddash-chat-badge" id="docDashSidebarChatBadge" style="display: none;">0</span>
+          </a>
+
           <a href="#history" class="ddash-nav-item" data-view="history">
             <span class="ddash-nav-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -1873,6 +1885,51 @@
               </svg>
               <span>Adhoc Scan</span>
             </button>
+            <!-- Notifications Bell & Dropdown Panel -->
+            <div class="ddash-notif-wrap" id="docDashNotifWrap">
+              <button class="ddash-notif-btn" id="docDashNotifBtn" type="button" aria-label="Notifications"
+                title="Notifications" tabindex="0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="ddash-notif-badge" id="docDashNotifBadge" style="display: none;">0</span>
+              </button>
+              <div class="ddash-notif-popover" id="docDashNotifPopover" style="display: none;">
+                <div class="ddash-notif-header">
+                  <div class="ddash-notif-title-row">
+                    <span class="ddash-notif-title">Notifications</span>
+                    <span class="ddash-notif-unread-count-pill" id="docDashNotifCountPill"
+                      style="display: none;">0</span>
+                  </div>
+                  <div class="ddash-notif-actions">
+                    <button type="button" id="docDashMarkAllReadBtn" class="ddash-notif-mark-read-btn"
+                      title="Mark all as read">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                      <span>Mark all read</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="ddash-notif-body" id="docDashNotifList">
+                  <div class="ddash-notif-empty" id="docDashNotifEmpty">
+                    <div class="ddash-notif-empty-icon">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        <line x1="2" y1="2" x2="22" y2="22"></line>
+                      </svg>
+                    </div>
+                    <div class="ddash-notif-empty-text">No new notifications</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Profile Avatar with Popover -->
             <div class="ddash-avatar-wrap" id="docDashAvatarWrap">
               <div class="ddash-avatar" id="docDashAvatarChip" tabindex="0" role="button" aria-label="Doctor profile">AD
@@ -3912,7 +3969,8 @@
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </label>
-        <label class="device-filter-input-wrap cyan" for="deviceNameSearchInput" aria-label="Search devices by name or ID">
+        <label class="device-filter-input-wrap cyan" for="deviceNameSearchInput"
+          aria-label="Search devices by name or ID">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8"></circle>
@@ -4280,7 +4338,7 @@
             <label id="settings-token-wrapper" class="full-width">
               <span>Token</span>
               <input id="token" type="text" placeholder="Enter Agora Token"
-                value="007eJxTYOgUuL5pVWCNl9NLF7Pzi2vMXr2vjNHk+Oom5zo1x8h7Xr4Cg5GRqYlBqqVhqqGphYl5YoqFWaqFSXKaeWqyAVA4JY0/4EZWQyAjw/1je1gZGSAQxGdlKMkvKi1mYAAAMOUftA=="
+                value="007eJxTYJhU7X4gbs9i9x5NYdW6CbeK9mzPspb31Ts079Xad6XHMh4rMBgbJaVaGBukpqUam5uYWxonGVommqcZG5uZmCeZpJmbt929l9UQyMjQyr6emZEBAkF8VoaS/KLSYgYGAKYEIQM="
                 spellcheck="false" autocomplete="off" />
             </label>
 
@@ -4659,8 +4717,144 @@
       allow="camera; microphone; display-capture"></iframe>
   </div>
 
+  <!-- ========================================================================= -->
+  <!-- TORUS TWO-WAY CHAT & AI SUPPORT DRAWER / PANEL -->
+  <!-- ========================================================================= -->
+  <div id="torusChatDrawer" class="torus-chat-drawer" style="display: none;" aria-hidden="true">
+    <div class="torus-chat-backdrop" id="torusChatBackdrop"></div>
+    <div class="torus-chat-panel">
+      <!-- Chat Header -->
+      <div class="torus-chat-header">
+        <div class="torus-chat-header-main">
+          <div class="torus-chat-header-left">
+            <div class="torus-chat-header-avatar" id="torusChatHeaderAvatar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </div>
+            <div class="torus-chat-header-info">
+              <div class="torus-chat-header-title" id="torusChatHeaderTitle">Clinical Support &amp; Chat</div>
+              <div class="torus-chat-header-subtitle" id="torusChatHeaderSubtitle">PlebC TORUS Tele-Ultrasound</div>
+            </div>
+          </div>
+          <button type="button" class="torus-chat-close-btn" id="torusChatCloseBtn" aria-label="Close Chat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="torus-chat-header-tabs" role="tablist">
+          <button type="button" class="torus-chat-tab-btn active" id="torusTabClinicalChat" role="tab" aria-selected="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>Chat</span>
+          </button>
+          <button type="button" class="torus-chat-tab-btn" id="torusTabAiSupport" role="tab" aria-selected="false">
+            <span>🤖 AI Assistant</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Body with 2 Views: Clinical Two-Way Chat and AI Assistant -->
+      <div class="torus-chat-body">
+        <!-- View 1: Clinical Two-Way Chat -->
+        <div class="torus-chat-view active" id="torusViewClinicalChat">
+          <!-- Active Conversation Selector Bar -->
+          <div class="torus-chat-conv-bar">
+            <div class="torus-chat-recipient-indicator">
+              <span class="torus-chat-status-dot" id="torusChatStatusDot" style="display: none;"></span>
+              <span id="torusChatRecipientName" class="torus-chat-recipient-name">Patient User (4001)</span>
+            </div>
+            <div class="torus-chat-conv-select-wrap">
+              <select id="torusChatConvSelect" class="torus-chat-conv-select" title="Switch Conversation">
+                <!-- Populated dynamically with authorized patients / doctors -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Messages Feed -->
+          <div class="torus-chat-messages" id="torusChatMessagesList">
+            <!-- Messages rendered dynamically via JS -->
+          </div>
+
+          <!-- Message Input Area -->
+          <div class="torus-chat-footer">
+            <form id="torusChatForm" class="torus-chat-form" onsubmit="return false;">
+              <div class="torus-chat-input-wrapper">
+                <textarea id="torusChatMessageInput" class="torus-chat-input"
+                  placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
+                  rows="1" autocomplete="off"></textarea>
+              </div>
+              <button type="submit" id="torusChatSendBtn" class="torus-chat-send-btn" title="Send message" disabled>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span>Send</span>
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- View 2: AI Support Assistant -->
+        <div class="torus-chat-view" id="torusViewAiSupport" style="display: none;">
+          <div class="torus-ai-banner">
+            <div class="torus-ai-banner-icon">🤖</div>
+            <div class="torus-ai-banner-text">
+              <strong>TORUS AI Support Assistant</strong>
+              <p>Operational guidance for reports, appointments & delivery. Not a medical clinician.</p>
+            </div>
+          </div>
+
+          <!-- Quick Action Chips -->
+          <div class="torus-ai-quick-chips" id="torusAiQuickChips">
+            <!-- Populated dynamically based on user role -->
+          </div>
+
+          <!-- AI Q&A Feed -->
+          <div class="torus-chat-messages" id="torusAiMessagesList">
+            <!-- AI conversation items rendered here -->
+          </div>
+
+          <!-- AI Input Area -->
+          <div class="torus-chat-footer">
+            <form id="torusAiForm" class="torus-chat-form" onsubmit="return false;">
+              <input type="text" id="torusAiMessageInput" class="torus-chat-input"
+                placeholder="Ask about reports, appointments, delivery issues..." autocomplete="off" />
+              <button type="submit" id="torusAiSendBtn" class="torus-chat-send-btn" title="Ask AI">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span>Ask</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Chat Launcher Button -->
+  <button type="button" id="torusFloatingChatBtn" class="torus-floating-chat-btn" aria-label="Open Chat and Support"
+    title="Chat & AI Support">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+    </svg>
+    <span class="torus-floating-badge" id="torusFloatingChatBadge" style="display: none;">0</span>
+  </button>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="html2canvas.min.js"></script>
+  <script src="notifications-chat.js?v=140"></script>
   <script src="app.js?v=119"></script>
 </body>
 

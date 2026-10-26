@@ -832,6 +832,39 @@ def api_clinical_patients_list():
     patients = database.get_clinical_patients()
     return jsonify({"success": True, "patients": patients})
 
+@app.route("/api/patients/<patient_id>/update-email", methods=["POST", "OPTIONS"])
+@app.route("/api/patients/<patient_id>/email", methods=["GET", "POST", "PUT", "OPTIONS"])
+@app.route("/api/patients/update-email", methods=["POST", "OPTIONS"])
+def api_update_patient_email(patient_id=None):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    pat_id = patient_id or data.get("patient_id") or data.get("patientId") or data.get("uid") or ""
+
+    if request.method == "GET":
+        if not pat_id:
+            return jsonify({"success": False, "error": "Patient ID is required."}), 400
+        patient = database.find_patient_by_identifier(pat_id)
+        if not patient:
+            return jsonify({"success": False, "error": f"Patient '{pat_id}' not found."}), 404
+        return jsonify({
+            "success": True,
+            "patient_id": patient.get("uid") or pat_id,
+            "patient_name": patient.get("name", ""),
+            "email": patient.get("email", "")
+        }), 200
+
+    new_email = (data.get("email") or data.get("new_email") or "").strip()
+    rep_id = (data.get("report_id") or data.get("reportId") or "").strip()
+    if not pat_id:
+        return jsonify({"success": False, "error": "Patient ID is required."}), 400
+    if not new_email:
+        return jsonify({"success": False, "error": "New email address is required."}), 400
+
+    res = database.update_patient_email(patient_identifier=pat_id, new_email=new_email, report_id=rep_id)
+    status_code = 200 if res.get("success") else 400
+    return jsonify(res), status_code
+
 @app.route("/api/doctors/list", methods=["GET", "OPTIONS"])
 def api_doctors_list():
     if request.method == "OPTIONS":
@@ -1376,6 +1409,26 @@ def api_reports_replace_signature(report_id=None):
     status_code = 401 if ("re-authentication" in err_str or "credentials" in err_str or "password" in err_str) else 400
     return jsonify(res), status_code
 
+@app.route("/api/reports/<report_id>/signature", methods=["GET", "OPTIONS"])
+def api_reports_signature(report_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    report = database.get_diagnostic_report_by_id(report_id)
+    if not report:
+        return jsonify({"success": False, "error": f"Diagnostic report '{report_id}' not found."}), 404
+    is_signed = bool(report.get("signature_valid") == 1 or (report.get("report_status") == "signed" and report.get("signature_data")))
+    return jsonify({
+        "success": True,
+        "reportId": report_id,
+        "is_signed": is_signed,
+        "status": "signed" if is_signed else report.get("report_status", "unsigned"),
+        "doctorName": report.get("doctor_name", ""),
+        "doctorLicense": report.get("doctor_license", ""),
+        "signatureHash": report.get("signature_hash", ""),
+        "signedAt": report.get("signed_at", ""),
+        "signatureData": report.get("signature_data") or ""
+    }), 200
+
 @app.route("/api/reports/<report_id>/signature-history", methods=["GET", "OPTIONS"])
 def api_reports_signature_history(report_id):
     if request.method == "OPTIONS":
@@ -1428,6 +1481,76 @@ def api_download_report(report_id):
             "Cache-Control": "no-cache, no-store, must-revalidate"
         }
     )
+
+
+# -------------------- REPORT DELIVERY TO PATIENT API --------------------
+@app.route("/api/reports/<report_id>/deliver", methods=["POST", "OPTIONS"])
+@app.route("/api/reports/<report_id>/send-to-patient", methods=["POST", "OPTIONS"])
+@app.route("/api/reports/deliver", methods=["POST", "OPTIONS"])
+@app.route("/api/reports/send-to-patient", methods=["POST", "OPTIONS"])
+def api_deliver_report_to_patient(report_id=None):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    rep_id = report_id or data.get("report_id") or data.get("reportId") or ""
+    if not rep_id:
+        return jsonify({"success": False, "delivery_status": "failed", "error": "Report ID is required for delivery."}), 400
+
+    patient_id = data.get("patient_id") or data.get("patientId")
+    is_resend = bool(data.get("is_resend") or data.get("isResend") or False)
+
+    res = database.deliver_diagnostic_report_to_patient(
+        report_id=rep_id,
+        patient_id=patient_id,
+        is_resend=is_resend,
+        caller_info=data
+    )
+    if res.get("success"):
+        status_code = 200
+    elif "Rate limit" in str(res.get("error", "")):
+        status_code = 429
+    else:
+        status_code = 400
+    return jsonify(res), status_code
+
+@app.route("/api/reports/<report_id>/delivery-status", methods=["GET", "OPTIONS"])
+def api_report_delivery_status(report_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    report = database.get_diagnostic_report_by_id(report_id)
+    if not report:
+        return jsonify({"success": False, "error": f"Diagnostic report '{report_id}' not found."}), 404
+    
+    pat_id = report.get("patient_id", "")
+    pat_name = report.get("patient_name", "")
+    pat_rec = database.find_patient_by_identifier(pat_id, pat_name)
+    pat_email = (pat_rec.get("email") if pat_rec else "") or report.get("delivery_recipient", "")
+
+    return jsonify({
+        "success": True,
+        "report_id": report_id,
+        "delivery_status": report.get("delivery_status", "pending"),
+        "delivered_at": report.get("delivered_at", ""),
+        "delivery_recipient": report.get("delivery_recipient", "") or pat_email,
+        "delivery_channel": report.get("delivery_channel", "portal"),
+        "delivery_attempts": report.get("delivery_attempts", 0),
+        "last_delivery_error": report.get("last_delivery_error", ""),
+        "patient_id": pat_id,
+        "patient_name": pat_name,
+        "patient_email": pat_email
+    }), 200
+
+@app.route("/api/reports/<report_id>/delivery-history", methods=["GET", "OPTIONS"])
+def api_report_delivery_history(report_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    history = database.get_report_delivery_audit_history(report_id)
+    return jsonify({
+        "success": True,
+        "report_id": report_id,
+        "history": history,
+        "total": len(history)
+    }), 200
 
 
 # -------------------- VIEWER AUTHENTICATION API --------------------
@@ -1786,6 +1909,161 @@ def api_close_session():
         return jsonify({"success": False, "error": "Session code is required."}), 400
     res = database.close_clinical_session(session_code)
     return jsonify(res)
+
+
+# ==============================================================================
+# NOTIFICATIONS API ENDPOINTS
+# ==============================================================================
+
+@app.route("/api/notifications", methods=["GET", "OPTIONS"])
+def api_get_notifications():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    user_id = request.args.get("user_id", "").strip() or request.args.get("uid", "").strip()
+    role = request.args.get("role", "").strip()
+    unread_only = request.args.get("unread_only", "false").lower() in ("true", "1")
+    limit = int(request.args.get("limit", 100))
+    offset = int(request.args.get("offset", 0))
+
+    notifs = database.get_notifications(user_id=user_id, role=role, limit=limit, offset=offset, unread_only=unread_only)
+    unread_count = database.get_unread_notification_count(user_id=user_id, role=role)
+    return jsonify({
+        "success": True,
+        "notifications": notifs,
+        "unread_count": unread_count,
+        "total": len(notifs)
+    }), 200
+
+@app.route("/api/notifications/unread-count", methods=["GET", "OPTIONS"])
+def api_get_unread_notifications_count():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    user_id = request.args.get("user_id", "").strip() or request.args.get("uid", "").strip()
+    role = request.args.get("role", "").strip()
+    cnt = database.get_unread_notification_count(user_id=user_id, role=role)
+    return jsonify({"success": True, "unread_count": cnt}), 200
+
+@app.route("/api/notifications/<int:notif_id>/read", methods=["POST", "OPTIONS"])
+def api_mark_notification_read(notif_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id", "").strip() or data.get("uid", "").strip()
+    ok = database.mark_notification_as_read(notif_id, user_id=user_id)
+    return jsonify({"success": ok, "notification_id": notif_id}), (200 if ok else 400)
+
+@app.route("/api/notifications/read-all", methods=["POST", "OPTIONS"])
+def api_mark_all_notifications_read():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id", "").strip() or data.get("uid", "").strip()
+    role = data.get("role", "").strip()
+    ok = database.mark_all_notifications_as_read(user_id=user_id, role=role)
+    return jsonify({"success": ok}), 200
+
+
+# ==============================================================================
+# TWO-WAY CHAT SUPPORT API ENDPOINTS
+# ==============================================================================
+
+@app.route("/api/conversations", methods=["GET", "POST", "OPTIONS"])
+def api_conversations():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        doctor_id = data.get("doctor_id", "3001").strip()
+        patient_id = data.get("patient_id", "4001").strip()
+        attender_id = data.get("attender_id", "").strip()
+        conv = database.get_or_create_conversation(doctor_id, patient_id, attender_id)
+        return jsonify({"success": True, "conversation": conv}), 200
+
+    user_id = request.args.get("user_id", "").strip() or request.args.get("uid", "").strip()
+    role = request.args.get("role", "doctor").strip()
+    convs = database.get_user_conversations(user_id, role)
+    return jsonify({"success": True, "conversations": convs}), 200
+
+@app.route("/api/conversations/<conv_id>/messages", methods=["GET", "POST", "OPTIONS"])
+def api_conversation_messages(conv_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        sender_id = data.get("sender_id", "").strip()
+        sender_role = data.get("sender_role", "doctor").strip()
+        sender_name = data.get("sender_name", "").strip()
+        content = data.get("content", "").strip()
+        att_url = data.get("attachment_url", "").strip()
+        att_name = data.get("attachment_name", "").strip()
+
+        if not content and not att_url:
+            return jsonify({"success": False, "error": "Message content or attachment is required."}), 400
+
+        res = database.send_chat_message(
+            conversation_id=conv_id,
+            sender_id=sender_id,
+            sender_role=sender_role,
+            sender_name=sender_name,
+            content=content,
+            attachment_url=att_url,
+            attachment_name=att_name
+        )
+        status_code = 200 if res.get("success") else 400
+        return jsonify(res), status_code
+
+    limit = int(request.args.get("limit", 100))
+    offset = int(request.args.get("offset", 0))
+    messages = database.get_conversation_messages(conv_id, limit=limit, offset=offset)
+    return jsonify({"success": True, "conversation_id": conv_id, "messages": messages}), 200
+
+@app.route("/api/conversations/<conv_id>/read", methods=["POST", "OPTIONS"])
+def api_mark_conversation_read(conv_id):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    reader_id = data.get("reader_id", "").strip() or data.get("user_id", "").strip()
+    ok = database.mark_conversation_messages_as_read(conv_id, reader_id)
+    return jsonify({"success": ok}), 200
+
+
+# ==============================================================================
+# ADVANCED AI SUPPORT ASSISTANT API
+# ==============================================================================
+
+@app.route("/api/ai/chat", methods=["POST", "OPTIONS"])
+def api_ai_chat():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id", "").strip() or data.get("uid", "").strip()
+    role = data.get("role", "doctor").strip()
+    question = data.get("question", "").strip() or data.get("message", "").strip()
+
+    if not question:
+        return jsonify({"success": False, "error": "Question is required."}), 400
+
+    res = database.query_ai_support_assistant(user_id=user_id, role=role, question=question)
+    return jsonify(res), 200
+
+
+# ==============================================================================
+# SOCKET.IO HANDSHAKE MOCK (PREVENTS 400 POLLING LOG NOISE)
+# ==============================================================================
+
+@app.route("/socket.io/", methods=["GET", "POST", "OPTIONS"])
+@app.route("/socket.io/<path:path>", methods=["GET", "POST", "OPTIONS"])
+def mock_socketio_handler(path=""):
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    payload = "0" + json.dumps({
+        "sid": "torus_realtime_session",
+        "upgrades": [],
+        "pingInterval": 25000,
+        "pingTimeout": 20000
+    })
+    return Response(payload, mimetype="text/plain")
+
 
 # -------------------- STATIC FILE SERVING --------------------
 @app.route("/")
