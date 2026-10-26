@@ -2125,11 +2125,10 @@
     </button>
     <div class="report-preview-card" style="position: relative;">
       <div class="report-preview-body">
-        <!-- Clinic Header & Patient Details (Opposite-Side Layout) -->
+        <!-- Clinic Header -->
         <div
-          style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 16px;">
-          <!-- Left side: Existing logo and branding remain unchanged -->
-          <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding-top: 6px;">
+          style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
             <img src="logo.png" alt="TORUS Logo" style="width: 48px; height: auto;" />
             <div>
               <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: #0f172a;">TORUS
@@ -2138,46 +2137,46 @@
                 Imaging Center</span>
             </div>
           </div>
-
-          <!-- Right side: Report ID at top, with Patient & Case Details directly below it -->
-          <div style="display: flex; flex-direction: column; align-items: flex-end; width: 440px; max-width: 62%; flex-shrink: 0;">
-            <div style="text-align: right; margin-bottom: 8px;">
-              <div id="previewReportId" style="font-weight: 600; color: #0f172a; font-size: 14px;"></div>
-              <div id="previewReportDate" style="display: none;"></div>
-            </div>
-
-            <!-- Patient & Case Details Card (Right Side) -->
-            <div
-              style="background: #f8fafc; border-radius: 8px; padding: 12px 16px; border: 1px solid #e2e8f0; width: 100%; box-sizing: border-box; text-align: left;">
-              <h3
-                style="margin-top: 0; margin-bottom: 10px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; letter-spacing: 0.3px;">
-                Patient & Case Details</h3>
-              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; font-size: 12px;">
-                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
-                    style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span
-                    id="previewPatientName" style="color: #0f172a; font-weight: 500;"></span></div>
-                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
-                    style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span
-                    id="previewPatientId" style="color: #0f172a; font-weight: 500;"></span></div>
-                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
-                    style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span
-                    id="previewScanType" style="color: #0f172a; font-weight: 500;"></span></div>
-                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
-                    style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span
-                    id="previewDeviceName" style="color: #0f172a;"></span></div>
-                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
-                    style="color: #64748b; min-width: 95px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span
-                    id="previewLocationName" style="color: #0f172a;"></span></div>
-                <div style="display: flex; align-items: baseline; gap: 4px;"><strong
-                    style="color: #64748b; min-width: 75px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span
-                    id="previewDuration" style="color: #0f172a;"></span></div>
-              </div>
-            </div>
+          <div style="text-align: right; font-size: 14px; font-weight: 600; color: #0f172a;">
+            <div id="previewReportId"></div>
           </div>
         </div>
 
-        <!-- Horizontal divider line across full report width -->
-        <div style="border-bottom: 2px solid #0f172a; margin-bottom: 20px;"></div>
+        <!-- Patient & Exam Details -->
+        <div
+          style="background: #f8fafc; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; margin-bottom: 14px; gap: 8px 12px; flex-wrap: wrap;">
+            <h3
+              style="margin: 0; font-size: 13.5px; color: #475569; text-transform: uppercase; font-weight: 700; letter-spacing: 0.3px;">
+              PATIENT & CASE DETAILS</h3>
+            <div id="previewReportDate"
+              style="font-size: 12px; color: #64748b; font-weight: 500; white-space: nowrap; display: inline-flex; align-items: baseline; gap: 5px;">
+              <strong style="color: #475569; font-weight: 600;">Date & Time:</strong>
+              <span id="previewReportDateVal" style="color: #0f172a; font-weight: 500;"></span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; font-size: 13px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span
+                id="previewPatientName" style="color: #0f172a; font-weight: 500;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span
+                id="previewPatientId" style="color: #0f172a; font-weight: 500;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span
+                id="previewScanType" style="color: #0f172a; font-weight: 500;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Device:</strong> <span
+                id="previewDeviceName" style="color: #0f172a;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Location:</strong> <span
+                id="previewLocationName" style="color: #0f172a;"></span></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;"><strong
+                style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Duration:</strong> <span
+                id="previewDuration" style="color: #0f172a;"></span></div>
+          </div>
+        </div>
 
         <!-- Captured Images Section -->
         <div style="margin-bottom: 20px;">
@@ -4239,7 +4238,7 @@
       }
 
       let formattedSignDateTime = '';
-      if (isSigned && actualSigningTime) {
+      if (actualSigningTime) {
         try {
           const sDate = new Date(actualSigningTime);
           if (!isNaN(sDate.getTime())) {
@@ -4251,11 +4250,41 @@
           }
         } catch (_) { }
       }
+      if (!formattedSignDateTime) {
+        const rawGen = (reportData && reportData.generatedAt) ||
+          (reportState && reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+          (reportState && reportState.generatedAt) ||
+          (reportData && reportData.createdAt) ||
+          now.toISOString();
+        try {
+          const gDate = new Date(rawGen);
+          if (!isNaN(gDate.getTime())) {
+            formattedSignDateTime = gDate.toLocaleDateString('en-US', {
+              year: 'numeric', month: 'short', day: 'numeric'
+            }) + ' ' + gDate.toLocaleTimeString('en-US', {
+              hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+            });
+          }
+        } catch (_) { }
+      }
+      if (!formattedSignDateTime) {
+        formattedSignDateTime = now.toLocaleDateString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        }) + ' ' + now.toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
 
-      // Date and time removed from below Report ID as requested
+      // Populate Date & Time on the far right of the PATIENT & CASE DETAILS heading row
+      const previewReportDateVal = document.getElementById('previewReportDateVal');
+      if (previewReportDateVal) {
+        previewReportDateVal.textContent = formattedSignDateTime;
+      }
       if (previewReportDate) {
-        previewReportDate.textContent = '';
-        previewReportDate.style.display = 'none';
+        if (!previewReportDateVal) {
+          previewReportDate.innerHTML = `<strong style="color: #475569; font-weight: 600;">Date & Time:</strong> <span id="previewReportDateVal" style="color: #0f172a; font-weight: 500;">${formattedSignDateTime}</span>`;
+        }
+        previewReportDate.style.display = 'inline-flex';
       }
 
       if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
@@ -4537,60 +4566,61 @@
         } catch (_) { }
       }
 
-      // Header right: Report ID at top-right
+      // Header right: Report ID and signing date/time directly below it
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
+      doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
-      doc.text(`Report ID: ${reportData.reportId}`, width - margin, y + 6, { align: 'right' });
+      doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
 
-      // Section: Patient & Case Details Box on Right side directly below Report ID
-      const cardWidth = Math.round(contentWidth * 0.58);
-      const cardX = width - margin - cardWidth;
-      const cardY = y + 14;
-      const cardH = 76;
+      // Header line
+      doc.setDrawColor(15, 23, 42);
+      doc.setLineWidth(2);
+      doc.line(margin, y + 16, width - margin, y + 16);
+      y += 28;
 
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(226, 232, 240);
+      // Section: Patient & Case Details Box
+      doc.setFillColor(248, 250, 252); // #f8fafc
+      doc.setDrawColor(226, 232, 240); // #e2e8f0
       doc.setLineWidth(1);
-      doc.roundedRect(cardX, cardY, cardWidth, cardH, 4, 4, 'FD');
+      doc.roundedRect(margin, y, contentWidth, 104, 6, 6, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105);
-      doc.text('PATIENT & CASE DETAILS', cardX + 8, cardY + 12);
-      doc.setDrawColor(203, 213, 225);
-      doc.line(cardX + 8, cardY + 16, cardX + cardWidth - 8, cardY + 16);
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105); // #475569
+      doc.text('PATIENT & CASE DETAILS', margin + 12, y + 16);
+      if (formattedSignDateTime) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text('Date & Time: ' + formattedSignDateTime, width - margin - 12, y + 16, { align: 'right' });
+      }
+      doc.setDrawColor(203, 213, 225); // #cbd5e1
+      doc.line(margin + 12, y + 22, width - margin - 12, y + 22);
 
       const drawDetail = (lbl, val, x, top) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.8);
+        doc.setFontSize(9);
         doc.setTextColor(100, 116, 139);
         doc.text(lbl, x, top);
         const lblW = doc.getTextWidth(lbl);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(15, 23, 42);
-        doc.text(String(val || '--'), x + lblW + 3, top);
+        doc.text(String(val || '--'), x + lblW + 4, top);
       };
 
-      const c1 = cardX + 8;
-      const c2 = cardX + Math.round(cardWidth * 0.52);
-      drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, cardY + 28);
+      const c1 = margin + 14;
+      const c2 = margin + halfWidth + 14;
+      drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
       const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
-      drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, cardY + 28);
+      drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
 
       const st = reportData.patientInfo?.scanType || '--';
-      drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, cardY + 44);
-      drawDetail('Device: ', reportData.patientInfo?.device, c2, cardY + 44);
+      drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
+      drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
 
-      drawDetail('Location: ', reportData.patientInfo?.location, c1, cardY + 60);
-      drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, cardY + 60);
-
-      // Horizontal Divider Line below entire top section across full report width
-      const dividerY = cardY + cardH + 12;
-      doc.setDrawColor(15, 23, 42);
-      doc.setLineWidth(2);
-      doc.line(margin, dividerY, width - margin, dividerY);
-      y = dividerY + 18;
+      drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
+      drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
+      y += 120;
 
       // Captured Images
       const images = (reportData.selectedImages && reportData.selectedImages.length)

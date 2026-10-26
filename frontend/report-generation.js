@@ -1194,7 +1194,7 @@ function populateReportPreviewDOM(reportData) {
   }
 
   let formattedSignDateTime = '';
-  if (isSigned && actualSigningTime) {
+  if (actualSigningTime) {
     try {
       const sDate = new Date(actualSigningTime);
       if (!isNaN(sDate.getTime())) {
@@ -1206,11 +1206,41 @@ function populateReportPreviewDOM(reportData) {
       }
     } catch (_) { }
   }
+  if (!formattedSignDateTime) {
+    const rawGen = (reportData && reportData.generatedAt) ||
+      (reportState && reportState.generatedReport && reportState.generatedReport.generatedAt) ||
+      (reportState && reportState.generatedAt) ||
+      (reportData && reportData.createdAt) ||
+      now.toISOString();
+    try {
+      const gDate = new Date(rawGen);
+      if (!isNaN(gDate.getTime())) {
+        formattedSignDateTime = gDate.toLocaleDateString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        }) + ' ' + gDate.toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+      }
+    } catch (_) { }
+  }
+  if (!formattedSignDateTime) {
+    formattedSignDateTime = now.toLocaleDateString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    }) + ' ' + now.toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    });
+  }
 
-  // Date and time removed from below Report ID as requested
+  // Populate Date & Time on the far right of the PATIENT & CASE DETAILS heading row
+  const previewReportDateVal = document.getElementById('previewReportDateVal');
+  if (previewReportDateVal) {
+    previewReportDateVal.textContent = formattedSignDateTime;
+  }
   if (previewReportDate) {
-    previewReportDate.textContent = '';
-    previewReportDate.style.display = 'none';
+    if (!previewReportDateVal) {
+      previewReportDate.innerHTML = `<strong style="color: #475569; font-weight: 600;">Date & Time:</strong> <span id="previewReportDateVal" style="color: #0f172a; font-weight: 500;">${formattedSignDateTime}</span>`;
+    }
+    previewReportDate.style.display = 'inline-flex';
   }
 
   if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
@@ -1483,60 +1513,61 @@ function generateWhiteMedicalPdfFallback(reportData) {
     } catch (_) { }
   }
 
-  // Header right: Report ID at top-right
+  // Header right: Report ID (date/time below Report ID removed as requested)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
+  doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Report ID: ${reportData.reportId}`, width - margin, y + 6, { align: 'right' });
+  doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
 
-  // Section: Patient & Case Details Box on Right side directly below Report ID
-  const cardWidth = Math.round(contentWidth * 0.58);
-  const cardX = width - margin - cardWidth;
-  const cardY = y + 14;
-  const cardH = 76;
+  // Header line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(2);
+  doc.line(margin, y + 16, width - margin, y + 16);
+  y += 28;
 
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
+  // Section: Patient & Case Details Box
+  doc.setFillColor(248, 250, 252); // #f8fafc
+  doc.setDrawColor(226, 232, 240); // #e2e8f0
   doc.setLineWidth(1);
-  doc.roundedRect(cardX, cardY, cardWidth, cardH, 4, 4, 'FD');
+  doc.roundedRect(margin, y, contentWidth, 104, 6, 6, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text('PATIENT & CASE DETAILS', cardX + 8, cardY + 12);
-  doc.setDrawColor(203, 213, 225);
-  doc.line(cardX + 8, cardY + 16, cardX + cardWidth - 8, cardY + 16);
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105); // #475569
+  doc.text('PATIENT & CASE DETAILS', margin + 12, y + 16);
+  if (formattedSignDateTime) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Date & Time: ' + formattedSignDateTime, width - margin - 12, y + 16, { align: 'right' });
+  }
+  doc.setDrawColor(203, 213, 225); // #cbd5e1
+  doc.line(margin + 12, y + 22, width - margin - 12, y + 22);
 
   const drawDetail = (lbl, val, x, top) => {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.8);
+    doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
     doc.text(lbl, x, top);
     const lblW = doc.getTextWidth(lbl);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(15, 23, 42);
-    doc.text(String(val || '--'), x + lblW + 3, top);
+    doc.text(String(val || '--'), x + lblW + 4, top);
   };
 
-  const c1 = cardX + 8;
-  const c2 = cardX + Math.round(cardWidth * 0.52);
-  drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, cardY + 28);
+  const c1 = margin + 14;
+  const c2 = margin + halfWidth + 14;
+  drawDetail('Patient Name: ', reportData.patientInfo?.patientName, c1, y + 42);
   const pidVal = reportData.patientInfo?.patientId || reportData.patientInfo?.patient_id || reportData.patient_id || reportData.patientId || reportState.patientId || '--';
-  drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, cardY + 28);
+  drawDetail('Patient ID: ', (pidVal && pidVal !== 'P-1000') ? pidVal : '--', c2, y + 42);
 
   const st = reportData.patientInfo?.scanType || '--';
-  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, cardY + 44);
-  drawDetail('Device: ', reportData.patientInfo?.device, c2, cardY + 44);
+  drawDetail('Scan Type: ', st.includes('Ultrasound') ? st : `${st} Ultrasound`, c1, y + 64);
+  drawDetail('Device: ', reportData.patientInfo?.device, c2, y + 64);
 
-  drawDetail('Location: ', reportData.patientInfo?.location, c1, cardY + 60);
-  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, cardY + 60);
-
-  // Horizontal Divider Line below entire top section across full report width
-  const dividerY = cardY + cardH + 12;
-  doc.setDrawColor(15, 23, 42);
-  doc.setLineWidth(2);
-  doc.line(margin, dividerY, width - margin, dividerY);
-  y = dividerY + 18;
+  drawDetail('Location: ', reportData.patientInfo?.location, c1, y + 86);
+  drawDetail('Duration: ', reportData.patientInfo?.examDuration, c2, y + 86);
+  y += 120;
 
   // Captured Images
   const images = (reportData.selectedImages && reportData.selectedImages.length)
@@ -2635,8 +2666,36 @@ function previewReportAction(force = false) {
     });
   }
 
-  if (previewReportId) previewReportId.textContent = `Report ID: ${reportData.reportId}`;
-  if (previewReportDate) previewReportDate.innerHTML = '';
+  if (previewReportDate) {
+    const previewReportDateVal = document.getElementById('previewReportDateVal');
+    let fDate = '';
+    const sigTime = reportState.signatureData?.signedAt || reportState.signedTimestamp || reportData.signed_at || rawGenTime;
+    if (sigTime) {
+      try {
+        const sd = new Date(sigTime);
+        if (!isNaN(sd.getTime())) {
+          fDate = sd.toLocaleDateString('en-US', {
+            year: 'numeric', month: 'short', day: 'numeric'
+          }) + ' ' + sd.toLocaleTimeString('en-US', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+          });
+        }
+      } catch (_) { }
+    }
+    if (!fDate) {
+      fDate = now.toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric'
+      }) + ' ' + now.toLocaleTimeString('en-US', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+      });
+    }
+    if (previewReportDateVal) {
+      previewReportDateVal.textContent = fDate;
+    } else {
+      previewReportDate.innerHTML = `<strong style="color: #475569; font-weight: 600;">Date & Time:</strong> <span id="previewReportDateVal" style="color: #0f172a; font-weight: 500;">${fDate}</span>`;
+    }
+    previewReportDate.style.display = 'inline-flex';
+  }
   if (previewPatientName) previewPatientName.textContent = reportData.patientInfo.patientName;
   if (previewExamDate) previewExamDate.textContent = reportData.patientInfo.examDate;
   if (previewTimestamp) previewTimestamp.textContent = dynamicReportTimestamp;
