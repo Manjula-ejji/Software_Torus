@@ -965,20 +965,48 @@ def init_db():
             print("[Database] Default Doctor password restored to admin123.")
 
     # Seed default Patient: patient@gmail.com / patient123 (role: patient, UID: 4001)
+    patient_pass = hash_password("patient123")
     cursor.execute("SELECT * FROM patients WHERE LOWER(email) = 'patient@gmail.com'")
-    if not cursor.fetchone():
-        patient_pass = hash_password("patient123")
+    existing_patient = cursor.fetchone()
+    if not existing_patient:
         cursor.execute("SELECT id FROM patients WHERE uid = '4001'")
-        pat_uid = "4001" if not cursor.fetchone() else generate_patient_id()
+        pat_4001 = cursor.fetchone()
+        if pat_4001:
+            # UID 4001 exists with a different email; restore email to patient@gmail.com and reset password
+            cursor.execute("""
+                UPDATE patients 
+                SET email = 'patient@gmail.com', password_hash = ?, name = 'Patient User'
+                WHERE uid = '4001'
+            """, (patient_pass,))
+            conn.commit()
+            print("[Database] Default Patient email restored to patient@gmail.com on UID 4001.")
+        else:
+            cursor.execute("""
+                INSERT INTO patients (uid, name, email, password_hash, role, mobile)
+                VALUES ('4001', 'Patient User', 'patient@gmail.com', ?, 'patient', '+91 98765 43210')
+            """, (patient_pass,))
+            conn.commit()
+            print("[Database] Default Patient created (UID: 4001, email: patient@gmail.com).")
+    else:
+        # Ensure default Patient password and UID are always 'patient123' and '4001' on startup
+        if existing_patient["password_hash"] != patient_pass or existing_patient["uid"] != "4001":
+            cursor.execute("UPDATE patients SET password_hash=?, uid='4001' WHERE LOWER(email)='patient@gmail.com'", (patient_pass,))
+            conn.commit()
+            print("[Database] Default Patient credentials restored to patient123 / UID 4001.")
+
+    # Also guarantee secondary account for manjulaejji4@gmail.com so tests and user test logins succeed
+    cursor.execute("SELECT * FROM patients WHERE LOWER(email) = 'manjulaejji4@gmail.com'")
+    if not cursor.fetchone():
+        cursor.execute("SELECT id FROM patients WHERE uid = '4002'")
+        m_uid = "4002" if not cursor.fetchone() else generate_patient_id()
         cursor.execute("""
             INSERT INTO patients (uid, name, email, password_hash, role, mobile)
-            VALUES (?, ?, ?, ?, 'patient', ?)
-        """, (pat_uid, "Patient User", "patient@gmail.com", patient_pass, "+91 98765 43210"))
+            VALUES (?, 'Manjula Patient', 'manjulaejji4@gmail.com', ?, 'patient', '+91 99887 76655')
+        """, (m_uid, patient_pass))
         conn.commit()
-        print(f"[Database] Default Patient created (UID: {pat_uid}, email: patient@gmail.com).")
+        print(f"[Database] Seeded secondary test patient (UID: {m_uid}, email: manjulaejji4@gmail.com).")
 
     # Seed Patient A (P-12345), Patient B (P-8821), Patient C (P-9104) for Haptic session routing tests
-    patient_pass = hash_password("patient123")
     seed_patients = [
         ("P-12345", "Patient A", "patient_a@gmail.com", "+91 98765 12345"),
         ("P-8821", "Patient B", "patient_b@gmail.com", "+91 98765 23456"),
@@ -994,19 +1022,28 @@ def init_db():
             conn.commit()
             print(f"[Database] Seeded patient {p_name} (UID: {p_uid}, email: {p_email}).")
 
-
     # Seed default Viewer: user@gmail.com / user123 (role: viewer, UID: 6001)
+    viewer_pass = hash_password("user123")
     cursor.execute("SELECT * FROM viewers WHERE LOWER(email) = 'user@gmail.com'")
-    if not cursor.fetchone():
-        viewer_pass = hash_password("user123")
+    existing_viewer = cursor.fetchone()
+    if not existing_viewer:
         cursor.execute("SELECT id FROM viewers WHERE uid = '6001'")
         view_uid = "6001" if not cursor.fetchone() else generate_viewer_id()
         cursor.execute("""
             INSERT INTO viewers (uid, name, email, password_hash, role, mobile)
-            VALUES (?, ?, ?, ?, 'viewer', ?)
-        """, (view_uid, "Viewer 1", "user@gmail.com", viewer_pass, "+91 98765 43210"))
+            VALUES (?, 'Viewer 1', 'user@gmail.com', ?, 'viewer', '+91 98765 43210')
+        """, (view_uid, viewer_pass))
         conn.commit()
         print(f"[Database] Default Viewer created (UID: {view_uid}, email: user@gmail.com).")
+    else:
+        if existing_viewer["password_hash"] != viewer_pass:
+            cursor.execute("UPDATE viewers SET password_hash=? WHERE LOWER(email)='user@gmail.com'", (viewer_pass,))
+            conn.commit()
+            print("[Database] Default Viewer password restored to user123.")
+
+    # Ensure PAT-4001 in clinical_patients points to patient@gmail.com
+    cursor.execute("UPDATE clinical_patients SET email = 'patient@gmail.com' WHERE uid IN ('PAT-4001', '4001')")
+    conn.commit()
 
     # Seed default Clinical Patients
     cursor.execute("SELECT COUNT(*) as cnt FROM clinical_patients")
@@ -1636,16 +1673,19 @@ def register_patient(name: str, email: str, password: str, mobile: str = "", uid
     }
 
 def authenticate_patient(login_id: str, password: str):
-    """Authenticates patient against SQLite using Email OR UID."""
+    """Authenticates patient against SQLite using Email OR UID (supports '4001' and 'PAT-4001')."""
     conn = get_db()
     cursor = conn.cursor()
-    login_clean = login_id.strip().lower()
+    login_clean = str(login_id or "").strip().lower()
     pwd_hash = hash_password(password)
+
+    # Support UID entered with or without 'pat-' prefix
+    uid_alt = login_clean[4:] if login_clean.startswith("pat-") else f"pat-{login_clean}"
     
     cursor.execute("""
         SELECT * FROM patients 
-        WHERE (LOWER(email) = ? OR LOWER(uid) = ?) AND password_hash = ?
-    """, (login_clean, login_clean, pwd_hash))
+        WHERE (LOWER(email) = ? OR LOWER(uid) = ? OR LOWER(uid) = ?) AND password_hash = ?
+    """, (login_clean, login_clean, uid_alt, pwd_hash))
     
     row = cursor.fetchone()
     conn.close()
