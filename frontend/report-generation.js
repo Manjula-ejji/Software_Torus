@@ -1207,15 +1207,10 @@ function populateReportPreviewDOM(reportData) {
     } catch (_) { }
   }
 
-  // Display signing date and time directly below Report ID (strictly only date/time, no doctor name or signature)
+  // Date and time removed from below Report ID as requested
   if (previewReportDate) {
-    if (formattedSignDateTime) {
-      previewReportDate.textContent = formattedSignDateTime;
-      previewReportDate.style.display = 'block';
-    } else {
-      previewReportDate.textContent = '';
-      previewReportDate.style.display = 'none';
-    }
+    previewReportDate.textContent = '';
+    previewReportDate.style.display = 'none';
   }
 
   if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
@@ -1488,23 +1483,17 @@ function generateWhiteMedicalPdfFallback(reportData) {
     } catch (_) { }
   }
 
-  // Header right: Report ID and signing date/time directly below it
+  // Header right: Report ID (date/time below Report ID removed as requested)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
   doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
-  if (formattedSignDateTime) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(formattedSignDateTime, width - margin, y + 12, { align: 'right' });
-  }
 
   // Header line
   doc.setDrawColor(15, 23, 42);
   doc.setLineWidth(2);
-  doc.line(margin, y + 24, width - margin, y + 24);
-  y += 42;
+  doc.line(margin, y + 16, width - margin, y + 16);
+  y += 28;
 
   // Section: Patient & Case Details Box
   doc.setFillColor(248, 250, 252); // #f8fafc

@@ -14334,7 +14334,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <div class="report-preview-card" style="background: #ffffff !important; color: #0f172a !important; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); width: 100%; box-sizing: border-box; overflow: visible;">
             <div class="report-preview-body" style="padding: 36px 44px; font-family: 'Inter', sans-serif; line-height: 1.6; color: #0f172a !important; background: #ffffff !important;">
               <!-- Clinic Header -->
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
                   <img src="logo.png" alt="TORUS Logo" style="width: 45px; height: auto;" />
                   <div>
@@ -14344,14 +14344,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 </div>
                 <div style="text-align: right; font-size: 12px; color: #64748b;">
                   <div style="font-weight: 600; color: #0f172a; font-size: 14px;">Report ID: ${repCode}</div>
-                  ${sigFormattedTime ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">${sigFormattedTime}</div>` : ''}
                 </div>
               </div>
 
               <!-- Patient & Exam Details -->
-              <div style="background: #f8fafc; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
-                <h3 style="margin-top: 0; margin-bottom: 14px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">Patient & Case Details</h3>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 24px; font-size: 13px;">
+              <div style="background: #f8fafc; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">Patient & Case Details</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; font-size: 13px;">
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span style="color: #0f172a; font-weight: 500;">${patName}</span></div>
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient ID:</strong> <span style="color: #0f172a; font-weight: 500;">${patId}</span></div>
                   <div style="display: flex; align-items: baseline; gap: 6px;"><strong style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Scan Type:</strong> <span style="color: #0f172a; font-weight: 500;">${scanTypeFormatted}</span></div>

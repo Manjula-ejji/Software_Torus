@@ -2127,7 +2127,7 @@
       <div class="report-preview-body">
         <!-- Clinic Header -->
         <div
-          style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 20px;">
+          style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <img src="logo.png" alt="TORUS Logo" style="width: 45px; height: auto;" />
             <div>
@@ -2139,17 +2139,17 @@
           </div>
           <div style="text-align: right; font-size: 12px; color: #64748b;">
             <div id="previewReportId" style="font-weight: 600; color: #0f172a; font-size: 14px;"></div>
-            <div id="previewReportDate" style="font-size: 11px; color: #64748b; margin-top: 2px; display: none;"></div>
+            <div id="previewReportDate" style="display: none;"></div>
           </div>
         </div>
 
         <!-- Patient & Exam Details -->
         <div
-          style="background: #f8fafc; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+          style="background: #f8fafc; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
           <h3
-            style="margin-top: 0; margin-bottom: 14px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">
+            style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">
             Patient & Case Details</h3>
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 24px; font-size: 13px;">
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; font-size: 13px;">
             <div style="display: flex; align-items: baseline; gap: 6px;"><strong
                 style="color: #64748b; min-width: 140px; flex-shrink: 0; font-weight: 600;">Patient Name:</strong> <span
                 id="previewPatientName" style="color: #0f172a; font-weight: 500;"></span></div>
@@ -4244,15 +4244,10 @@
         } catch (_) { }
       }
 
-      // Display signing date and time directly below Report ID (strictly only date/time, no doctor name or signature)
+      // Date and time removed from below Report ID as requested
       if (previewReportDate) {
-        if (formattedSignDateTime) {
-          previewReportDate.textContent = formattedSignDateTime;
-          previewReportDate.style.display = 'block';
-        } else {
-          previewReportDate.textContent = '';
-          previewReportDate.style.display = 'none';
-        }
+        previewReportDate.textContent = '';
+        previewReportDate.style.display = 'none';
       }
 
       if (previewPatientName) previewPatientName.textContent = reportData.patientInfo?.patientName || '--';
@@ -4539,18 +4534,12 @@
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
       doc.text(`Report ID: ${reportData.reportId}`, width - margin, y, { align: 'right' });
-      if (formattedSignDateTime) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text(formattedSignDateTime, width - margin, y + 12, { align: 'right' });
-      }
 
       // Header line
       doc.setDrawColor(15, 23, 42);
       doc.setLineWidth(2);
-      doc.line(margin, y + 24, width - margin, y + 24);
-      y += 42;
+      doc.line(margin, y + 16, width - margin, y + 16);
+      y += 28;
 
       // Section: Patient & Case Details Box
       doc.setFillColor(248, 250, 252); // #f8fafc
