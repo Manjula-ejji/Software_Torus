@@ -8,4 +8,5 @@ __pycache__/
 .vscode/
 scratch/
 .backup_pre_fix/
+.backup_uncommitted_work/
 recovered_*.css

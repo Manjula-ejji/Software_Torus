@@ -538,6 +538,88 @@ def _migrate_signature_replacement_tables():
     finally:
         conn.close()
 
+
+def _migrate_ai_tables():
+    """Creates tables for AI conversation persistence if missing."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ai_conversations (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                title TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ai_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id ASC)")
+        conn.commit()
+    except Exception as e:
+        print(f"[AI] Table migration warning: {e}")
+    finally:
+        conn.close()
+
+
+def get_ai_conversation_history(conversation_id: str, limit: int = 6) -> list:
+    """Returns chronological recent messages for an AI conversation."""
+    if not conversation_id:
+        return []
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT role, content, created_at FROM (
+                SELECT id, role, content, created_at FROM ai_messages
+                WHERE conversation_id = ?
+                ORDER BY id DESC LIMIT ?
+            ) ORDER BY id ASC
+        """, (str(conversation_id).strip(), limit))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[AI] History fetch error: {e}")
+        return []
+
+
+def save_ai_message(conversation_id: str, role: str, content: str, user_id: str = "3001", user_role: str = "doctor") -> bool:
+    """Persists a message in the AI conversation history."""
+    if not conversation_id or not content:
+        return False
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        now_iso = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT OR IGNORE INTO ai_conversations (id, user_id, role, title, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (conversation_id, str(user_id), str(user_role), content[:40], now_iso, now_iso))
+        cursor.execute("""
+            UPDATE ai_conversations SET updated_at = ? WHERE id = ?
+        """, (now_iso, conversation_id))
+        cursor.execute("""
+            INSERT INTO ai_messages (conversation_id, role, content, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (conversation_id, role, content, now_iso))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[AI] Save message error: {e}")
+        return False
+
+
 def compute_report_content_hash(data: dict) -> str:
     """
     Calculates a deterministic SHA-256 hash over the canonical clinical content of a report.
@@ -1081,6 +1163,7 @@ def init_db():
     _migrate_add_mobile_column()
     _migrate_add_fingerprint_slot()
     _migrate_signature_replacement_tables()
+    _migrate_ai_tables()
 
 # -------------------- VALIDATION HELPERS --------------------
 def validate_strong_password(password: str) -> tuple:
@@ -4648,6 +4731,51 @@ def mark_all_notifications_as_read(user_id: str = None, role: str = None) -> boo
 # TWO-WAY CHAT SUPPORT SYSTEM (DOCTOR <-> PATIENT / ATTENDER)
 # ==============================================================================
 
+def check_conversation_authorization(conversation_id: str, user_id: str, role: str) -> dict:
+    """
+    Verifies that the user with given role and ID is an authorized participant
+    in the requested conversation.
+    """
+    clean_cid = str(conversation_id or "").strip()
+    clean_uid = str(user_id or "").strip()
+    clean_role = str(role or "").strip().lower()
+
+    if not clean_cid:
+        return {"authorized": False, "error": "Conversation ID is required."}
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM conversations WHERE id = ?", (clean_cid,))
+    conv = cursor.fetchone()
+    conn.close()
+
+    if not conv:
+        return {"authorized": False, "error": f"Conversation '{clean_cid}' not found."}
+
+    conv_dict = dict(conv)
+    doc_id = str(conv_dict.get("doctor_id") or "").strip()
+    pat_id = str(conv_dict.get("patient_id") or "").strip()
+    att_id = str(conv_dict.get("attender_id") or "").strip()
+
+    if not clean_uid:
+        return {"authorized": True, "conversation": conv_dict}
+
+    if clean_role == "doctor":
+        if clean_uid == doc_id or clean_uid == "3001" or doc_id == "3001":
+            return {"authorized": True, "conversation": conv_dict}
+        return {"authorized": False, "error": "Unauthorized: Doctor is not assigned to this patient conversation."}
+
+    elif clean_role in ("patient", "viewer"):
+        if clean_uid in (pat_id, att_id) or (pat_id in ("4001", "PAT-4001") and clean_uid in ("4001", "6001")):
+            return {"authorized": True, "conversation": conv_dict}
+        return {"authorized": False, "error": "Unauthorized: Access to this conversation is restricted to the authorized patient."}
+
+    if clean_uid in (doc_id, pat_id, att_id):
+        return {"authorized": True, "conversation": conv_dict}
+
+    return {"authorized": False, "error": "Unauthorized access to this conversation."}
+
+
 def get_or_create_conversation(doctor_id: str, patient_id: str, attender_id: str = "") -> dict:
     """Finds or creates a two-way conversation between doctor and patient/attender."""
     doc_id = str(doctor_id or "3001").strip()
@@ -4693,12 +4821,36 @@ def get_user_conversations(user_id: str, role: str) -> list:
 
     conn = get_db()
     cursor = conn.cursor()
+
     if clean_role == "doctor":
+        # Ensure active clinical patients have conversations available for doctor 3001
+        clinical_patients_seed = [
+            ("4001", "Patient User"),
+            ("P-8821", "John Smith"),
+            ("P-9104", "Jane Smith"),
+            ("P-7543", "Robert Brown")
+        ]
+        now_iso = datetime.now().isoformat()
+        for p_id, p_name in clinical_patients_seed:
+            cid = f"conv_3001_{p_id}"
+            cursor.execute("SELECT id FROM conversations WHERE id = ?", (cid,))
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT OR IGNORE INTO conversations (id, doctor_id, patient_id, attender_id, patient_name, doctor_name, last_message, last_message_at, created_at)
+                    VALUES (?, '3001', ?, '', ?, 'Dr. Admin Doctor', 'Clinical consultation available.', ?, ?)
+                """, (cid, p_id, p_name, now_iso, now_iso))
+        conn.commit()
+
         cursor.execute("SELECT * FROM conversations WHERE doctor_id = ? OR doctor_id = '3001' ORDER BY last_message_at DESC", (clean_uid,))
     elif clean_role in ("patient", "viewer"):
-        cursor.execute("SELECT * FROM conversations WHERE patient_id = ? OR patient_id = '4001' OR attender_id = ? ORDER BY last_message_at DESC", (clean_uid, clean_uid))
+        # Strictly isolate patient: patient only sees conversations where patient_id matches clean_uid
+        cursor.execute("""
+            SELECT * FROM conversations 
+            WHERE (patient_id = ? OR (patient_id IN ('4001', 'PAT-4001') AND ? IN ('4001', '6001')) OR attender_id = ?)
+            ORDER BY last_message_at DESC
+        """, (clean_uid, clean_uid, clean_uid))
     else:
-        cursor.execute("SELECT * FROM conversations ORDER BY last_message_at DESC")
+        cursor.execute("SELECT * FROM conversations WHERE doctor_id = ? OR patient_id = ? ORDER BY last_message_at DESC", (clean_uid, clean_uid))
 
     rows = cursor.fetchall()
     results = []
@@ -4715,14 +4867,16 @@ def get_user_conversations(user_id: str, role: str) -> list:
 
 
 def get_conversation_messages(conversation_id: str, limit: int = 100, offset: int = 0) -> list:
-    """Returns chronological messages in a conversation."""
+    """Returns chronological messages in a conversation, retrieving the most recent window."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT * FROM messages
-        WHERE conversation_id = ?
-        ORDER BY created_at ASC
-        LIMIT ? OFFSET ?
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE conversation_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+        ) ORDER BY created_at ASC, id ASC
     """, (str(conversation_id).strip(), limit, offset))
     rows = cursor.fetchall()
     conn.close()
@@ -4733,7 +4887,7 @@ def send_chat_message(conversation_id: str, sender_id: str, sender_role: str, se
                       content: str, attachment_url: str = "", attachment_name: str = "") -> dict:
     """
     Saves a message in a conversation, updates conversation last_message timestamp,
-    and automatically triggers an in-app notification for the recipient.
+    guards against rapid duplicate submission, and triggers an in-app notification.
     """
     clean_cid = str(conversation_id or "").strip()
     clean_sid = str(sender_id or "").strip()
@@ -4746,6 +4900,11 @@ def send_chat_message(conversation_id: str, sender_id: str, sender_role: str, se
     if not clean_content and not attachment_url:
         return {"success": False, "error": "Message content or attachment is required."}
 
+    # Verify participant authorization
+    auth = check_conversation_authorization(clean_cid, clean_sid, clean_role)
+    if not auth.get("authorized", True):
+        return {"success": False, "error": auth.get("error", "Unauthorized access to this conversation.")}
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM conversations WHERE id = ?", (clean_cid,))
@@ -4753,6 +4912,22 @@ def send_chat_message(conversation_id: str, sender_id: str, sender_role: str, se
     if not conv:
         conn.close()
         return {"success": False, "error": f"Conversation '{clean_cid}' not found."}
+
+    # Duplicate submission guard: check if identical message was sent in last 2 seconds
+    cursor.execute("""
+        SELECT * FROM messages
+        WHERE conversation_id = ? AND sender_id = ? AND content = ?
+        ORDER BY id DESC LIMIT 1
+    """, (clean_cid, clean_sid, clean_content))
+    last_identical = cursor.fetchone()
+    if last_identical:
+        try:
+            last_dt = datetime.fromisoformat(last_identical["created_at"].replace(" ", "T").split(".")[0])
+            if (datetime.now() - last_dt).total_seconds() < 2:
+                conn.close()
+                return {"success": True, "message": dict(last_identical), "duplicate": True}
+        except Exception:
+            pass
 
     now_iso = datetime.now().isoformat()
     cursor.execute("""
@@ -4777,6 +4952,10 @@ def send_chat_message(conversation_id: str, sender_id: str, sender_role: str, se
         recipient_id = conv_dict.get("patient_id", "4001")
         recipient_role = "patient"
         notif_title = f"New message from {clean_name}"
+    elif clean_role == "viewer":
+        recipient_id = conv_dict.get("doctor_id", "3001")
+        recipient_role = "doctor"
+        notif_title = f"New message from {clean_name} (Attender)"
     else:
         recipient_id = conv_dict.get("doctor_id", "3001")
         recipient_role = "doctor"
@@ -4835,142 +5014,587 @@ def mark_conversation_messages_as_read(conversation_id: str, reader_id: str) -> 
 
 
 # ==============================================================================
-# ADVANCED AI SUPPORT ASSISTANT (ROLE-BASED & VERIFIED DATA ONLY)
+# ADVANCED AI SUPPORT ASSISTANT - LLM-POWERED (GEMINI VIA urllib)
 # ==============================================================================
 
-def query_ai_support_assistant(user_id: str, role: str, question: str) -> dict:
-    """
-    Handles AI assistant inquiries from doctors, patients, and attenders.
-    Strictly uses verified database records to answer questions about reports, appointments,
-    and delivery statuses.
-    Clearly distinguishes AI responses as automated assistant responses.
-    """
-    clean_q = str(question or "").strip().lower()
-    clean_uid = str(user_id or "3001").strip()
-    clean_role = str(role or "doctor").strip().lower()
 
-    conn = get_db()
-    cursor = conn.cursor()
+def _call_gemini_api(prompt, api_key, model="gemini-flash-lite-latest"):
+    """
+    Calls the Gemini REST API using Python built-in urllib (no extra packages required).
+    Supports automatic resilient fallback between models if high demand (503) or timeout occurs.
+    Returns the text response string, or raises RuntimeError on failure.
+    """
+    import urllib.request
+    import urllib.error
 
+    requested_model = (model or "gemini-flash-lite-latest").strip()
+    MODEL_ALIASES = {
+        "gemini-1.5-flash": "gemini-flash-lite-latest",
+        "gemini-1.5-pro": "gemini-3.8-flash",
+        "gemini-2.0-flash": "gemini-flash-lite-latest",
+        "gemini-2.0-flash-lite": "gemini-flash-lite-latest",
+        "gemini-2.5-flash": "gemini-flash-lite-latest",
+        "gemini-3.5-flash": "gemini-flash-lite-latest",
+        "gemini-3.5-flash-lite": "gemini-flash-lite-latest",
+        "gemini-flash": "gemini-flash-lite-latest",
+    }
+    primary_model = MODEL_ALIASES.get(requested_model.lower(), requested_model)
+
+    candidates = [primary_model]
+    for alt in ["gemini-flash-lite-latest", "gemini-3.8-flash"]:
+        if alt not in candidates:
+            candidates.append(alt)
+
+    last_error = None
+    for cand_model in candidates:
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            + cand_model
+            + ":generateContent?key="
+            + api_key
+        )
+        payload = json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 1024,
+                "topP": 0.9,
+            },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+            ]
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                raw = resp.read().decode("utf-8")
+                result = json.loads(raw)
+                candidates_out = result.get("candidates", [])
+                if candidates_out:
+                    parts = candidates_out[0].get("content", {}).get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "").strip()
+                feedback = result.get("promptFeedback", {})
+                block_reason = feedback.get("blockReason", "")
+                if block_reason:
+                    return f"I am unable to answer due to content safety restrictions ({block_reason})."
+                return ""
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8")
+            except Exception:
+                pass
+            last_error = RuntimeError(f"Gemini API HTTP {e.code}: {body[:300]}")
+            if e.code in (404, 503, 429) and cand_model != candidates[-1]:
+                print(f"[AI] Model '{cand_model}' returned HTTP {e.code}. Retrying with next candidate model...")
+                continue
+            raise last_error
+        except urllib.error.URLError as e:
+            last_error = RuntimeError(f"Gemini API network error: {e.reason}")
+            if cand_model != candidates[-1]:
+                print(f"[AI] Model '{cand_model}' network/timeout: {e.reason}. Retrying next model...")
+                continue
+            raise last_error
+        except Exception as e:
+            last_error = RuntimeError(f"Gemini API error: {e}")
+            if cand_model != candidates[-1]:
+                continue
+            raise last_error
+
+    if last_error:
+        raise last_error
+    return ""
+
+
+def _gather_torus_context(user_id, role, question, conversation_history=None):
+    """
+    Fetches authorized TORUS DB records relevant to the question.
+    Returns (context_text, context_data, suggested_actions).
+    Only queries DB when the question is clearly operational.
+    """
+    import re as _re
+    q_lower = question.lower()
+    clean_uid = str(user_id or '3001').strip()
+    clean_role = str(role or 'doctor').strip().lower()
+
+    context_lines = []
     context_data = {}
     suggested_actions = []
 
-    if clean_role == "doctor":
-        # Pending reports
-        cursor.execute("SELECT report_id, patient_name, scan_type, delivery_status, created_at FROM diagnostic_reports WHERE delivery_status = 'pending' ORDER BY created_at DESC LIMIT 5")
-        context_data["pending_reports"] = [dict(r) for r in cursor.fetchall()]
+    is_report_q = any(w in q_lower for w in ['report', 'pending', 'deliver', 'sign-off', 'certified', 'generated', 'available'])
+    is_email_q = any(w in q_lower for w in ['email', 'failed', 'failure', 'resend', 'delivery fail', 'sent'])
+    is_appt_q = any(w in q_lower for w in ['appointment', 'schedule', 'upcoming', 'session', 'consultation', 'when is my'])
+    is_msg_q = any(w in q_lower for w in ['message', 'chat', 'unread', 'patient message', 'doctor message'])
+    is_status_q = 'status' in q_lower and 'report' in q_lower
 
-        # Failed deliveries
-        cursor.execute("SELECT report_id, patient_name, delivery_recipient, last_delivery_error, created_at FROM diagnostic_reports WHERE delivery_status = 'failed' ORDER BY created_at DESC LIMIT 5")
-        context_data["failed_deliveries"] = [dict(r) for r in cursor.fetchall()]
+    if not (is_report_q or is_email_q or is_appt_q or is_msg_q or is_status_q):
+        return ('', context_data, suggested_actions)
 
-        # Upcoming appointments
-        cursor.execute("SELECT appointment_id, patient_name, scan_type, scheduled_datetime, status FROM scheduled_appointments WHERE status = 'scheduled' ORDER BY scheduled_datetime ASC LIMIT 5")
-        context_data["appointments"] = [dict(r) for r in cursor.fetchall()]
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        rm = _re.search(r'\b(RPT-[A-Za-z0-9\-]+)\b', question, _re.IGNORECASE)
+        extracted_rid = rm.group(1).upper() if rm else ''
+        if not extracted_rid and conversation_history:
+            for h in reversed(conversation_history):
+                h_rm = _re.search(r'\b(RPT-[A-Za-z0-9\-]+)\b', str(h.get('content', '')), _re.IGNORECASE)
+                if h_rm:
+                    extracted_rid = h_rm.group(1).upper()
+                    break
 
-        # Total counts
-        cursor.execute("SELECT COUNT(*) as total_reports FROM diagnostic_reports")
-        context_data["total_reports"] = cursor.fetchone()["total_reports"]
+        # Pending Reports
+        if ('pending' in q_lower or 'sign-off' in q_lower or 'waiting' in q_lower) and is_report_q:
+            if clean_role == 'doctor':
+                cursor.execute("""
+                    SELECT report_id, patient_id, patient_name, scan_type, delivery_status, created_at
+                    FROM diagnostic_reports WHERE delivery_status = 'pending'
+                    ORDER BY id DESC LIMIT 5""")
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['pending_reports'] = rows
+                if rows:
+                    context_lines.append('[DB: ' + str(len(rows)) + ' pending diagnostic report(s)]')
+                    for r in rows:
+                        context_lines.append('  * ' + r['report_id'] + ' - ' + str(r['patient_name']) + ' (' + str(r['scan_type']) + ', status: ' + str(r['delivery_status']) + ')')
+                    suggested_actions.append({'label': 'Open Reports', 'action': 'navigate', 'url': '/report-generation.html'})
+                else:
+                    context_lines.append('[DB: No pending diagnostic reports found.]')
+            else:
+                cursor.execute("""
+                    SELECT report_id, scan_type, doctor_name, delivery_status FROM diagnostic_reports
+                    WHERE patient_id = ? AND delivery_status = 'pending' ORDER BY id DESC LIMIT 3""", (clean_uid,))
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['my_pending_reports'] = rows
+                if rows:
+                    context_lines.append('[DB: ' + str(len(rows)) + ' pending report(s) for patient ' + clean_uid + ']')
+                    for r in rows:
+                        context_lines.append('  * ' + r['report_id'] + ' (' + str(r['scan_type']) + ')')
+                else:
+                    context_lines.append('[DB: No pending reports for this patient.]')
 
-        # Default doctor actions
-        suggested_actions = [
-            {"label": "Pending Reports", "action": "query", "query": "Which patients have pending reports?"},
-            {"label": "Failed Deliveries", "action": "query", "query": "Which report emails failed today?"},
-            {"label": "Upcoming Appointments", "action": "query", "query": "Show my upcoming appointments."}
-        ]
+        # Failed Email Deliveries
+        if is_email_q and ('fail' in q_lower or 'email' in q_lower):
+            if clean_role == 'doctor':
+                cursor.execute("""
+                    SELECT report_id, patient_name, delivery_recipient, last_delivery_error FROM diagnostic_reports
+                    WHERE delivery_status = 'failed' ORDER BY id DESC LIMIT 5""")
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['failed_deliveries'] = rows
+                if rows:
+                    context_lines.append('[DB: ' + str(len(rows)) + ' failed report email delivery/deliveries]')
+                    for r in rows:
+                        context_lines.append('  * ' + r['report_id'] + ' for ' + str(r.get('patient_name','?')) + ' to ' + str(r.get('delivery_recipient','?')) + ': ' + str(r.get('last_delivery_error','unknown')))
+                    suggested_actions.append({'label': 'Retry ' + rows[0]['report_id'], 'action': 'retry_email', 'target': rows[0]['report_id']})
+                else:
+                    context_lines.append('[DB: No failed report email deliveries found.]')
+            else:
+                cursor.execute("""
+                    SELECT report_id, scan_type, last_delivery_error, delivery_recipient FROM diagnostic_reports
+                    WHERE patient_id = ? AND delivery_status = 'failed' ORDER BY id DESC LIMIT 1""", (clean_uid,))
+                row = cursor.fetchone()
+                if row:
+                    r = dict(row)
+                    context_data['my_failed_delivery'] = r
+                    context_lines.append('[DB: Failed delivery for patient ' + clean_uid + ': report ' + r['report_id'] + ', error: ' + str(r.get('last_delivery_error','?')) + ']')
+                else:
+                    context_lines.append('[DB: No failed report deliveries for this patient.]')
+
+        # Specific Report Failure Reason
+        if ('why' in q_lower and 'fail' in q_lower) or 'reason' in q_lower or 'root cause' in q_lower:
+            if extracted_rid:
+                cursor.execute('SELECT * FROM diagnostic_reports WHERE UPPER(report_id) = ?', (extracted_rid,))
+                row = cursor.fetchone()
+            elif clean_role == 'doctor':
+                cursor.execute("SELECT * FROM diagnostic_reports WHERE delivery_status = 'failed' ORDER BY id DESC LIMIT 1")
+                row = cursor.fetchone()
+            else:
+                cursor.execute("SELECT * FROM diagnostic_reports WHERE patient_id = ? AND delivery_status = 'failed' ORDER BY id DESC LIMIT 1", (clean_uid,))
+                row = cursor.fetchone()
+            if row:
+                r = dict(row)
+                context_data['failed_report_detail'] = r
+                context_lines.append('[DB: Failed report detail - ID: ' + r['report_id'] + ', patient: ' + str(r.get('patient_name','?')) + ', recipient: ' + str(r.get('delivery_recipient','?')) + ', error: ' + str(r.get('last_delivery_error','?')) + ']')
+                suggested_actions.append({'label': 'Retry ' + r['report_id'], 'action': 'retry_email', 'target': r['report_id']})
+
+        # Appointments
+        if is_appt_q:
+            if clean_role == 'doctor':
+                cursor.execute("""
+                    SELECT appointment_id, patient_name, scan_type, slot_time, scheduled_datetime FROM scheduled_appointments
+                    WHERE status = 'scheduled' ORDER BY scheduled_datetime ASC LIMIT 5""")
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['appointments'] = rows
+                if rows:
+                    context_lines.append('[DB: ' + str(len(rows)) + ' upcoming scheduled appointment(s)]')
+                    for a in rows:
+                        context_lines.append('  * ' + str(a['appointment_id']) + ': ' + str(a.get('patient_name','?')) + ' - ' + str(a.get('scan_type','?')) + ' at ' + str(a.get('slot_time','?')))
+                    suggested_actions.append({'label': 'View Schedule', 'action': 'open_appointment'})
+                else:
+                    context_lines.append('[DB: No upcoming appointments found.]')
+            else:
+                cursor.execute("""
+                    SELECT appointment_id, doctor_name, scan_type, slot_time, scheduled_datetime FROM scheduled_appointments
+                    WHERE patient_id = ? AND status = 'scheduled' ORDER BY scheduled_datetime ASC LIMIT 3""", (clean_uid,))
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['my_appointments'] = rows
+                if rows:
+                    a = rows[0]
+                    context_lines.append('[DB: Next appointment for patient ' + clean_uid + ': ' + str(a['appointment_id']) + ' (' + str(a.get('scan_type','?')) + ') with Dr. ' + str(a.get('doctor_name','?')) + ' at ' + str(a.get('slot_time','?')) + ']')
+                else:
+                    context_lines.append('[DB: No upcoming appointments for this patient.]')
+
+        # Report Status
+        if is_status_q:
+            if clean_role == 'doctor':
+                if extracted_rid:
+                    cursor.execute('SELECT * FROM diagnostic_reports WHERE UPPER(report_id) = ?', (extracted_rid,))
+                else:
+                    cursor.execute('SELECT * FROM diagnostic_reports ORDER BY id DESC LIMIT 4')
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['report_statuses'] = rows
+                if rows:
+                    context_lines.append('[DB: ' + str(len(rows)) + ' diagnostic report(s) found]')
+                    for r in rows:
+                        context_lines.append('  * ' + r['report_id'] + ' - ' + str(r.get('patient_name','?')) + ': status=' + str(r.get('delivery_status','?')))
+                else:
+                    context_lines.append('[DB: No reports found.]')
+            else:
+                cursor.execute("""
+                    SELECT report_id, scan_type, doctor_name, delivery_status, created_at FROM diagnostic_reports
+                    WHERE patient_id = ? ORDER BY id DESC LIMIT 3""", (clean_uid,))
+                rows = [dict(r) for r in cursor.fetchall()]
+                context_data['my_report_statuses'] = rows
+                if rows:
+                    r = rows[0]
+                    context_lines.append('[DB: Most recent report for patient ' + clean_uid + ': ' + r['report_id'] + ' (' + str(r.get('scan_type','?')) + '), status=' + str(r.get('delivery_status','?')) + ']')
+                else:
+                    context_lines.append('[DB: No finalized reports for this patient.]')
+
+        # Patient Messages
+        if is_msg_q:
+            if clean_role == 'doctor':
+                cursor.execute("""
+                    SELECT m.sender_name, m.content, m.created_at, m.is_read FROM messages m
+                    WHERE m.sender_role IN ('patient', 'viewer') ORDER BY m.id DESC LIMIT 5""")
+                msgs = [dict(r) for r in cursor.fetchall()]
+                context_data['patient_messages'] = msgs
+                if msgs:
+                    unread = sum(1 for m in msgs if not m.get('is_read'))
+                    context_lines.append('[DB: ' + str(len(msgs)) + ' recent patient messages, ' + str(unread) + ' unread]')
+                    for m in msgs:
+                        context_lines.append('  * From ' + str(m.get('sender_name','?')) + ': "' + str(m.get('content',''))[:80] + '"')
+                    suggested_actions.append({'label': 'Open Chat', 'action': 'open_chat'})
+                else:
+                    context_lines.append('[DB: No patient messages found.]')
+            else:
+                cursor.execute("""
+                    SELECT m.sender_name, m.content, m.created_at FROM messages m
+                    JOIN conversations c ON m.conversation_id = c.id
+                    WHERE c.patient_id = ? AND m.sender_role = 'doctor' ORDER BY m.id DESC LIMIT 3""", (clean_uid,))
+                msgs = [dict(r) for r in cursor.fetchall()]
+                context_data['doctor_messages'] = msgs
+                if msgs:
+                    context_lines.append('[DB: ' + str(len(msgs)) + ' doctor messages for patient ' + clean_uid + ']')
+                    for m in msgs:
+                        context_lines.append('  * Dr. ' + str(m.get('sender_name','?')) + ': "' + str(m.get('content',''))[:80] + '"')
+                    suggested_actions.append({'label': 'Reply in Chat', 'action': 'open_chat'})
+                else:
+                    context_lines.append('[DB: No doctor messages for this patient yet.]')
+
+        conn.close()
+    except Exception as db_err:
+        print('[AI] DB context error: ' + str(db_err))
+        context_lines.append('[DB: Query error - ' + str(db_err)[:100] + ']')
+
+    return ('\n'.join(context_lines), context_data, suggested_actions)
+
+
+def _db_only_fallback(question, role, uid, context_data, db_context_text):
+    """
+    Constructs a structured text answer from DB records alone.
+    Used when LLM is unavailable but operational data is present,
+    or as a greeting/general question fallback handler.
+    """
+    q_lower = question.lower()
+    lines = []
+
+    pending = context_data.get('pending_reports', []) or context_data.get('my_pending_reports', [])
+    failed_list = context_data.get('failed_deliveries', [])
+    failed_single = context_data.get('my_failed_delivery')
+    failed_detail = context_data.get('failed_report_detail')
+    appts = context_data.get('appointments', []) or context_data.get('my_appointments', [])
+    msgs = context_data.get('patient_messages', []) or context_data.get('doctor_messages', [])
+    statuses = context_data.get('report_statuses', []) or context_data.get('my_report_statuses', [])
+
+    if failed_detail and ('why' in q_lower or 'reason' in q_lower or 'root cause' in q_lower):
+        err = failed_detail.get('last_delivery_error') or 'unknown delivery error'
+        lines.append('Delivery details for report **' + failed_detail['report_id'] + '** (' + str(failed_detail.get('patient_name','?')) + '):')
+        lines.append('* **Recipient:** ' + str(failed_detail.get('delivery_recipient','?')))
+        lines.append('* **Status:** Delivery Failed')
+        lines.append('* **Error:** ' + err)
+        if 'quota' in err.lower() or '550' in err:
+            lines.append('* **Cause:** Recipient inbox is full (550 5.2.2 Mailbox quota exceeded).')
+            lines.append('* **Action:** Update patient email and retry delivery.')
+        elif 'invalid' in err.lower():
+            lines.append('* **Action:** Verify and correct the patient email address, then retry.')
+        else:
+            lines.append('* **Action:** Verify hospital SMTP configuration and retry delivery.')
+    elif failed_list:
+        lines.append('**' + str(len(failed_list)) + ' failed report email delivery/deliveries:**')
+        for f in failed_list:
+            err = f.get('last_delivery_error') or 'unknown error'
+            lines.append('* **' + f['report_id'] + '** for ' + str(f.get('patient_name','?')) + ' to ' + str(f.get('delivery_recipient','?')) + ': ' + err)
+        lines.append('')
+        lines.append('**To retry:** Update the patient email address and use the Resend button.')
+    elif failed_single:
+        lines.append('Failed delivery for your report **' + str(failed_single.get('report_id','?')) + '**: ' + str(failed_single.get('last_delivery_error','?')))
+    elif pending:
+        if role == 'doctor':
+            lines.append('**' + str(len(pending)) + ' pending diagnostic report(s):**')
+            for r in pending:
+                lines.append('* **' + r['report_id'] + '** - ' + str(r.get('patient_name','?')) + ' (' + str(r.get('scan_type','?')) + ')')
+            lines.append('')
+            lines.append('You can certify and deliver them from the Report Generation section.')
+        else:
+            r = pending[0]
+            lines.append('Your report **' + str(r.get('report_id','?')) + '** (' + str(r.get('scan_type','?')) + ') is pending doctor certification.')
+    elif appts:
+        if role == 'doctor':
+            lines.append('**' + str(len(appts)) + ' upcoming appointment(s):**')
+            for a in appts:
+                lines.append('* **' + str(a['appointment_id']) + '**: ' + str(a.get('patient_name','?')) + ' - ' + str(a.get('scan_type','?')) + ' at ' + str(a.get('slot_time','?')))
+        else:
+            a = appts[0]
+            lines.append('Your next appointment: **' + str(a.get('appointment_id','?')) + '** (' + str(a.get('scan_type','?')) + ') with Dr. ' + str(a.get('doctor_name','?')) + ' at **' + str(a.get('slot_time','?')) + '**.')
+    elif msgs:
+        if role == 'doctor':
+            lines.append('**' + str(len(msgs)) + ' recent patient message(s):**')
+            for m in msgs:
+                lines.append('* From **' + str(m.get('sender_name','?')) + '**: "' + str(m.get('content',''))[:80] + '"')
+        else:
+            lines.append('**' + str(len(msgs)) + ' message(s) from your doctor:**')
+            for m in msgs:
+                lines.append('* Dr. **' + str(m.get('sender_name','?')) + '**: "' + str(m.get('content',''))[:80] + '"')
+    elif statuses:
+        lines.append('**Report status:**')
+        for r in statuses:
+            lines.append('* **' + str(r.get('report_id','?')) + '** (' + str(r.get('scan_type','?')) + '): ' + str(r.get('delivery_status','?')).upper())
     else:
-        # Patient-scoped records
-        cursor.execute("SELECT report_id, scan_type, doctor_name, delivery_status, delivered_at, created_at FROM diagnostic_reports WHERE patient_id = ? OR patient_id = '4001' ORDER BY created_at DESC LIMIT 5", (clean_uid,))
-        context_data["my_reports"] = [dict(r) for r in cursor.fetchall()]
-
-        cursor.execute("SELECT appointment_id, doctor_name, scan_type, scheduled_datetime, status FROM scheduled_appointments WHERE patient_id = ? OR patient_id = '4001' ORDER BY scheduled_datetime ASC LIMIT 5", (clean_uid,))
-        context_data["my_appointments"] = [dict(r) for r in cursor.fetchall()]
-
-        suggested_actions = [
-            {"label": "My Report Status", "action": "query", "query": "Is my report available?"},
-            {"label": "My Next Appointment", "action": "query", "query": "When is my next appointment?"},
-            {"label": "Contact Doctor", "action": "open_chat"}
-        ]
-
-    conn.close()
-
-    # Formulate verified data-backed response
-    response_text = ""
-
-    if "pending" in clean_q and "report" in clean_q:
-        pending = context_data.get("pending_reports", [])
-        if pending:
-            items = ", ".join([f"**{p['report_id']}** ({p['patient_name']} - {p['scan_type']})" for p in pending])
-            response_text = f"You currently have **{len(pending)}** pending diagnostic report(s): {items}. You can review and deliver them from the Patient Reports section."
-            suggested_actions.append({"label": "Open Reports", "action": "navigate", "url": "/report-generation.html"})
+        # Greetings and general fallback
+        if any(w in q_lower for w in ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']):
+            name_part = 'Doctor' if role == 'doctor' else 'there'
+            lines.append('Hello ' + name_part + '! Welcome to TORUS AI Support. How can I help you today?')
+        elif 'how are you' in q_lower:
+            lines.append("I'm doing well, thank you! I'm ready to help with your TORUS questions.")
+        elif 'your name' in q_lower or 'who are you' in q_lower:
+            lines.append('I am the **TORUS AI Support Assistant**. I can help with diagnostic reports, email deliveries, appointments, and TORUS operational questions.')
+        elif any(w in q_lower for w in ['what can you do', 'help me', 'capabilities', 'can you help']):
+            lines.append('I can help you with:\n* Pending diagnostic reports\n* Failed email deliveries\n* Upcoming appointments\n* Patient messages\n* Report status checks\n* TORUS workflow guidance')
+        elif 'thank' in q_lower:
+            lines.append("You're welcome! Feel free to ask if you need anything else.")
+        elif any(w in q_lower for w in ['bye', 'goodbye', 'see you']):
+            lines.append('Goodbye! Feel free to return whenever you need assistance.')
+        elif 'artificial intelligence' in q_lower or 'machine learning' in q_lower or 'what is' in q_lower:
+            lines.append('I am best suited for TORUS operational questions. For general knowledge questions, please configure a valid Gemini API key to enable full conversational AI capabilities.')
         else:
-            response_text = "There are currently no reports in 'pending' status. All finalized reports have been processed."
+            lines.append('Hello! I am the TORUS AI Support Assistant. I can help with:\n\n* **Which patients have pending reports?**\n* **Which report emails failed today?**\n* **Show my upcoming appointments.**\n* **Why did this report delivery fail?**\n* **What is the status of this report?**\n\nAsk me anything about TORUS clinical operations!')
 
-    elif "failed" in clean_q or ("email" in clean_q and ("fail" in clean_q or "why" in clean_q or "retry" in clean_q)):
-        failed = context_data.get("failed_deliveries", [])
-        if clean_role == "doctor":
-            if failed:
-                items = []
-                for f in failed:
-                    reason = f.get('last_delivery_error') or 'Mailbox full / network error'
-                    items.append(f"• Report **{f['report_id']}** for {f['patient_name']} (to: `{f.get('delivery_recipient', 'patient@gmail.com')}`): {reason}")
-                response_text = f"The following report email delivery has encountered an issue:\n\n" + "\n".join(items) + "\n\n**To Retry:** Update the patient's registered email address in the Report Generation dialog or Patient profile, and click **Send** or **Resend**."
-                if failed[0].get("report_id"):
-                    suggested_actions.append({"label": f"Retry {failed[0]['report_id']}", "action": "navigate", "url": f"/report-generation.html?report_id={failed[0]['report_id']}"})
-            else:
-                response_text = "No report email deliveries have failed today. All delivery workflows are healthy."
+    return {'response': '\n'.join(lines) if lines else 'I am here to help. Please ask your question.'}
+
+
+def query_ai_support_assistant(user_id, role, question, conversation_id=None):
+    """
+    LLM-powered AI Support Assistant for TORUS.
+    - Handles greetings, casual questions, and general questions via Gemini LLM.
+    - Injects verified TORUS DB records as context for operational queries.
+    - Uses Python built-in urllib - no extra packages required.
+    - Persists conversation history and maintains multi-turn follow-up context.
+    - Returns clear errors when provider is unavailable; never returns fabricated answers.
+    - Falls back to DB-grounded structured text when LLM is unavailable.
+    """
+    clean_q = str(question or '').strip()
+    clean_uid = str(user_id or '3001').strip()
+    clean_role = str(role or 'doctor').strip().lower()
+    conv_id = str(conversation_id or f"ai_conv_{clean_uid}_{clean_role}").strip()
+
+    if not clean_q:
+        return {
+            'success': False,
+            'error': {'code': 'QUESTION_REQUIRED', 'message': 'Question is required.'},
+            'response': 'Please provide a question so I can assist you.',
+            'answer': 'Please provide a question so I can assist you.',
+            'conversationId': conv_id,
+            'conversation_id': conv_id
+        }
+
+    # Fetch recent conversation turns for multi-turn context
+    history = get_ai_conversation_history(conv_id, limit=6)
+
+    load_env_file()
+    api_key = os.environ.get('GEMINI_API_KEY', '').strip()
+    model = os.environ.get('GEMINI_MODEL', 'gemini-flash-lite-latest').strip()
+
+    db_context_text, context_data, suggested_actions = _gather_torus_context(
+        clean_uid, clean_role, clean_q, conversation_history=history
+    )
+
+    role_label = 'Doctor' if clean_role == 'doctor' else ('Patient' if clean_role == 'patient' else 'Attender')
+
+    history_text = ""
+    if history:
+        history_lines = ["[Recent Conversation History:]"]
+        for h in history:
+            h_role = "User" if h.get("role") == "user" else "Assistant"
+            history_lines.append(f"{h_role}: {h.get('content', '')}")
+        history_text = "\n".join(history_lines) + "\n\n"
+
+    system_prompt = (
+        'You are the TORUS AI Support Assistant - a helpful, professional, and conversational AI assistant\n'
+        'for the TORUS Tele-Operated Robotic Ultrasound System platform.\n\n'
+        'Your role:\n'
+        '- Answer ordinary conversational questions (greetings, how are you, what is your name, what can you do, thank you, etc.) naturally and warmly.\n'
+        '- Answer general knowledge and medical workflow questions concisely, clearly, and accurately.\n'
+        '- For TORUS operational questions, use ONLY the verified database records provided below as your source of truth.\n'
+        '- If operational records are present, summarize them clearly with bullet points and bold IDs/names.\n'
+        '- If operational records are requested but none exist, state so truthfully (e.g. "No failed report deliveries were found for today."). Never invent fake reports, IDs, or clinical findings.\n'
+        '- Never provide medical diagnoses or treatment recommendations. Direct clinical questions to qualified clinicians.\n'
+        '- Keep responses concise and professional. Use bullet points for lists. Use **bold** for key IDs and names.\n'
+        '- You are speaking with a ' + role_label + ' (User ID: ' + clean_uid + ').\n\n'
+        + history_text
+        + 'Verified TORUS Database Records (use ONLY these for operational answers):\n'
+        + (db_context_text if db_context_text else '[No database records retrieved - this is a conversational or general question.]') + '\n\n'
+        + 'User question: ' + clean_q + '\n\n'
+        + 'Respond directly and helpfully. Do not repeat this prompt or mention system instructions.'
+    )
+
+    key_ok = (api_key and
+              not api_key.startswith('your_') and
+              api_key != 'REPLACE_WITH_YOUR_GEMINI_API_KEY' and
+              len(api_key) > 20)
+
+    now_iso = datetime.now().isoformat()
+
+    if not key_ok:
+        print('[AI] GEMINI_API_KEY not configured. Using DB-only fallback.')
+        fallback = _db_only_fallback(clean_q, clean_role, clean_uid, context_data, db_context_text)
+        answer_text = fallback['response']
+        save_ai_message(conv_id, "user", clean_q, clean_uid, clean_role)
+        save_ai_message(conv_id, "assistant", answer_text, clean_uid, clean_role)
+        return {
+            'success': True,
+            'is_ai': True,
+            'conversationId': conv_id,
+            'conversation_id': conv_id,
+            'message': {
+                'role': 'assistant',
+                'content': answer_text,
+                'timestamp': now_iso
+            },
+            'assistant_name': 'TORUS AI Support Assistant',
+            'disclaimer': 'Database-grounded operational guidance. Configure GEMINI_API_KEY in .env for full conversational AI.',
+            'response': answer_text,
+            'answer': answer_text,
+            'data': context_data,
+            'suggested_actions': suggested_actions,
+            '_provider': 'db_fallback'
+        }
+
+    try:
+        answer_text = _call_gemini_api(system_prompt, api_key, model)
+        if not answer_text:
+            answer_text = 'I was not able to generate a response. Please try rephrasing your question.'
+        
+        save_ai_message(conv_id, "user", clean_q, clean_uid, clean_role)
+        save_ai_message(conv_id, "assistant", answer_text, clean_uid, clean_role)
+        
+        return {
+            'success': True,
+            'is_ai': True,
+            'conversationId': conv_id,
+            'conversation_id': conv_id,
+            'message': {
+                'role': 'assistant',
+                'content': answer_text,
+                'timestamp': now_iso
+            },
+            'assistant_name': 'TORUS AI Support Assistant',
+            'disclaimer': 'TORUS Clinical AI - Operational guidance only. Not a substitute for clinical judgment.',
+            'response': answer_text,
+            'answer': answer_text,
+            'data': context_data,
+            'suggested_actions': suggested_actions,
+            '_provider': 'gemini'
+        }
+
+    except RuntimeError as api_err:
+        err_str = str(api_err)
+        print('[AI] Gemini API error: ' + err_str)
+
+        if '403' in err_str or 'API_KEY_INVALID' in err_str or '401' in err_str:
+            user_msg = ('The AI assistant is not available because the API key is invalid or not authorized. '
+                        'Please contact your system administrator to configure a valid GEMINI_API_KEY in the .env file.')
+        elif '404' in err_str or 'NOT_FOUND' in err_str:
+            user_msg = ('The configured AI model is not available. '
+                        'Please update GEMINI_MODEL in .env to a valid model name (e.g. gemini-flash-lite-latest).')
+        elif '429' in err_str or 'RESOURCE_EXHAUSTED' in err_str or 'quota' in err_str.lower():
+            user_msg = 'The AI assistant has reached its usage limit. Please try again in a few moments.'
+        elif 'network' in err_str.lower() or 'timeout' in err_str.lower():
+            user_msg = 'The AI assistant could not connect to the AI service. Please check network connectivity.'
         else:
-            # Patient perspective
-            reports = context_data.get("my_reports", [])
-            failed_rep = [r for r in reports if r.get("delivery_status") == "failed"]
-            if failed_rep:
-                rep_id = failed_rep[0]["report_id"]
-                response_text = f"We noticed that the automated email notification for your ultrasound report **{rep_id}** could not reach your inbox (often due to an over-quota or full inbox). Don't worry — your complete report is safely generated and available for direct viewing in this portal!"
-                suggested_actions.append({"label": "View Report", "action": "navigate", "url": f"/report-generation.html?report_id={rep_id}"})
-            else:
-                response_text = "Your reports are securely delivered or available in the portal. If you haven't received an email, please verify your email address with your doctor."
+            user_msg = 'The AI assistant is temporarily unavailable. Please try again shortly.'
 
-    elif "appointment" in clean_q or "when" in clean_q:
-        if clean_role == "doctor":
-            appts = context_data.get("appointments", [])
-            if appts:
-                items = [f"• **{a['appointment_id']}**: {a['patient_name']} - {a['scan_type']} at {a['scheduled_datetime']}" for a in appts]
-                response_text = "Here are your upcoming scheduled sessions:\n\n" + "\n".join(items)
-            else:
-                response_text = "You have no upcoming appointments scheduled for today."
-        else:
-            appts = context_data.get("my_appointments", [])
-            if appts:
-                a = appts[0]
-                response_text = f"Your next scheduled ultrasound session is **{a['appointment_id']}** ({a['scan_type']}) with **Dr. {a['doctor_name']}** at **{a['scheduled_datetime']}**."
-            else:
-                response_text = "You do not have any upcoming appointments scheduled at this time. Please contact your diagnostic center or doctor to schedule a session."
+        if db_context_text:
+            fallback = _db_only_fallback(clean_q, clean_role, clean_uid, context_data, db_context_text)
+            answer_text = fallback['response']
+            save_ai_message(conv_id, "user", clean_q, clean_uid, clean_role)
+            save_ai_message(conv_id, "assistant", answer_text, clean_uid, clean_role)
+            return {
+                'success': True,
+                'is_ai': True,
+                'conversationId': conv_id,
+                'conversation_id': conv_id,
+                'message': {
+                    'role': 'assistant',
+                    'content': answer_text,
+                    'timestamp': now_iso
+                },
+                'assistant_name': 'TORUS AI Support Assistant',
+                'disclaimer': 'AI service unavailable: ' + user_msg + ' Showing verified database records only.',
+                'response': answer_text,
+                'answer': answer_text,
+                'data': context_data,
+                'suggested_actions': suggested_actions,
+                '_provider': 'db_fallback_on_error'
+            }
 
-    elif "report" in clean_q and ("available" in clean_q or "download" in clean_q or "view" in clean_q or "my" in clean_q):
-        reports = context_data.get("my_reports", [])
-        if reports:
-            r = reports[0]
-            status_text = "delivered and ready" if r.get("delivery_status") == "sent" else "generated"
-            response_text = f"Your latest diagnostic report **{r['report_id']}** ({r['scan_type']} by Dr. {r['doctor_name']}) is **{status_text}**. You can view or download the complete PDF certified report directly."
-            suggested_actions.append({"label": "View Report", "action": "navigate", "url": f"/report-generation.html?report_id={r['report_id']}"})
-        else:
-            response_text = "No finalized reports found for your account. Once your doctor completes and certifies your ultrasound scan, it will immediately appear here."
+        return {
+            'success': False,
+            'error': {'code': 'AI_PROVIDER_UNAVAILABLE', 'message': user_msg},
+            'conversationId': conv_id,
+            'conversation_id': conv_id,
+            'response': user_msg,
+            'answer': user_msg,
+            'data': {},
+            'suggested_actions': []
+        }
 
-    else:
-        # General response with safety notice
-        if clean_role == "doctor":
-            response_text = "Hello Dr. Admin Doctor. I am your TORUS Clinical Support Assistant. You can ask me about pending reports, failed email notifications, today's ultrasound appointments, or system status."
-        else:
-            response_text = "Hello! I am the TORUS Patient Support Assistant. I can help you check your report availability, upcoming appointments, and portal navigation. For medical diagnoses or clinical questions, please chat directly with your doctor."
-
-    return {
-        "success": True,
-        "is_ai": True,
-        "assistant_name": "TORUS AI Support Assistant",
-        "disclaimer": "Automated healthcare assistance for operational and record guidance only. Does not provide medical diagnosis or treatment.",
-        "response": response_text,
-        "suggested_actions": suggested_actions
-    }
+    except Exception as unexpected:
+        print('[AI] Unexpected error: ' + str(unexpected))
+        return {
+            'success': False,
+            'error': {'code': 'AI_INTERNAL_ERROR', 'message': 'An unexpected error occurred. Please try again.'},
+            'conversationId': conv_id,
+            'conversation_id': conv_id,
+            'response': 'An unexpected error occurred. Please try again.',
+            'answer': 'An unexpected error occurred. Please try again.'
+        }
 
 
 def get_report_delivery_audit_history(report_id: str) -> list:

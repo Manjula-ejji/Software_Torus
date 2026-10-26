@@ -19,36 +19,53 @@
 
   // Helper: Get authenticated user details
   function getTorusUser() {
-    const isDoc = (window.currentAuthenticatedUser && window.currentAuthenticatedUser.role === "doctor") ||
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRole = (urlParams.get("role") || "").toLowerCase();
+
+    const isDoc = urlRole === "doctor" ||
+      (window.currentAuthenticatedUser && window.currentAuthenticatedUser.role === "doctor") ||
       (window.currentAuthenticatedRole === "doctor") ||
       (document.getElementById("role") && document.getElementById("role").value === "doctor") ||
       (document.getElementById("docDashAvatarChip") && document.getElementById("docDashAvatarChip").textContent.trim() === "AD");
 
+    const isViewer = urlRole === "viewer" ||
+      (window.currentAuthenticatedUser && window.currentAuthenticatedUser.role === "viewer") ||
+      (window.currentAuthenticatedRole === "viewer");
+
     if (window.currentAuthenticatedUser && window.currentAuthenticatedUser.uid) {
       return {
         uid: String(window.currentAuthenticatedUser.uid),
-        role: window.currentAuthenticatedUser.role || (isDoc ? "doctor" : "patient"),
-        name: window.currentAuthenticatedUser.name || (isDoc ? "Admin Doctor" : "Patient User"),
-        email: window.currentAuthenticatedUser.email || (isDoc ? "admin@gmail.com" : "patient@gmail.com")
+        role: window.currentAuthenticatedUser.role || (isDoc ? "doctor" : (isViewer ? "viewer" : "patient")),
+        name: window.currentAuthenticatedUser.name || (isDoc ? "Admin Doctor" : (isViewer ? "Attender User" : "Patient User")),
+        email: window.currentAuthenticatedUser.email || (isDoc ? "admin@gmail.com" : (isViewer ? "user@gmail.com" : "patient@gmail.com"))
       };
     }
 
     try {
       const storedDoc = sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor");
       const storedPat = sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient");
+      const storedViewer = sessionStorage.getItem("authenticated_viewer") || localStorage.getItem("authenticated_viewer");
       if (isDoc && storedDoc) {
         const d = JSON.parse(storedDoc);
         return { uid: String(d.uid || "3001"), role: "doctor", name: d.name || "Admin Doctor", email: d.email || "admin@gmail.com" };
       }
-      if (!isDoc && storedPat) {
+      if (isViewer && storedViewer) {
+        const v = JSON.parse(storedViewer);
+        return { uid: String(v.uid || "6001"), role: "viewer", name: v.name || "Attender User", email: v.email || "user@gmail.com" };
+      }
+      if (!isDoc && !isViewer && storedPat) {
         const p = JSON.parse(storedPat);
         return { uid: String(p.uid || "4001"), role: "patient", name: p.name || "Patient User", email: p.email || "patient@gmail.com" };
       }
     } catch (_) { }
 
-    return isDoc
-      ? { uid: "3001", role: "doctor", name: "Admin Doctor", email: "admin@gmail.com" }
-      : { uid: "4001", role: "patient", name: "Patient User", email: "patient@gmail.com" };
+    if (isDoc) {
+      return { uid: "3001", role: "doctor", name: "Admin Doctor", email: "admin@gmail.com" };
+    }
+    if (isViewer) {
+      return { uid: "6001", role: "viewer", name: "Attender User", email: "user@gmail.com" };
+    }
+    return { uid: "4001", role: "patient", name: "Patient User", email: "patient@gmail.com" };
   }
 
   // Format relative timestamp
@@ -315,13 +332,26 @@
     };
   }
 
-  // Filter and deduplicate notifications to prevent duplicate failure events (Requirement 5)
+  // Filter and deduplicate notifications, curating a balanced, realistic sample set (Doctor: 5-6, Patient: 4-5)
   function filterAndDeduplicateNotifications(rawList) {
     if (!rawList || !rawList.length) return [];
+    const user = getTorusUser();
+    const isDoctor = user.role === "doctor";
+
+    // 1. Patient Portal security: strictly filter out any notification for other patients
+    let list = rawList;
+    if (!isDoctor) {
+      const myUid = String(user.uid || "4001").trim();
+      list = rawList.filter(n => {
+        const uId = String(n.user_id || "").trim();
+        const rRole = String(n.role || "").trim().toLowerCase();
+        return uId === myUid || uId === "all" || (uId === "" && rRole === "patient") || rRole === "all";
+      });
+    }
 
     // Identify reports that have confirmed delivery
     const deliveredReports = new Set();
-    rawList.forEach(n => {
+    list.forEach(n => {
       const type = (n.type || "").toLowerCase();
       const rId = n.reference_id || "";
       if ((type === "report_delivered" || (n.title && n.title.toLowerCase().includes("report delivered"))) && rId) {
@@ -333,24 +363,23 @@
     const seenFailureReports = new Set();
     const deduplicated = [];
 
-    for (const notif of rawList) {
+    for (const notif of list) {
       const type = (notif.type || "").toLowerCase();
       const rId = notif.reference_id || "";
       const eventKey = notif.event_key || "";
+      const normTitle = (notif.title || "").trim().toLowerCase();
 
-      // 1. Deduplicate by explicit event_key
+      // Deduplicate by explicit event_key
       if (eventKey) {
         if (seenEventKeys.has(eventKey)) continue;
         seenEventKeys.add(eventKey);
       }
 
-      // 2. Prevent duplicate notifications for the same underlying failure event
-      if (type === "email_failure" || type === "email_failed" || (notif.title && notif.title.toLowerCase().includes("delivery failed"))) {
-        // If delivery was confirmed successful for this report, suppress obsolete failure card
+      // Suppress obsolete delivery failures if delivery was confirmed successful
+      if (type === "email_failure" || type === "email_failed" || normTitle.includes("delivery failed")) {
         if (rId && deliveredReports.has(rId)) {
           continue;
         }
-        // If multiple failure records exist for the same report ID, keep only the latest
         if (rId) {
           if (seenFailureReports.has(rId)) continue;
           seenFailureReports.add(rId);
@@ -360,7 +389,105 @@
       deduplicated.push(notif);
     }
 
-    return deduplicated;
+    // Categorize into semantic buckets to curate a realistic clinical mix:
+    const buckets = {
+      chat: [],
+      delivery_issue: [],
+      delivered: [],
+      generated: [],
+      appointment: [],
+      system: [],
+      other: []
+    };
+
+    deduplicated.forEach(n => {
+      const t = (n.type || "").toLowerCase();
+      const title = (n.title || "").toLowerCase();
+      if (t === "chat" || t === "chat_message" || title.includes("message from")) {
+        buckets.chat.push(n);
+      } else if (t === "email_failure" || t === "email_failed" || title.includes("delivery failed") || title.includes("delivery issue") || title.includes("delivery notice")) {
+        buckets.delivery_issue.push(n);
+      } else if (t === "report_delivered" || title.includes("report delivered")) {
+        buckets.delivered.push(n);
+      } else if (t === "report_generated" || t === "report_available" || title.includes("report generated") || title.includes("report available")) {
+        buckets.generated.push(n);
+      } else if (t === "appointment" || title.includes("appointment") || title.includes("consultation") || title.includes("session")) {
+        buckets.appointment.push(n);
+      } else if (t === "system" || title.includes("system") || title.includes("welcome")) {
+        buckets.system.push(n);
+      } else {
+        buckets.other.push(n);
+      }
+    });
+
+    // Sort items within each bucket: unread first, then newest
+    const sortBucket = (arr) => arr.sort((a, b) => {
+      if (a.is_read !== b.is_read) return a.is_read - b.is_read;
+      return (b.id || 0) - (a.id || 0);
+    });
+    Object.keys(buckets).forEach(k => sortBucket(buckets[k]));
+
+    const curated = [];
+    const addedIds = new Set();
+    function addNotification(n) {
+      if (!n || addedIds.has(n.id)) return;
+      addedIds.add(n.id);
+      curated.push(n);
+    }
+
+    if (isDoctor) {
+      // Preferred sample mix for Doctor Portal: approximately 5-6 cards (strictly 4-8)
+      // 1. Patient Message
+      if (buckets.chat.length) addNotification(buckets.chat[0]);
+      // 2. Report Delivery Failed / Issue
+      if (buckets.delivery_issue.length) addNotification(buckets.delivery_issue[0]);
+      // 3. Report Delivered Confirmation
+      if (buckets.delivered.length) addNotification(buckets.delivered[0]);
+      // 4. Diagnostic Report Generated
+      if (buckets.generated.length) addNotification(buckets.generated[0]);
+      // 5. Scheduled Consultation / Appointment
+      if (buckets.appointment.length) addNotification(buckets.appointment[0]);
+      // 6. System Calibration / Operational Notice
+      if (buckets.system.length) addNotification(buckets.system[0]);
+
+      // If fewer than 5, backfill from remaining deduplicated list up to 6
+      if (curated.length < 5) {
+        for (const n of deduplicated) {
+          if (curated.length >= 6) break;
+          addNotification(n);
+        }
+      }
+    } else {
+      // Preferred sample mix for Patient Portal: approximately 4-5 cards (strictly 3-7)
+      // 1. Message from Attending Doctor
+      if (buckets.chat.length) addNotification(buckets.chat[0]);
+      // 2. Diagnostic Report Available
+      if (buckets.generated.length) addNotification(buckets.generated[0]);
+      // 3. Report Delivery Status Notice / Confirmation
+      if (buckets.delivered.length) addNotification(buckets.delivered[0]);
+      else if (buckets.delivery_issue.length) addNotification(buckets.delivery_issue[0]);
+      // 4. Upcoming Consultation Reminder
+      if (buckets.appointment.length) addNotification(buckets.appointment[0]);
+      // 5. Welcome / Care Team Notice
+      if (buckets.system.length) addNotification(buckets.system[0]);
+
+      // If fewer than 4, backfill from remaining patient items up to 5
+      if (curated.length < 4) {
+        for (const n of deduplicated) {
+          if (curated.length >= 5) break;
+          addNotification(n);
+        }
+      }
+    }
+
+    // Sort curated list: unread first, then newest
+    curated.sort((a, b) => {
+      if (a.is_read !== b.is_read) return a.is_read - b.is_read;
+      return (b.id || 0) - (a.id || 0);
+    });
+
+    const maxLimit = isDoctor ? 8 : 7;
+    return curated.slice(0, maxLimit);
   }
 
   // =========================================================================
@@ -755,17 +882,30 @@
     }
 
     const chatInput = document.getElementById("torusChatMessageInput");
+    const chatSendBtn = document.getElementById("torusChatSendBtn");
     if (chatInput) {
+      chatInput.addEventListener("input", function () {
+        if (chatSendBtn) {
+          chatSendBtn.disabled = !this.value.trim() || isSendingMessage;
+        }
+      });
       chatInput.addEventListener("keydown", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          sendChatMessage();
+          if (this.value.trim() && !isSendingMessage) {
+            sendChatMessage();
+          }
         }
       });
     }
 
-    // Initial check for unread chat messages
+    // Initial check for unread chat messages & periodic background badge updates
     fetchConversations(false);
+    setInterval(() => {
+      if (!isChatDrawerOpen) {
+        fetchConversations(false);
+      }
+    }, 6000);
   }
 
   // Global toggle function
@@ -791,7 +931,7 @@
         if (isChatDrawerOpen && currentActiveConvId) {
           loadConversationMessages(currentActiveConvId, false);
         }
-      }, 3500);
+      }, 3000);
     } else {
       drawerEl.style.display = "none";
       drawerEl.classList.remove("active");
@@ -866,9 +1006,14 @@
 
     let optionsHtml = "";
     activeConversations.forEach(c => {
-      const otherName = user.role === "doctor"
-        ? (c.patient_name || `Patient ${c.patient_id}`)
-        : (c.doctor_name || `Dr. ${c.doctor_id}`);
+      let otherName = "";
+      if (user.role === "doctor") {
+        otherName = c.patient_name ? `${c.patient_name} (${c.patient_id})` : `Patient ${c.patient_id}`;
+      } else if (user.role === "viewer") {
+        otherName = `${c.doctor_name || "Dr. Admin Doctor"} (${c.patient_name || "Patient"})`;
+      } else {
+        otherName = c.doctor_name || `Dr. ${c.doctor_id}`;
+      }
       optionsHtml += `<option value="${c.id}">${escapeHtml(otherName)}</option>`;
     });
 
@@ -884,26 +1029,51 @@
 
     const currentConv = activeConversations.find(c => c.id === currentActiveConvId);
     if (currentConv && recipientLabel) {
-      recipientLabel.textContent = user.role === "doctor"
-        ? `${currentConv.patient_name || "Patient"} (${currentConv.patient_id})`
-        : (currentConv.doctor_name || "Dr. Admin Doctor");
+      if (user.role === "doctor") {
+        recipientLabel.textContent = `${currentConv.patient_name || "Patient"} (${currentConv.patient_id})`;
+      } else if (user.role === "viewer") {
+        recipientLabel.textContent = `${currentConv.doctor_name || "Dr. Admin Doctor"} (Attender)`;
+      } else {
+        recipientLabel.textContent = currentConv.doctor_name || "Dr. Admin Doctor";
+      }
+    }
+
+    const statusDot = document.getElementById("torusChatStatusDot");
+    if (statusDot) {
+      statusDot.style.display = "inline-block";
+      statusDot.title = "Connected • Secure Clinical Messaging Channel";
     }
   }
 
   function loadConversationMessages(convId, autoScroll = true) {
     if (!convId) return;
     const user = getTorusUser();
-    fetch(`/api/conversations/${encodeURIComponent(convId)}/messages`)
-      .then(res => res.json())
+    const listEl = document.getElementById("torusChatMessagesList");
+
+    fetch(`/api/conversations/${encodeURIComponent(convId)}/messages?user_id=${encodeURIComponent(user.uid)}&role=${encodeURIComponent(user.role)}`)
+      .then(res => {
+        if (res.status === 403) {
+          if (listEl) {
+            listEl.innerHTML = `
+              <div class="torus-chat-feed-empty" style="color: #f87171;">
+                <div class="torus-chat-feed-empty-icon">🔒</div>
+                <div>Unauthorized: You do not have permission to view this patient conversation.</div>
+              </div>
+            `;
+          }
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
         if (data && data.success) {
           renderMessagesList(data.messages || [], autoScroll);
-          if (autoScroll) {
-            // Mark conversation as read on initial open
+          if (isChatDrawerOpen) {
+            // Mark conversation as read whenever chat is actively open
             fetch(`/api/conversations/${encodeURIComponent(convId)}/read`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_id: user.uid })
+              body: JSON.stringify({ reader_id: user.uid, user_id: user.uid })
             }).then(() => {
               const conv = activeConversations.find(c => c.id === convId);
               if (conv) conv.unread_count = 0;
@@ -920,6 +1090,7 @@
     if (!listEl) return;
 
     const user = getTorusUser();
+    const wasNearBottom = (listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight) < 70;
 
     if (messages.length === 0) {
       listEl.innerHTML = `
@@ -933,17 +1104,23 @@
 
     let html = "";
     messages.forEach(msg => {
-      const isMine = String(msg.sender_id) === String(user.uid) || msg.sender_role === user.role;
+      const isMine = String(msg.sender_id) === String(user.uid) || (msg.sender_role === user.role && (!msg.sender_id || !user.uid));
       const timeStr = formatMessageTime(msg.created_at);
+      const isRead = Boolean(msg.is_read);
+      const statusIcon = isRead
+        ? `<span class="torus-message-status status-read" title="Read (✓✓)">✓✓</span>`
+        : `<span class="torus-message-status" title="Delivered (✓✓)">✓✓</span>`;
+
+      const otherDisplayName = msg.sender_name || (msg.sender_role === "doctor" ? "Dr. Admin Doctor" : "Patient User");
 
       html += `
         <div class="torus-message-row ${isMine ? "outgoing" : "incoming"}">
           <div class="torus-message-bubble ${isMine ? "bubble-mine" : "bubble-theirs"}">
-            ${!isMine ? `<div class="torus-message-sender-name">${escapeHtml(msg.sender_name || "Care Team")}</div>` : ""}
+            ${!isMine ? `<div class="torus-message-sender-name">${escapeHtml(otherDisplayName)}</div>` : ""}
             <div class="torus-message-text">${escapeHtml(msg.content)}</div>
             <div class="torus-message-meta">
               <span class="torus-message-time">${timeStr}</span>
-              ${isMine ? `<span class="torus-message-status" title="Sent">✓✓</span>` : ""}
+              ${isMine ? statusIcon : ""}
             </div>
           </div>
         </div>
@@ -952,7 +1129,7 @@
 
     listEl.innerHTML = html;
 
-    if (autoScroll) {
+    if (autoScroll || wasNearBottom) {
       listEl.scrollTop = listEl.scrollHeight;
     }
   }
@@ -971,6 +1148,7 @@
     if (isSendingMessage) return;
     const input = document.getElementById("torusChatMessageInput");
     const sendBtn = document.getElementById("torusChatSendBtn");
+    const listEl = document.getElementById("torusChatMessagesList");
     if (!input || !currentActiveConvId) return;
 
     const text = input.value.trim();
@@ -979,6 +1157,26 @@
     const user = getTorusUser();
     isSendingMessage = true;
     if (sendBtn) sendBtn.disabled = true;
+
+    // Optimistic pending message bubble for immediate user feedback
+    const tempId = "torusMsgSending_" + Date.now();
+    if (listEl) {
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const pendingRow = document.createElement("div");
+      pendingRow.className = "torus-message-row outgoing torus-message-pending";
+      pendingRow.id = tempId;
+      pendingRow.innerHTML = `
+        <div class="torus-message-bubble bubble-mine" style="opacity: 0.88;">
+          <div class="torus-message-text">${escapeHtml(text)}</div>
+          <div class="torus-message-meta">
+            <span class="torus-message-time">${nowTime}</span>
+            <span class="torus-message-status" title="Sending...">⏳</span>
+          </div>
+        </div>
+      `;
+      listEl.appendChild(pendingRow);
+      listEl.scrollTop = listEl.scrollHeight;
+    }
 
     fetch(`/api/conversations/${encodeURIComponent(currentActiveConvId)}/messages`, {
       method: "POST",
@@ -993,18 +1191,25 @@
       .then(res => res.json())
       .then(data => {
         isSendingMessage = false;
-        if (sendBtn) sendBtn.disabled = false;
+        const pendingEl = document.getElementById(tempId);
+        if (pendingEl) pendingEl.remove();
+
         if (data && data.success) {
           input.value = "";
+          if (sendBtn) sendBtn.disabled = true;
           loadConversationMessages(currentActiveConvId, true);
         } else {
+          if (sendBtn) sendBtn.disabled = !input.value.trim();
           alert("Failed to send message: " + (data?.error || "Unknown error"));
         }
       })
       .catch(err => {
         isSendingMessage = false;
-        if (sendBtn) sendBtn.disabled = false;
+        const pendingEl = document.getElementById(tempId);
+        if (pendingEl) pendingEl.remove();
+        if (sendBtn) sendBtn.disabled = !input.value.trim();
         console.error("[Chat] Send error:", err);
+        alert("Failed to send message due to network error. Your unsent message is preserved so you can retry.");
       });
   }
 
@@ -1012,13 +1217,45 @@
   // 3. AI SUPPORT ASSISTANT
   // =========================================================================
 
+  let currentAiConversationId = sessionStorage.getItem("torus_ai_conv_id") || localStorage.getItem("torus_ai_conv_id") || "";
+
+  function getAiConversationId() {
+    if (!currentAiConversationId) {
+      const u = getTorusUser();
+      currentAiConversationId = `ai_conv_${u.uid}_${Date.now()}`;
+      try {
+        sessionStorage.setItem("torus_ai_conv_id", currentAiConversationId);
+      } catch (_) { }
+    }
+    return currentAiConversationId;
+  }
+
   function initTorusAiAssistant() {
     const aiForm = document.getElementById("torusAiForm");
+    const aiInput = document.getElementById("torusAiMessageInput");
+    const aiSendBtn = document.getElementById("torusAiSendBtn");
+
     if (aiForm) {
-      aiForm.addEventListener("submit", function (e) {
+      aiForm.onsubmit = function (e) {
         e.preventDefault();
         sendAiQuery();
-      });
+      };
+    }
+
+    if (aiInput) {
+      aiInput.oninput = function () {
+        if (aiSendBtn) {
+          aiSendBtn.disabled = !this.value.trim() || isAiQuerying;
+        }
+      };
+      aiInput.onkeydown = function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          if (this.value.trim() && !isAiQuerying) {
+            sendAiQuery();
+          }
+        }
+      };
     }
   }
 
@@ -1048,55 +1285,119 @@
       `).join("");
 
       chipsContainer.querySelectorAll(".torus-ai-chip").forEach(btn => {
-        btn.addEventListener("click", function () {
-          const q = this.getAttribute("data-query");
-          const input = document.getElementById("torusAiMessageInput");
-          if (input) input.value = q;
-          sendAiQuery();
-        });
+        btn.onclick = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isAiQuerying) return;
+          const q = this.getAttribute("data-query") || this.textContent;
+          if (q && q.trim()) sendAiQuery(q.trim());
+        };
       });
     }
 
     if (feed && feed.children.length === 0) {
-      feed.innerHTML = `
-        <div class="torus-message-row incoming">
-          <div class="torus-message-bubble bubble-ai">
-            <div class="torus-ai-badge">🤖 TORUS AI Support • Operational Assistant</div>
-            <div class="torus-message-text">
-              Hello ${escapeHtml(user.name)}! I can provide real-time status updates on diagnostic reports, email delivery, and tele-ultrasound appointments from verified clinic records.
-              <br/><br/>
-              How can I assist you today?
-            </div>
-            <div class="torus-ai-disclaimer">Non-clinical guidance. For medical questions, consult your attending doctor.</div>
-          </div>
-        </div>
-      `;
+      const convId = getAiConversationId();
+      // Try to restore previous session history
+      fetch(`/api/ai-assistant/history?conversationId=${encodeURIComponent(convId)}&user_id=${encodeURIComponent(user.uid)}&role=${encodeURIComponent(user.role)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+            feed.innerHTML = "";
+            data.messages.forEach(m => {
+              if (m.role === "user") {
+                feed.innerHTML += `
+                  <div class="torus-message-row outgoing">
+                    <div class="torus-message-bubble bubble-mine">
+                      <div class="torus-message-text">${escapeHtml(m.content)}</div>
+                      <div class="torus-message-meta"><span class="torus-message-time">${formatTimeAgo(m.created_at)}</span></div>
+                    </div>
+                  </div>
+                `;
+              } else {
+                feed.innerHTML += `
+                  <div class="torus-message-row incoming">
+                    <div class="torus-message-bubble bubble-ai">
+                      <div class="torus-ai-badge">🤖 TORUS AI Support Assistant</div>
+                      <div class="torus-message-text">${formatAiResponse(m.content)}</div>
+                      <div class="torus-ai-disclaimer">TORUS Clinical Telemetry • Non-clinical guidance</div>
+                    </div>
+                  </div>
+                `;
+              }
+            });
+            feed.scrollTop = feed.scrollHeight;
+          } else {
+            renderAiDefaultWelcome(feed, user);
+          }
+        })
+        .catch(() => renderAiDefaultWelcome(feed, user));
     }
   }
 
-  function sendAiQuery() {
+  function renderAiDefaultWelcome(feed, user) {
+    if (!feed || feed.children.length > 0) return;
+    feed.innerHTML = `
+      <div class="torus-message-row incoming">
+        <div class="torus-message-bubble bubble-ai">
+          <div class="torus-ai-badge">🤖 TORUS AI Support Assistant</div>
+          <div class="torus-message-text">
+            Hello ${escapeHtml(user.name)}! I'm the TORUS AI Support Assistant.
+            <br/><br/>
+            I can answer conversational questions, explain machine learning and medical workflows, and look up verified diagnostic reports, delivery statuses, and upcoming appointments.
+            <br/><br/>
+            How can I help you today?
+          </div>
+          <div class="torus-ai-disclaimer">Non-clinical guidance. For medical decisions, consult qualified clinicians.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function formatAiResponse(text) {
+    if (!text) return "";
+    let escaped = escapeHtml(text);
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    escaped = escaped.replace(/(^|[^\*])\*([^\*]+)\*([^\*]|$)/g, '$1<em>$2</em>$3');
+    escaped = escaped.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; color: #38bdf8;">$1</code>');
+    escaped = escaped.replace(/\n/g, '<br/>');
+    return escaped;
+  }
+
+  function sendAiQuery(customQuery, isRetry = false) {
     if (isAiQuerying) return;
     const input = document.getElementById("torusAiMessageInput");
     const sendBtn = document.getElementById("torusAiSendBtn");
     const feed = document.getElementById("torusAiMessagesList");
-    if (!input || !feed) return;
+    if (!feed) return;
 
-    const query = input.value.trim();
-    if (!query) return;
+    const rawQuery = typeof customQuery === "string" && customQuery.trim()
+      ? customQuery.trim()
+      : (input ? input.value.trim() : "");
 
+    if (!rawQuery) {
+      if (input) input.focus();
+      return;
+    }
+
+    const query = rawQuery;
     const user = getTorusUser();
+    const convId = getAiConversationId();
+
     isAiQuerying = true;
     if (sendBtn) sendBtn.disabled = true;
+    if (input) input.value = "";
 
-    // Append user query bubble
-    feed.innerHTML += `
-      <div class="torus-message-row outgoing">
-        <div class="torus-message-bubble bubble-mine">
-          <div class="torus-message-text">${escapeHtml(query)}</div>
-          <div class="torus-message-meta"><span class="torus-message-time">Just now</span></div>
+    // Append user query bubble if not a retry
+    if (!isRetry) {
+      feed.innerHTML += `
+        <div class="torus-message-row outgoing">
+          <div class="torus-message-bubble bubble-mine">
+            <div class="torus-message-text">${escapeHtml(query)}</div>
+            <div class="torus-message-meta"><span class="torus-message-time">Just now</span></div>
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
 
     // Append thinking bubble
     const thinkingId = "aiThinking_" + Date.now();
@@ -1104,83 +1405,144 @@
       <div class="torus-message-row incoming" id="${thinkingId}">
         <div class="torus-message-bubble bubble-ai">
           <div class="torus-ai-thinking">
-            <span></span><span></span><span></span> Checking verified records...
+            <span></span><span></span><span></span> Checking TORUS records &amp; thinking...
           </div>
         </div>
       </div>
     `;
 
     feed.scrollTop = feed.scrollHeight;
-    input.value = "";
 
-    fetch("/api/ai/chat", {
+    const payload = {
+      question: query,
+      query: query,
+      message: query,
+      conversationId: convId,
+      conversation_id: convId,
+      user_id: user.uid,
+      role: user.role
+    };
+
+    fetch("/api/ai-assistant/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: query,
-        user_id: user.uid,
-        role: user.role
-      })
+      body: JSON.stringify(payload)
     })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok && res.status === 404) {
+          // Fallback to legacy endpoint if /api/ai-assistant/chat not mapped
+          return fetch("/api/ai/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          }).then(r => r.json());
+        }
+        return res.json();
+      })
       .then(data => {
         isAiQuerying = false;
-        if (sendBtn) sendBtn.disabled = false;
+        if (sendBtn) sendBtn.disabled = !(input && input.value.trim());
         const thinkingEl = document.getElementById(thinkingId);
         if (thinkingEl) thinkingEl.remove();
 
         if (data && data.success) {
+          if (data.conversationId) {
+            currentAiConversationId = data.conversationId;
+            try { sessionStorage.setItem("torus_ai_conv_id", data.conversationId); } catch (_) { }
+          }
+
+          const answerText = data.answer || data.response || (data.message && data.message.content) || "";
           const actionsHtml = (data.suggested_actions || []).map(act => `
-            <button type="button" class="torus-ai-action-btn" data-action="${act.action}" data-target="${act.target}">
+            <button type="button" class="torus-ai-action-btn" data-action="${escapeHtml(act.action || '')}" data-target="${escapeHtml(act.target || act.url || act.query || '')}">
               ${escapeHtml(act.label)} &rarr;
             </button>
           `).join("");
 
+          const badgeTitle = data.is_ai ? "🤖 TORUS AI Support Assistant" : "🤖 TORUS AI Support • Operational Assistant";
+
           feed.innerHTML += `
             <div class="torus-message-row incoming">
               <div class="torus-message-bubble bubble-ai">
-                <div class="torus-ai-badge">🤖 TORUS AI Support • Verified Record Query</div>
-                <div class="torus-message-text">${escapeHtml(data.answer).replace(/\n/g, "<br/>")}</div>
+                <div class="torus-ai-badge">${badgeTitle}</div>
+                <div class="torus-message-text">${formatAiResponse(answerText)}</div>
                 ${actionsHtml ? `<div class="torus-ai-actions-wrap">${actionsHtml}</div>` : ""}
-                <div class="torus-ai-disclaimer">TORUS Clinical Telemetry • Non-clinical guidance</div>
+                <div class="torus-ai-feedback">
+                  <span class="torus-ai-feedback-text">Was this helpful?</span>
+                  <button type="button" class="torus-ai-thumb-btn" onclick="this.classList.toggle('active'); this.parentElement.querySelector('.torus-ai-feedback-text').textContent='Thanks for your feedback!';" title="Helpful">👍</button>
+                  <button type="button" class="torus-ai-thumb-btn" onclick="this.classList.toggle('active'); this.parentElement.querySelector('.torus-ai-feedback-text').textContent='Thanks for your feedback!';" title="Not helpful">👎</button>
+                </div>
+                <div class="torus-ai-disclaimer">${escapeHtml(data.disclaimer || "TORUS Tele-Ultrasound • Non-clinical guidance")}</div>
               </div>
             </div>
           `;
 
           // Bind suggested actions
           feed.querySelectorAll(".torus-ai-action-btn").forEach(actBtn => {
-            actBtn.addEventListener("click", function () {
+            actBtn.onclick = function () {
               const act = this.getAttribute("data-action");
               const target = this.getAttribute("data-target");
               executeAiAction(act, target);
-            });
+            };
           });
 
           feed.scrollTop = feed.scrollHeight;
         } else {
+          const errText = (data?.error && typeof data.error === 'object' ? data.error.message : data?.error) || "The AI assistant is temporarily unavailable.";
           feed.innerHTML += `
             <div class="torus-message-row incoming">
-              <div class="torus-message-bubble bubble-ai">
-                <div class="torus-message-text" style="color: #f87171;">
-                  Unable to retrieve records: ${escapeHtml(data?.error || "Connection error")}
+              <div class="torus-message-bubble bubble-ai" style="border-color: rgba(248, 113, 113, 0.4);">
+                <div class="torus-message-text" style="color: #fca5a5;">
+                  ${escapeHtml(errText)}
                 </div>
+                <button type="button" class="torus-ai-retry-btn" data-query="${escapeHtml(query)}" style="margin-top: 8px; background: rgba(248, 113, 113, 0.15); border: 1px solid rgba(248, 113, 113, 0.4); color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                  ↻ Retry Question
+                </button>
               </div>
             </div>
           `;
+          feed.querySelectorAll(".torus-ai-retry-btn").forEach(retryBtn => {
+            retryBtn.onclick = function () {
+              const q = this.getAttribute("data-query");
+              this.closest(".torus-message-row").remove();
+              sendAiQuery(q, true);
+            };
+          });
           feed.scrollTop = feed.scrollHeight;
         }
       })
       .catch(err => {
         isAiQuerying = false;
-        if (sendBtn) sendBtn.disabled = false;
+        if (sendBtn) sendBtn.disabled = !(input && input.value.trim());
         const thinkingEl = document.getElementById(thinkingId);
         if (thinkingEl) thinkingEl.remove();
         console.error("[AI] Chat error:", err);
+        feed.innerHTML += `
+          <div class="torus-message-row incoming">
+            <div class="torus-message-bubble bubble-ai" style="border-color: rgba(248, 113, 113, 0.4);">
+              <div class="torus-message-text" style="color: #fca5a5;">
+                Unable to connect to the AI Support service. Please check network connection and try again.
+              </div>
+              <button type="button" class="torus-ai-retry-btn" data-query="${escapeHtml(query)}" style="margin-top: 8px; background: rgba(248, 113, 113, 0.15); border: 1px solid rgba(248, 113, 113, 0.4); color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                ↻ Retry Question
+              </button>
+            </div>
+          </div>
+        `;
+        feed.querySelectorAll(".torus-ai-retry-btn").forEach(retryBtn => {
+          retryBtn.onclick = function () {
+            const q = this.getAttribute("data-query");
+            this.closest(".torus-message-row").remove();
+            sendAiQuery(q, true);
+          };
+        });
+        feed.scrollTop = feed.scrollHeight;
       });
   }
 
   function executeAiAction(action, target) {
-    if (action === "view_report") {
+    if (action === "query") {
+      sendAiQuery(target);
+    } else if (action === "view_report") {
       window.location.href = `/report-generation.html?report_id=${encodeURIComponent(target)}&patient_id=4001`;
     } else if (action === "open_chat") {
       const tabChat = document.getElementById("torusTabClinicalChat");
@@ -1195,6 +1557,8 @@
         showToastAlert(`Opening Report ${target} for Delivery Retry...`, "info");
       }
       window.location.href = `/report-generation.html?report_id=${encodeURIComponent(target)}&patient_id=4001`;
+    } else if (action === "navigate") {
+      if (target) window.location.href = target;
     }
   }
 

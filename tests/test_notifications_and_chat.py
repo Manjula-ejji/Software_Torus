@@ -171,7 +171,7 @@ class TestNotificationsAndChat(unittest.TestCase):
         self.assertEqual(res2.status, 200)
 
         # 3. Fetch conversation messages
-        msgs_req = urllib.request.urlopen(f"{BASE_URL}/api/conversations/{conv_id}/messages")
+        msgs_req = urllib.request.urlopen(f"{BASE_URL}/api/conversations/{conv_id}/messages?user_id=3001&role=doctor")
         self.assertEqual(msgs_req.status, 200)
         msgs_data = json.loads(msgs_req.read().decode())
         self.assertGreaterEqual(len(msgs_data.get("messages", [])), 2)
@@ -197,6 +197,90 @@ class TestNotificationsAndChat(unittest.TestCase):
         self.assertEqual(data.get("assistant_name"), "TORUS AI Support Assistant")
         self.assertIn("disclaimer", data)
         self.assertGreaterEqual(len(data.get("suggested_actions", [])), 1)
+
+    def test_06_unauthorized_conversation_access_is_blocked(self):
+        """Verifies that unauthorized users are rejected with 403 Forbidden."""
+        # Unrelated patient 9999 attempts to access doctor-patient conversation conv_3001_4001
+        req = urllib.request.Request(
+            f"{BASE_URL}/api/conversations/conv_3001_4001/messages?user_id=9999&role=patient",
+            headers={"Content-Type": "application/json"}
+        )
+        try:
+            urllib.request.urlopen(req)
+            self.fail("Expected 403 Forbidden for unauthorized user")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 403)
+            data = json.loads(e.read().decode())
+            self.assertFalse(data.get("success"))
+            self.assertIn("Unauthorized", data.get("error"))
+
+    def test_07_duplicate_chat_message_prevention(self):
+        """Verifies duplicate message prevention within short time windows."""
+        conv_id = "conv_3001_4001"
+        unique_text = f"Test unique message {time.time()}"
+        payload = json.dumps({
+            "sender_id": "3001",
+            "sender_role": "doctor",
+            "sender_name": "Dr. Admin Doctor",
+            "content": unique_text
+        }).encode("utf-8")
+
+        req1 = urllib.request.Request(f"{BASE_URL}/api/conversations/{conv_id}/messages", data=payload, headers={"Content-Type": "application/json"})
+        res1 = urllib.request.urlopen(req1)
+        data1 = json.loads(res1.read().decode())
+        self.assertTrue(data1.get("success"))
+        first_id = data1["message"]["id"]
+
+        # Immediate duplicate submission
+        req2 = urllib.request.Request(f"{BASE_URL}/api/conversations/{conv_id}/messages", data=payload, headers={"Content-Type": "application/json"})
+        res2 = urllib.request.urlopen(req2)
+        data2 = json.loads(res2.read().decode())
+        self.assertTrue(data2.get("success"))
+        # Should return existing record with duplicate flag
+        self.assertEqual(data2["message"]["id"], first_id)
+        self.assertTrue(data2.get("duplicate"))
+
+    def test_08_all_ai_assistant_operational_queries(self):
+        """Verifies all 6 required AI operational queries return real, verified answers."""
+        queries = [
+            "Which patients have pending reports?",
+            "Which report emails failed today?",
+            "Show my upcoming appointments.",
+            "Why did this report delivery fail?",
+            "What is the status of this patient's report?",
+            "Show the latest messages from patients."
+        ]
+
+        for q in queries:
+            ai_payload = json.dumps({
+                "user_id": "3001",
+                "role": "doctor",
+                "question": q
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{BASE_URL}/api/ai/chat",
+                data=ai_payload,
+                headers={"Content-Type": "application/json"}
+            )
+            res = urllib.request.urlopen(req)
+            self.assertEqual(res.status, 200, f"Query '{q}' failed with status {res.status}")
+            data = json.loads(res.read().decode())
+            self.assertTrue(data.get("success"), f"Query '{q}' returned success=False")
+            self.assertTrue(bool(data.get("answer")), f"Query '{q}' returned empty answer")
+            self.assertEqual(data.get("answer"), data.get("response"), f"Query '{q}' answer/response mismatch")
+
+        # Also verify quick-prompt format passing 'query' field works
+        quick_payload = json.dumps({
+            "user_id": "4001",
+            "role": "patient",
+            "query": "Is my report available?"
+        }).encode("utf-8")
+        q_req = urllib.request.Request(f"{BASE_URL}/api/ai/chat", data=quick_payload, headers={"Content-Type": "application/json"})
+        q_res = urllib.request.urlopen(q_req)
+        self.assertEqual(q_res.status, 200)
+        q_data = json.loads(q_res.read().decode())
+        self.assertTrue(q_data.get("success"))
+        self.assertTrue(bool(q_data.get("answer")))
 
 if __name__ == "__main__":
     unittest.main()

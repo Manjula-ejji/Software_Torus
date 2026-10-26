@@ -2009,8 +2009,15 @@ def api_conversation_messages(conv_id):
             attachment_url=att_url,
             attachment_name=att_name
         )
-        status_code = 200 if res.get("success") else 400
+        status_code = 200 if res.get("success") else (403 if "unauthorized" in res.get("error", "").lower() else 400)
         return jsonify(res), status_code
+
+    user_id = request.args.get("user_id", "").strip() or request.args.get("uid", "").strip()
+    role = request.args.get("role", "").strip()
+    if user_id:
+        auth_check = database.check_conversation_authorization(conv_id, user_id, role)
+        if not auth_check.get("authorized", True):
+            return jsonify({"success": False, "error": auth_check.get("error", "Unauthorized access to this conversation."), "messages": []}), 403
 
     limit = int(request.args.get("limit", 100))
     offset = int(request.args.get("offset", 0))
@@ -2032,24 +2039,78 @@ def api_mark_conversation_read(conv_id):
 # ==============================================================================
 
 @app.route("/api/ai/chat", methods=["POST", "OPTIONS"])
+@app.route("/api/ai-assistant/chat", methods=["POST", "OPTIONS"])
 def api_ai_chat():
     if request.method == "OPTIONS":
         return Response(status=204)
     data = request.get_json(silent=True) or {}
-    user_id = data.get("user_id", "").strip() or data.get("uid", "").strip()
-    role = data.get("role", "doctor").strip()
-    question = data.get("question", "").strip() or data.get("message", "").strip()
+    user_id = (data.get("user_id", "") or data.get("uid", "") or request.form.get("user_id", "") or request.args.get("user_id", "") or "").strip()
+    role = (data.get("role", "") or request.form.get("role", "") or request.args.get("role", "") or "doctor").strip()
+    conversation_id = (
+        data.get("conversationId", "") or
+        data.get("conversation_id", "") or
+        request.form.get("conversationId", "") or
+        request.args.get("conversationId", "") or
+        ""
+    ).strip()
+
+    # Accept question from multiple field names for backward compatibility
+    question = (
+        data.get("question", "") or
+        data.get("message", "") or
+        data.get("query", "") or
+        data.get("text", "") or
+        data.get("prompt", "") or
+        request.form.get("question", "") or
+        request.args.get("question", "") or
+        ""
+    ).strip()
 
     if not question:
-        return jsonify({"success": False, "error": "Question is required."}), 400
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "QUESTION_REQUIRED",
+                "message": "Question is required."
+            },
+            "answer": "Please provide a question so I can assist you.",
+            "response": "Please provide a question so I can assist you."
+        }), 400
 
-    res = database.query_ai_support_assistant(user_id=user_id, role=role, question=question)
-    return jsonify(res), 200
+    try:
+        res = database.query_ai_support_assistant(user_id=user_id, role=role, question=question, conversation_id=conversation_id)
+        if "response" in res and "answer" not in res:
+            res["answer"] = res["response"]
+        elif "answer" in res and "response" not in res:
+            res["response"] = res["answer"]
+        return jsonify(res), 200
+    except Exception as exc:
+        print(f"[AI Route] Unexpected error: {exc}")
+        return jsonify({
+            "success": False,
+            "error": {"code": "AI_INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again."},
+            "answer": "An unexpected error occurred. Please try again.",
+            "response": "An unexpected error occurred. Please try again."
+        }), 200
 
 
-# ==============================================================================
-# SOCKET.IO HANDSHAKE MOCK (PREVENTS 400 POLLING LOG NOISE)
-# ==============================================================================
+@app.route("/api/ai/history", methods=["GET", "OPTIONS"])
+@app.route("/api/ai-assistant/history", methods=["GET", "OPTIONS"])
+def api_ai_history():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    conv_id = (request.args.get("conversationId", "") or request.args.get("conversation_id", "")).strip()
+    user_id = (request.args.get("user_id", "") or request.args.get("uid", "") or "3001").strip()
+    role = request.args.get("role", "doctor").strip()
+    if not conv_id:
+        conv_id = f"ai_conv_{user_id}_{role}"
+    try:
+        limit = int(request.args.get("limit", 20))
+    except (ValueError, TypeError):
+        limit = 20
+    messages = database.get_ai_conversation_history(conv_id, limit=limit)
+    return jsonify({"success": True, "conversationId": conv_id, "messages": messages}), 200
+
 
 @app.route("/socket.io/", methods=["GET", "POST", "OPTIONS"])
 @app.route("/socket.io/<path:path>", methods=["GET", "POST", "OPTIONS"])
