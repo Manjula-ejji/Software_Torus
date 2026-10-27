@@ -56,10 +56,22 @@ def add_cors_headers(response):
 def api_health():
     return jsonify({"status": "healthy", "service": "TORUS Healthcare Authentication Engine"})
 
+ULTRASOUND_SERVICE_URL = os.environ.get("ULTRASOUND_SERVICE_URL", "http://127.0.0.1:8000")
+
 @app.route("/api/status", methods=["GET", "OPTIONS"])
 def api_system_status():
     if request.method == "OPTIONS":
         return Response(status=204)
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{ULTRASOUND_SERVICE_URL}/api/status", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=0.4) as resp:
+            if resp.status == 200:
+                raw_data = resp.read()
+                data = json.loads(raw_data.decode("utf-8"))
+                return jsonify(data)
+    except Exception:
+        pass
     return jsonify({
         "status": "STOPPED",
         "voltage": 50.0,
@@ -73,6 +85,22 @@ def api_system_status():
 def api_remote_input():
     if request.method == "OPTIONS":
         return Response(status=204)
+    payload = request.get_json(silent=True) or {}
+    try:
+        import urllib.request
+        data_bytes = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{ULTRASOUND_SERVICE_URL}/api/remote-input",
+            data=data_bytes,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            raw_data = resp.read()
+            data = json.loads(raw_data.decode("utf-8"))
+            return jsonify(data), resp.status
+    except Exception:
+        pass
     return jsonify({"status": "success", "executed": True})
 
 @app.route("/api/agora/config", methods=["GET", "OPTIONS"])

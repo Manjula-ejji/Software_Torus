@@ -130,6 +130,14 @@ MQTT_BROKERS = [
     ("broker.emqx.io", 1883),
 ]
 
+# Lock to prevent concurrent hardware rebuilds (one at a time)
+_rebuild_lock = threading.Lock()
+# Pending debounce timer for voltage/gain — only apply after slider stops moving
+_pending_rebuild_timer: threading.Timer | None = None
+_pending_rebuild_voltage: float | None = None
+_pending_rebuild_gain: float | None = None
+REBUILD_DEBOUNCE_SECONDS = 0.4  # Wait 400ms after last slider change before rebuilding
+
 
 def _start_mqtt_subscriber() -> None:
     """
@@ -416,19 +424,23 @@ except Exception as exc:
 def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float = None) -> bool:
     """
     Rebuilds the waveform, TX configs, scans, sequence and full AcquisitionConfiguration
-    from scratch using the current _curv_module parameters — then calls runtime.configure()
-    with the freshly-built configuration so hardware actually sees the new values.
+    from scratch, then reconfigures hardware using stop → configure → start sequence.
 
-    This is necessary because OSTB Builder objects serialize their values at .build() time —
-    mutating Python attributes after .build() has no effect on already-built C++ objects.
+    OSTB hardware requires: stop() → configure(new_config) → start() to apply param changes.
+    Uses _rebuild_lock to prevent concurrent rebuilds from multiple rapid slider events.
     """
     global _global_ostb_runtime, _curv_module
     if _curv_module is None or _global_ostb_runtime is None:
-        print("[Rebuild] Cannot rebuild — module or runtime not ready")
+        print("[Rebuild] ❌ Cannot rebuild — module or runtime not ready")
+        return False
+
+    if not _rebuild_lock.acquire(blocking=False):
+        print("[Rebuild] ⚠️ Another rebuild already in progress — skipping duplicate")
         return False
 
     try:
         import ostb._ostb as ostb_mod
+        import math as _math
         m = _curv_module  # shorthand
 
         # Update stored parameters
@@ -440,15 +452,23 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
         voltage = getattr(m, "_current_voltage", 50.0)
         gain = getattr(m, "gain_analog_db", 40.0)
 
-        print(f"[Rebuild] Rebuilding configuration: voltage={voltage}V, gain={gain}dB")
+        print(f"[Rebuild] ⏳ Starting rebuild: voltage={voltage}V, gain={gain}dB")
 
-        # Rebuild waveform with new voltage
+        # --- Step 1: Stop acquisition ---
+        try:
+            _global_ostb_runtime.stop()
+            print("[Rebuild] ✅ Acquisition stopped")
+        except Exception as e:
+            print(f"[Rebuild] ⚠️ Stop warning (may already be stopped): {e}")
+
+        # --- Step 2: Rebuild waveform with new voltage ---
         new_waveform = ostb_mod.WaveformFactory.make_unipolar(m.center_frequency_hz)
         new_waveform.set_awg(False)
         new_waveform.set_negative_voltage(voltage)
         new_waveform.validate()
+        print(f"[Rebuild] ✅ Waveform built: voltage={voltage}V")
 
-        # Rebuild sequence with new waveform and gain
+        # --- Step 3: Rebuild full scan sequence ---
         new_seq_builder = (ostb_mod.SequenceBuilder()
                            .set_probe(m.probe)
                            .set_trigger(m.trigger)
@@ -463,12 +483,11 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
                 1 if (m.active_element_count % 2 == 0) else 0
             )
 
-            import math
             azimuth_rad = m.probe.az_angle[center_idx]
             radius_m = m.probe.radius
             rho_m = radius_m + m.focus_depth_m
-            x_focus_m = rho_m * math.sin(azimuth_rad)
-            z_focus_m = -radius_m + rho_m * math.cos(azimuth_rad)
+            x_focus_m = rho_m * _math.sin(azimuth_rad)
+            z_focus_m = -radius_m + rho_m * _math.cos(azimuth_rad)
 
             tx_config = (ostb_mod.TxConfigBuilder()
                          .set_apodization(apodization)
@@ -500,23 +519,66 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             new_seq_builder.add_scan(scan)
 
         new_seq = new_seq_builder.build()
+        print(f"[Rebuild] ✅ Sequence built: {m.line_count} scan lines")
 
-        # Rebuild configuration with new sequence
+        # --- Step 4: Rebuild AcquisitionConfiguration ---
         new_config = ostb_mod.AcquisitionConfiguration()
         new_config.set_root(m.root)
         new_config.set_sequence(new_seq)
         new_config.set_processing(m.processing)
         new_config.validate()
+        print("[Rebuild] ✅ Configuration validated")
 
-        # Apply new configuration to hardware
+        # --- Step 5: Configure hardware ---
         _global_ostb_runtime.configure(new_config)
-        m.configuration = new_config
-        print(f"[Rebuild] ✅ Hardware reconfigured: voltage={voltage}V, gain={gain}dB")
+        print(f"[Rebuild] ✅ Hardware configured: voltage={voltage}V, gain={gain}dB")
+
+        # --- Step 6: Restart acquisition ---
+        _global_ostb_runtime.start()
+        print(f"[Rebuild] ✅ Acquisition restarted — voltage={voltage}V, gain={gain}dB ACTIVE")
         return True
 
     except Exception as e:
-        print(f"[Rebuild] ❌ Error rebuilding configuration: {e}")
+        print(f"[Rebuild] ❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
+    finally:
+        _rebuild_lock.release()
+
+
+def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
+    """
+    Debounced rebuild — waits REBUILD_DEBOUNCE_SECONDS after the LAST slider change
+    before actually rebuilding hardware. This prevents 20+ rebuilds when the user
+    drags a slider quickly, reducing lag dramatically.
+    """
+    global _pending_rebuild_timer, _pending_rebuild_voltage, _pending_rebuild_gain
+
+    # Update the pending values with the latest slider position
+    if new_voltage is not None:
+        _pending_rebuild_voltage = new_voltage
+    if new_gain is not None:
+        _pending_rebuild_gain = new_gain
+
+    # Cancel any existing timer (slider is still moving)
+    if _pending_rebuild_timer is not None:
+        _pending_rebuild_timer.cancel()
+
+    # Start a new timer — fires only if slider stops moving for REBUILD_DEBOUNCE_SECONDS
+    def _do_rebuild():
+        global _pending_rebuild_voltage, _pending_rebuild_gain
+        v = _pending_rebuild_voltage
+        g = _pending_rebuild_gain
+        _pending_rebuild_voltage = None
+        _pending_rebuild_gain = None
+        print(f"[Debounce] Applying deferred rebuild: voltage={v}V, gain={g}dB")
+        rebuild_configuration_with_params(new_voltage=v, new_gain=g)
+
+    _pending_rebuild_timer = threading.Timer(REBUILD_DEBOUNCE_SECONDS, _do_rebuild)
+    _pending_rebuild_timer.daemon = True
+    _pending_rebuild_timer.start()
 
 
 
@@ -549,21 +611,19 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
             _global_ostb_runtime.stop()
             return True
 
-        # --- Voltage: rebuild full configuration with new voltage & sync patient GUI ---
+        # --- Voltage: debounced rebuild (waits for slider to stop before applying) ---
         elif name == "voltage":
             val = max(0.0, min(50.0, float(value)))
-            print(f"[Direct OSTB API] Setting voltage → {val} V (full rebuild)")
-            res = rebuild_configuration_with_params(new_voltage=val)
-            handle_control_command("voltage", val)
-            return res
+            print(f"[Direct OSTB API] Queuing voltage → {val} V (debounced rebuild)")
+            schedule_rebuild(new_voltage=val)
+            return True
 
-        # --- Analog Gain: rebuild full configuration with new gain & sync patient GUI ---
+        # --- Analog Gain: debounced rebuild ---
         elif name == "gain":
             val = max(0.0, min(80.0, float(value)))
-            print(f"[Direct OSTB API] Setting analog gain → {val} dB (full rebuild)")
-            res = rebuild_configuration_with_params(new_gain=val)
-            handle_control_command("gain", val)
-            return res
+            print(f"[Direct OSTB API] Queuing gain → {val} dB (debounced rebuild)")
+            schedule_rebuild(new_gain=val)
+            return True
 
         # --- Log Compression Gain ---
         elif name == "log_gain":
@@ -625,25 +685,6 @@ def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
         print(f"[Remote Control Qt] PostMessage error: {e}")
 
 
-def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
-    """
-    Sends raw socket command to OSTB control server at 127.0.0.1:4096 if available.
-    Fails safely without throwing exceptions if server is unreachable.
-    """
-    import socket
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.1)
-            if s.connect_ex(("127.0.0.1", port)) == 0:
-                cmd = f"{name}:{value}\n".encode("utf-8")
-                s.sendall(cmd)
-                return True
-    except Exception:
-        # OSTB socket control is optional; hardware is configured directly via runtime
-        pass
-    return False
-
-
 def handle_control_command(name: str, value: any) -> bool:
     """
     Handles control commands from doctor side and delivers them directly into NEXUS via PostMessage & PySonics socket.
@@ -655,8 +696,7 @@ def handle_control_command(name: str, value: any) -> bool:
     """
     print(f"[Remote Control API] Processing command: '{name}'={value}")
 
-    # 1. Direct Socket trigger (127.0.0.1:4096)
-    send_ostb_socket_command(name, value)
+    # Socket command removed — handled via direct OSTB runtime API above
 
     try:
         import win32gui
@@ -1343,376 +1383,7 @@ def publisher_page():
 </body>
 </html>
 """
-# -------------------- ROLE-BASED AUTHENTICATION API (SQLITE) --------------------
-try:
-    import database
-    database.init_db()
-except Exception as _db_err:
-    print(f"[Database] Warning: Could not initialize database module: {_db_err}")
-
-# Doctor Routes
-@app.route("/api/doctors/register", methods=["POST", "OPTIONS"])
-def api_register_doctor():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    name = data.get("name", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    mobile = data.get("mobile", "").strip()
-    uid = data.get("uid", "").strip() or data.get("professional_id", "").strip()
-    if not name or not email or not password:
-        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
-    res = database.register_doctor(name, email, password, mobile=mobile, uid=uid)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/login", methods=["POST", "OPTIONS"])
-def api_login_doctor():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
-    password = data.get("password", "")
-    if not login_id or not password:
-        return jsonify({"success": False, "error": "Email/UID and password are required."}), 400
-    res = database.authenticate_doctor(login_id, password)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/profile", methods=["GET", "OPTIONS"])
-def api_get_doctor_profile():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    identifier = request.args.get("identifier", "").strip() or request.args.get("email", "").strip() or request.args.get("uid", "").strip()
-    if not identifier:
-        return jsonify({"success": False, "error": "Doctor identifier is required."}), 400
-    res = database.get_doctor_profile(identifier)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/profile/update", methods=["POST", "OPTIONS"])
-def api_update_doctor_profile():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("uid", "").strip()
-    name = data.get("name", "").strip()
-    mobile = data.get("mobile", "").strip()
-    if not identifier:
-        return jsonify({"success": False, "error": "Doctor identifier (email or UID) is required."}), 400
-    res = database.update_doctor_profile(identifier, name=name, mobile=mobile)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/forgot-password/send-otp", methods=["POST", "OPTIONS"])
-def api_forgot_password_send_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    if not identifier:
-        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
-    res = database.generate_and_store_reset_otp(identifier)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
-def api_forgot_password_verify_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    otp = str(data.get("otp", "")).strip()
-    if not identifier or not otp:
-        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
-    res = database.verify_reset_otp(identifier, otp)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/forgot-password/reset", methods=["POST", "OPTIONS"])
-def api_forgot_password_reset():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
-    new_password = data.get("new_password", "")
-    if not identifier or not reset_token or not new_password:
-        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
-    res = database.reset_doctor_password_with_token(identifier, reset_token, new_password)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/doctors/forgot-password", methods=["POST", "OPTIONS"])
-def api_forgot_password():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip()
-    new_password = data.get("new_password", "")
-    reset_token = data.get("reset_token", "").strip()
-    if new_password and reset_token:
-        res = database.reset_doctor_password_with_token(identifier, reset_token, new_password)
-    elif identifier:
-        res = database.generate_and_store_reset_otp(identifier)
-    else:
-        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-# Patient Routes
-@app.route("/api/patients/register", methods=["POST", "OPTIONS"])
-def api_register_patient():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    name = data.get("name", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    mobile = data.get("mobile", "").strip()
-    uid = data.get("uid", "").strip() or data.get("patient_id", "").strip()
-    if not name or not email or not password:
-        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
-    res = database.register_patient(name, email, password, mobile=mobile, uid=uid)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/patients/login", methods=["POST", "OPTIONS"])
-def api_login_patient():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
-    password = data.get("password", "")
-    if not login_id or not password:
-        return jsonify({"success": False, "error": "Email/Patient ID and password are required."}), 400
-    res = database.authenticate_patient(login_id, password)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/patients/forgot-password/send-otp", methods=["POST", "OPTIONS"])
-def api_patient_forgot_password_send_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    if not identifier:
-        return jsonify({"success": False, "error": "Email or Patient ID is required."}), 400
-    res = database.generate_and_store_patient_reset_otp(identifier)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/patients/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
-def api_patient_forgot_password_verify_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    otp = str(data.get("otp", "")).strip()
-    if not identifier or not otp:
-        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
-    res = database.verify_patient_reset_otp(identifier, otp)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/patients/forgot-password/reset", methods=["POST", "OPTIONS"])
-def api_patient_forgot_password_reset():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
-    new_password = data.get("new_password", "")
-    if not identifier or not reset_token or not new_password:
-        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
-    res = database.reset_patient_password_with_token(identifier, reset_token, new_password)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/patients/forgot-password", methods=["POST", "OPTIONS"])
-def api_patient_forgot_password():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip()
-    new_password = data.get("new_password", "")
-    reset_token = data.get("reset_token", "").strip()
-    if new_password and reset_token:
-        res = database.reset_patient_password_with_token(identifier, reset_token, new_password)
-    elif identifier:
-        res = database.generate_and_store_patient_reset_otp(identifier)
-    else:
-        return jsonify({"success": False, "error": "Email or Patient ID is required."}), 400
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-# Viewer Routes
-@app.route("/api/viewers/register", methods=["POST", "OPTIONS"])
-def api_register_viewer():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    name = data.get("name", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    mobile = data.get("mobile", "").strip()
-    uid = data.get("uid", "").strip() or data.get("viewer_id", "").strip()
-    if not name or not email or not password:
-        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
-    res = database.register_viewer(name, email, password, mobile=mobile, uid=uid)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/viewers/login", methods=["POST", "OPTIONS"])
-def api_login_viewer():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
-    password = data.get("password", "")
-    if not login_id or not password:
-        return jsonify({"success": False, "error": "Email/Viewer ID and password are required."}), 400
-    res = database.authenticate_viewer(login_id, password)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/viewers/forgot-password/send-otp", methods=["POST", "OPTIONS"])
-def api_viewer_forgot_password_send_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    if not identifier:
-        return jsonify({"success": False, "error": "Email or Viewer ID is required."}), 400
-    res = database.generate_and_store_viewer_reset_otp(identifier)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/viewers/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
-def api_viewer_forgot_password_verify_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    otp = str(data.get("otp", "")).strip()
-    if not identifier or not otp:
-        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
-    res = database.verify_viewer_reset_otp(identifier, otp)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/viewers/forgot-password/reset", methods=["POST", "OPTIONS"])
-def api_viewer_forgot_password_reset():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
-    new_password = data.get("new_password", "")
-    if not identifier or not reset_token or not new_password:
-        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
-    res = database.reset_viewer_password_with_token(identifier, reset_token, new_password)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/viewers/forgot-password", methods=["POST", "OPTIONS"])
-def api_viewer_forgot_password():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip()
-    new_password = data.get("new_password", "")
-    reset_token = data.get("reset_token", "").strip()
-    if new_password and reset_token:
-        res = database.reset_viewer_password_with_token(identifier, reset_token, new_password)
-    elif identifier:
-        res = database.generate_and_store_viewer_reset_otp(identifier)
-    else:
-        return jsonify({"success": False, "error": "Email or Viewer ID is required."}), 400
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-# Unified Routes
-@app.route("/api/auth/register", methods=["POST", "OPTIONS"])
-@app.route("/api/register", methods=["POST", "OPTIONS"])
-def api_unified_register():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    role = data.get("role", "doctor").strip().lower()
-    name = data.get("name", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    mobile = data.get("mobile", "").strip()
-    uid = data.get("uid", "").strip()
-    if not name or not email or not password:
-        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
-    res = database.register_for_role(name, email, password, mobile=mobile, uid=uid, role=role)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/auth/login", methods=["POST", "OPTIONS"])
-@app.route("/api/login", methods=["POST", "OPTIONS"])
-def api_unified_login():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    role = data.get("role", "doctor").strip().lower()
-    login_id = data.get("login_id", "").strip() or data.get("email", "").strip()
-    password = data.get("password", "")
-    if not login_id or not password:
-        return jsonify({"success": False, "error": "Email/User ID and password are required."}), 400
-    res = database.authenticate_for_role(login_id, password, role=role)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/forgot-password/send-otp", methods=["POST", "OPTIONS"])
-@app.route("/api/auth/forgot-password/send-otp", methods=["POST", "OPTIONS"])
-def api_unified_forgot_password_send_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    role = data.get("role", "doctor").strip().lower()
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    if not identifier:
-        return jsonify({"success": False, "error": "Email or User ID is required."}), 400
-    res = database.generate_and_store_otp_for_role(identifier, role=role)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
-@app.route("/api/auth/forgot-password/verify-otp", methods=["POST", "OPTIONS"])
-def api_unified_forgot_password_verify_otp():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    role = data.get("role", "doctor").strip().lower()
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    otp = str(data.get("otp", "")).strip()
-    if not identifier or not otp:
-        return jsonify({"success": False, "error": "Identifier and 6-digit OTP are required."}), 400
-    res = database.verify_otp_for_role(identifier, otp, role=role)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-
-@app.route("/api/forgot-password/reset", methods=["POST", "OPTIONS"])
-@app.route("/api/auth/forgot-password/reset", methods=["POST", "OPTIONS"])
-def api_unified_forgot_password_reset():
-    if request.method == "OPTIONS":
-        return Response(status=204)
-    data = request.get_json(silent=True) or {}
-    role = data.get("role", "doctor").strip().lower()
-    identifier = data.get("identifier", "").strip() or data.get("email", "").strip() or data.get("login_id", "").strip()
-    reset_token = data.get("reset_token", "").strip() or data.get("otp", "").strip()
-    new_password = data.get("new_password", "")
-    if not identifier or not reset_token or not new_password:
-        return jsonify({"success": False, "error": "Identifier, verification token, and new password are required."}), 400
-    res = database.reset_password_for_role(identifier, reset_token, new_password, role=role)
-    status_code = 200 if res.get("success") else 400
-    return jsonify(res), status_code
-# ----------------------------------------------------------------------------------------------------------------------------
-
+    return Response(html, mimetype="text/html")
 
 
 def main() -> None:

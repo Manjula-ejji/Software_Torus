@@ -67,6 +67,9 @@ function sendControlCommand(name, value) {
   try {
     const host = window.location.hostname || "127.0.0.1";
     const remoteInputUrls = [
+      "http://127.0.0.1:8000/api/remote-input",
+      "http://localhost:8000/api/remote-input",
+      `http://${host}:8000/api/remote-input`,
       "http://127.0.0.1:5000/api/remote-input",
       "http://localhost:5000/api/remote-input",
       `http://${host}:5000/api/remote-input`,
@@ -2042,11 +2045,40 @@ if (controlsModal) {
   }
 }
 
+// Dynamically synchronize hardware limits (voltage_min/max, gain_min/max) to Doctor UI sliders
+function applyHardwareLimitsToDoctorUI(data) {
+  if (!data) return;
+  console.log("[Doctor UI] Applying dynamic hardware limits from patient:", data);
+  if (data.voltage_max !== undefined && voltageSlider) {
+    voltageSlider.max = data.voltage_max;
+    if (data.voltage_min !== undefined) voltageSlider.min = data.voltage_min;
+    if (data.voltage !== undefined) {
+      voltageSlider.value = data.voltage;
+      if (voltageValueInput) voltageValueInput.value = data.voltage;
+    }
+    updateSliderBackground(voltageSlider);
+    console.log(`[Doctor UI] Voltage slider range set: ${voltageSlider.min} - ${voltageSlider.max} V (value: ${voltageSlider.value})`);
+  }
+  if (data.gain_max !== undefined && gainSlider) {
+    gainSlider.max = data.gain_max;
+    if (data.gain_min !== undefined) gainSlider.min = data.gain_min;
+    if (data.gain !== undefined) {
+      gainSlider.value = data.gain;
+      if (gainValueInput) gainValueInput.value = data.gain;
+    }
+    updateSliderBackground(gainSlider);
+    console.log(`[Doctor UI] Gain slider range set: ${gainSlider.min} - ${gainSlider.max} dB (value: ${gainSlider.value})`);
+  }
+}
+
 // Fetch initial parameters directly from curv_proper_code.py / backend to sync Doctor controls
 async function syncDoctorControlsFromPatientState() {
   try {
     const host = window.location.hostname || "127.0.0.1";
     const urls = [
+      "http://127.0.0.1:8000/api/status",
+      "http://localhost:8000/api/status",
+      `http://${host}:8000/api/status`,
       "http://127.0.0.1:5000/api/status",
       "http://localhost:5000/api/status",
       `http://${host}:5000/api/status`,
@@ -2066,6 +2098,8 @@ async function syncDoctorControlsFromPatientState() {
     }
     if (!data) return;
     console.log("[Doctor UI] Synced state from backend:", data);
+
+    applyHardwareLimitsToDoctorUI(data);
 
     if (data.voltage !== undefined && voltageSlider && voltageValueInput) {
       voltageSlider.value = data.voltage;
@@ -8063,46 +8097,241 @@ function initScheduleScanModal() {
   const patientSelect = document.getElementById("schedPatientSelect");
   const scanTypeSelect = document.getElementById("schedScanTypeSelect");
   const doctorSelect = document.getElementById("schedDoctorSelect");
-  const daySelect = document.getElementById("schedSlotDay");
-  const monthSelect = document.getElementById("schedSlotMonth");
-  const yearSelect = document.getElementById("schedSlotYear");
+  const dayInput = document.getElementById("schedSlotDay");
+  const monthInput = document.getElementById("schedSlotMonth");
+  const yearInput = document.getElementById("schedSlotYear");
+  const dateInput = document.getElementById("schedSlotDate");
   const timeSelect = document.getElementById("schedSlotTime");
 
-  // Populate Days 01 - 31
-  if (daySelect && daySelect.options.length <= 1) {
-    for (let d = 1; d <= 31; d++) {
-      const opt = document.createElement("option");
-      const val = d < 10 ? `0${d}` : `${d}`;
-      opt.value = val;
-      opt.textContent = val;
-      daySelect.appendChild(opt);
-    }
-  }
+  // Modern Calendar Date Picker elements
+  const dateField = document.getElementById("schedDateField");
+  const dateDisplay = document.getElementById("schedDateDisplay");
+  const calPopup = document.getElementById("schedCalendarPopup");
+  const calMonthSelect = document.getElementById("schedCalMonthSelect");
+  const calYearSelect = document.getElementById("schedCalYearSelect");
+  const calPrevBtn = document.getElementById("schedCalPrevBtn");
+  const calNextBtn = document.getElementById("schedCalNextBtn");
+  const calDaysGrid = document.getElementById("schedCalDaysGrid");
+  const calTodayBtn = document.getElementById("schedCalTodayBtn");
 
-  // Populate Months (01 - 12 with full month names)
-  const monthNames = [
+  const monthNamesList = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
   ];
-  if (monthSelect && monthSelect.options.length <= 1) {
-    monthNames.forEach((name, idx) => {
+  const shortMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  let selectedCalDate = new Date();
+  let calViewYear = selectedCalDate.getFullYear();
+  let calViewMonth = selectedCalDate.getMonth();
+
+  // Populate Year options (currentYear - 1 to currentYear + 5)
+  if (calYearSelect && calYearSelect.options.length === 0) {
+    const curY = new Date().getFullYear();
+    for (let y = curY - 1; y <= curY + 5; y++) {
       const opt = document.createElement("option");
-      const val = idx < 9 ? `0${idx + 1}` : `${idx + 1}`;
-      opt.value = val;
-      opt.textContent = name;
-      monthSelect.appendChild(opt);
+      opt.value = String(y);
+      opt.textContent = String(y);
+      calYearSelect.appendChild(opt);
+    }
+  }
+
+  function formatReadableDate(d) {
+    const day = d.getDate();
+    const mon = shortMonthNames[d.getMonth()];
+    const yr = d.getFullYear();
+    return `${day} ${mon} ${yr}`;
+  }
+
+  function updateDateFields(d) {
+    selectedCalDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dayStr = String(selectedCalDate.getDate()).padStart(2, "0");
+    const monStr = String(selectedCalDate.getMonth() + 1).padStart(2, "0");
+    const yrStr = String(selectedCalDate.getFullYear());
+
+    if (dateDisplay) {
+      dateDisplay.textContent = formatReadableDate(selectedCalDate);
+    }
+    if (dayInput) dayInput.value = dayStr;
+    if (monthInput) monthInput.value = monStr;
+    if (yearInput) yearInput.value = yrStr;
+    if (dateInput) dateInput.value = `${yrStr}-${monStr}-${dayStr}`;
+
+    checkValidity();
+  }
+
+  function renderCalendarDays() {
+    if (!calDaysGrid) return;
+    calDaysGrid.innerHTML = "";
+
+    if (calMonthSelect) calMonthSelect.value = String(calViewMonth);
+    if (calYearSelect) calYearSelect.value = String(calViewYear);
+
+    const firstDayIndex = new Date(calViewYear, calViewMonth, 1).getDay();
+    const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+
+    const today = new Date();
+    const isTodayYearMonth = (today.getFullYear() === calViewYear && today.getMonth() === calViewMonth);
+    const isSelectedYearMonth = (selectedCalDate.getFullYear() === calViewYear && selectedCalDate.getMonth() === calViewMonth);
+
+    // Empty cells before start of month
+    for (let i = 0; i < firstDayIndex; i++) {
+      const emptyCell = document.createElement("div");
+      emptyCell.className = "sched-cal-day empty";
+      calDaysGrid.appendChild(emptyCell);
+    }
+
+    // Days in current month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sched-cal-day";
+      btn.textContent = String(day);
+
+      if (isTodayYearMonth && today.getDate() === day) {
+        btn.classList.add("today");
+      }
+      if (isSelectedYearMonth && selectedCalDate.getDate() === day) {
+        btn.classList.add("selected");
+      }
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        updateDateFields(new Date(calViewYear, calViewMonth, day));
+        closeCalendarPopup();
+      });
+
+      calDaysGrid.appendChild(btn);
+    }
+  }
+
+  const datePickerWrapper = document.getElementById("schedDatePickerWrapper");
+
+  function positionCalendarPopup() {
+    if (!calPopup || !dateField) return;
+    const fieldRect = dateField.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const spaceBelow = viewportHeight - fieldRect.bottom;
+    const spaceAbove = fieldRect.top;
+
+    const popupHeight = calPopup.scrollHeight || 300;
+
+    // Reposition above when space below is insufficient and space above is greater
+    if (spaceBelow < popupHeight + 12 && spaceAbove > spaceBelow) {
+      calPopup.classList.add("popup-above");
+      calPopup.classList.remove("popup-below");
+      const availableAbove = spaceAbove - 16;
+      calPopup.style.maxHeight = `${Math.min(340, Math.max(180, availableAbove))}px`;
+    } else {
+      calPopup.classList.add("popup-below");
+      calPopup.classList.remove("popup-above");
+      const availableBelow = spaceBelow - 16;
+      calPopup.style.maxHeight = `${Math.min(340, Math.max(180, availableBelow))}px`;
+    }
+  }
+
+  function openCalendarPopup() {
+    if (!calPopup) return;
+    calViewYear = selectedCalDate.getFullYear();
+    calViewMonth = selectedCalDate.getMonth();
+    renderCalendarDays();
+    calPopup.style.display = "block";
+    positionCalendarPopup();
+    if (dateField) {
+      dateField.classList.add("active");
+      dateField.setAttribute("aria-expanded", "true");
+    }
+    if (datePickerWrapper) {
+      datePickerWrapper.classList.add("active");
+    }
+  }
+
+  function closeCalendarPopup() {
+    if (!calPopup) return;
+    calPopup.style.display = "none";
+    if (dateField) {
+      dateField.classList.remove("active");
+      dateField.setAttribute("aria-expanded", "false");
+    }
+    if (datePickerWrapper) {
+      datePickerWrapper.classList.remove("active");
+    }
+  }
+
+  if (dateField) {
+    dateField.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (calPopup && calPopup.style.display === "block") {
+        closeCalendarPopup();
+      } else {
+        openCalendarPopup();
+      }
     });
   }
 
-  // Populate Years (2026, 2027)
-  if (yearSelect && yearSelect.options.length <= 1) {
-    ["2026", "2027"].forEach(y => {
-      const opt = document.createElement("option");
-      opt.value = y;
-      opt.textContent = y;
-      yearSelect.appendChild(opt);
+  if (calPrevBtn) {
+    calPrevBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      calViewMonth--;
+      if (calViewMonth < 0) {
+        calViewMonth = 11;
+        calViewYear--;
+      }
+      renderCalendarDays();
+      positionCalendarPopup();
     });
   }
+
+  if (calNextBtn) {
+    calNextBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      calViewMonth++;
+      if (calViewMonth > 11) {
+        calViewMonth = 0;
+        calViewYear++;
+      }
+      renderCalendarDays();
+      positionCalendarPopup();
+    });
+  }
+
+  if (calMonthSelect) {
+    calMonthSelect.addEventListener("change", (e) => {
+      calViewMonth = parseInt(e.target.value, 10);
+      renderCalendarDays();
+      positionCalendarPopup();
+    });
+  }
+
+  if (calYearSelect) {
+    calYearSelect.addEventListener("change", (e) => {
+      calViewYear = parseInt(e.target.value, 10);
+      renderCalendarDays();
+      positionCalendarPopup();
+    });
+  }
+
+  if (calTodayBtn) {
+    calTodayBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      updateDateFields(new Date());
+      closeCalendarPopup();
+    });
+  }
+
+  // Adjust popup position on window resize
+  window.addEventListener("resize", () => {
+    if (calPopup && calPopup.style.display === "block") {
+      positionCalendarPopup();
+    }
+  });
+
+  // Dismiss calendar popup on click outside
+  document.addEventListener("click", (e) => {
+    const wrapper = document.getElementById("schedDatePickerWrapper");
+    if (wrapper && !wrapper.contains(e.target)) {
+      closeCalendarPopup();
+    }
+  });
 
   // Populate Times
   const timeSlots = [
@@ -8124,9 +8353,9 @@ function initScheduleScanModal() {
     const p = patientSelect ? patientSelect.value : "";
     const s = scanTypeSelect ? scanTypeSelect.value : "";
     const d = doctorSelect ? doctorSelect.value : "";
-    const day = daySelect ? daySelect.value : "";
-    const month = monthSelect ? monthSelect.value : "";
-    const year = yearSelect ? yearSelect.value : "";
+    const day = dayInput ? dayInput.value : "";
+    const month = monthInput ? monthInput.value : "";
+    const year = yearInput ? yearInput.value : "";
     const time = timeSelect ? timeSelect.value : "";
 
     const allValid = Boolean(p && s && d && day && month && year && time);
@@ -8135,7 +8364,7 @@ function initScheduleScanModal() {
     }
   }
 
-  [patientSelect, scanTypeSelect, doctorSelect, daySelect, monthSelect, yearSelect, timeSelect].forEach(el => {
+  [patientSelect, scanTypeSelect, doctorSelect, timeSelect].forEach(el => {
     if (el) {
       el.addEventListener("change", checkValidity);
     }
@@ -8163,13 +8392,12 @@ function initScheduleScanModal() {
       const patientName = patientSelect.options[patientSelect.selectedIndex]?.text?.split(" (")[0] || pVal;
       const scanType = scanTypeSelect.value;
       const dVal = doctorSelect.value;
-      const doctorName = doctorSelect.options[doctorSelect.selectedIndex]?.text || dVal;
-      const day = daySelect.value;
-      const month = monthSelect.value;
-      const year = yearSelect.value;
-      const time = timeSelect.value;
+      const day = dayInput ? dayInput.value : "";
+      const month = monthInput ? monthInput.value : "";
+      const year = yearInput ? yearInput.value : "";
+      const time = timeSelect ? timeSelect.value : "";
 
-      const apptDate = `${year}-${month}-${day}`;
+      const apptDate = (dateInput && dateInput.value) ? dateInput.value : `${year}-${month}-${day}`;
 
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -8268,19 +8496,36 @@ function openScheduleScanModal() {
   }
 
   // Ensure default slot is set
-  const daySelect = document.getElementById("schedSlotDay");
-  const monthSelect = document.getElementById("schedSlotMonth");
-  const yearSelect = document.getElementById("schedSlotYear");
+  const dayInput = document.getElementById("schedSlotDay");
+  const monthInput = document.getElementById("schedSlotMonth");
+  const yearInput = document.getElementById("schedSlotYear");
+  const dateInput = document.getElementById("schedSlotDate");
+  const dateDisplay = document.getElementById("schedDateDisplay");
   const timeSelect = document.getElementById("schedSlotTime");
 
   const today = new Date();
   const dStr = String(today.getDate()).padStart(2, "0");
   const mStr = String(today.getMonth() + 1).padStart(2, "0");
   const yStr = String(today.getFullYear());
+  const shortMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  if (daySelect && !daySelect.value) daySelect.value = dStr;
-  if (monthSelect && !monthSelect.value) monthSelect.value = mStr;
-  if (yearSelect && !yearSelect.value) yearSelect.value = yStr;
+  if (dayInput) dayInput.value = dStr;
+  if (monthInput) monthInput.value = mStr;
+  if (yearInput) yearInput.value = yStr;
+  if (dateInput) dateInput.value = `${yStr}-${mStr}-${dStr}`;
+  if (dateDisplay) dateDisplay.textContent = `${today.getDate()} ${shortMonthNames[today.getMonth()]} ${yStr}`;
+
+  const calPopup = document.getElementById("schedCalendarPopup");
+  if (calPopup) calPopup.style.display = "none";
+  const dateField = document.getElementById("schedDateField");
+  if (dateField) {
+    dateField.classList.remove("active");
+    dateField.setAttribute("aria-expanded", "false");
+  }
+  const datePickerWrapper = document.getElementById("schedDatePickerWrapper");
+  if (datePickerWrapper) {
+    datePickerWrapper.classList.remove("active");
+  }
 
   // Immediately ensure fallback patients exist so dropdown is NEVER empty
   const patientSelect = document.getElementById("schedPatientSelect");

@@ -12135,6 +12135,7 @@ body.torus-station-patients-active #docDashBackBtn {
   justify-content: center;
   padding: 20px;
   box-sizing: border-box;
+  overflow-y: auto;
   background-color: rgba(4, 7, 17, 0.88);
   background-image:
     radial-gradient(circle at 50% 30%, rgba(6, 182, 212, 0.13), transparent 60%),
@@ -12168,6 +12169,7 @@ body.torus-station-patients-active #docDashBackBtn {
   padding: 24px 28px 26px;
   box-sizing: border-box;
   color: #f8fafc;
+  overflow: visible;
   animation: schedModalScaleIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -12279,18 +12281,314 @@ body.torus-station-patients-active #docDashBackBtn {
 
 .sched-slot-row {
   display: grid;
-  grid-template-columns: 1fr 1.15fr 1fr 1.4fr;
-  gap: 8px;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 10px;
+  position: relative;
 }
 
 .sched-slot-row .sched-select {
-  padding-left: 10px;
-  padding-right: 24px;
-  font-size: 12.5px;
+  padding-left: 12px;
+  padding-right: 28px;
+  font-size: 13px;
 }
 
 .sched-slot-row .sched-select-chevron {
-  right: 8px;
+  right: 12px;
+}
+
+/* Schedule Scan Calendar Date Picker */
+.sched-datepicker-wrapper {
+  position: relative;
+  width: 100%;
+  z-index: 20;
+}
+
+.sched-datepicker-wrapper.active {
+  z-index: 1000;
+}
+
+.sched-date-field {
+  width: 100%;
+  height: 42px;
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0 12px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  text-align: left;
+}
+
+.sched-date-field:hover {
+  border-color: rgba(0, 229, 255, 0.35);
+  background: #060b17;
+}
+
+.sched-date-field:focus,
+.sched-date-field.active {
+  border-color: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.22);
+}
+
+.sched-date-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sched-date-icon {
+  flex-shrink: 0;
+  stroke: #00e5ff;
+}
+
+.sched-date-display {
+  font-weight: 500;
+  font-size: 13px;
+  color: #f1f5f9;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sched-date-chevron {
+  flex-shrink: 0;
+  color: #64748b;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.sched-date-field.active .sched-date-chevron {
+  transform: rotate(180deg);
+  color: #00e5ff;
+}
+
+/* Calendar Popup with Smart Viewport Positioning & Internal Scrolling */
+.sched-calendar-popup {
+  position: absolute;
+  left: 0;
+  width: 284px;
+  background: #080d1a;
+  border: 1.5px solid rgba(0, 229, 255, 0.4);
+  border-radius: 12px;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.95), 0 0 25px rgba(0, 229, 255, 0.25);
+  padding: 12px 14px 10px;
+  z-index: 100000;
+  box-sizing: border-box;
+  user-select: none;
+  max-height: min(330px, 80vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 229, 255, 0.4) rgba(8, 13, 26, 0.6);
+}
+
+.sched-calendar-popup::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sched-calendar-popup::-webkit-scrollbar-track {
+  background: rgba(8, 13, 26, 0.6);
+  border-radius: 4px;
+}
+
+.sched-calendar-popup::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.4);
+  border-radius: 4px;
+}
+
+.sched-calendar-popup::-webkit-scrollbar-thumb:hover {
+  background: #00e5ff;
+}
+
+/* Default position: above (since Date field sits at the bottom of the modal card) */
+.sched-calendar-popup,
+.sched-calendar-popup.popup-above {
+  top: auto;
+  bottom: calc(100% + 6px);
+  animation: schedCalFadeInUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sched-calendar-popup.popup-below {
+  top: calc(100% + 6px);
+  bottom: auto;
+  animation: schedCalFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes schedCalFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes schedCalFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sched-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+.sched-cal-nav-btn {
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.18s ease;
+}
+
+.sched-cal-nav-btn:hover {
+  background: rgba(0, 229, 255, 0.12);
+  border-color: #00e5ff;
+  color: #00e5ff;
+}
+
+.sched-cal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sched-cal-select {
+  background: #040711;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 4px 6px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.18s;
+}
+
+.sched-cal-select:focus {
+  border-color: #00e5ff;
+}
+
+.sched-cal-select option {
+  background: #080d1a;
+  color: #f1f5f9;
+}
+
+.sched-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sched-cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.sched-cal-day {
+  height: 29px;
+  width: 29px;
+  margin: 0 auto;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #cbd5e1;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  font-family: inherit;
+}
+
+.sched-cal-day:hover:not(.empty):not(.disabled) {
+  background: rgba(0, 229, 255, 0.14);
+  border-color: rgba(0, 229, 255, 0.35);
+  color: #00e5ff;
+}
+
+.sched-cal-day.today:not(.selected) {
+  border-color: #00e5ff;
+  color: #00e5ff;
+  font-weight: 600;
+}
+
+.sched-cal-day.selected {
+  background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%) !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.55);
+}
+
+.sched-cal-day.empty {
+  visibility: hidden;
+  cursor: default;
+}
+
+.sched-cal-footer {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sched-cal-today-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  border-radius: 6px;
+  color: #00e5ff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+}
+
+.sched-cal-today-btn:hover {
+  background: rgba(0, 229, 255, 0.15);
+  border-color: #00e5ff;
 }
 
 .sched-submit-btn {
