@@ -578,9 +578,14 @@ def _snapshot_to_gray(snapshot) -> np.ndarray:
     finite = image[np.isfinite(image)]
     if finite.size == 0:
         return np.zeros(image.shape, dtype=np.uint8)
-    low, high = np.percentile(finite, (1, 99))
-    if high <= low:
+    vmin = float(np.min(finite))
+    vmax = float(np.max(finite))
+    if vmax <= vmin:
         return np.zeros(image.shape, dtype=np.uint8)
+    low = float(np.percentile(finite, 2))
+    high = float(np.percentile(finite, 99))
+    if high <= low:
+        low, high = vmin, vmax
     return np.clip((image - low) * (255.0 / (high - low)), 0, 255).astype(np.uint8)
 
 
@@ -671,11 +676,14 @@ def capture_render_window() -> np.ndarray:
 
         def enum_cb(hwnd, _):
             nonlocal render_hwnd
-            if win32gui.IsWindow(hwnd):
+            if win32gui.IsWindow(hwnd) and win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
-                if any(k in title for k in ["Focused", "B-Mode", "Render", "C3.5"]):
-                    render_hwnd = hwnd
-                    return False
+                t_low = title.lower()
+                # Target OpenSonics Display Window / Focused B-Mode
+                if any(k in t_low for k in ["display window", "display", "focused", "b-mode", "render", "c3.5", "processed"]):
+                    if "chrome" not in t_low and "agora" not in t_low and "meet" not in t_low and "torus" not in t_low:
+                        render_hwnd = hwnd
+                        return False
             return True
 
         try:
@@ -731,11 +739,12 @@ def _process_output_loop() -> None:
                     ok, snapshot = reader.read_latest()
                     if ok and not snapshot.empty:
                         gray = _snapshot_to_gray(snapshot)
-                        frame = _render_stream_frame(gray)
+                        if gray is not None and gray.max() > 0:
+                            frame = _render_stream_frame(gray)
                 except Exception:
                     pass
 
-            # 2. Fallback to Win32 Live Window Capture of 'C3.5-128R60C Focused B-Mode'
+            # 2. Fallback to Win32 Live Window Capture of 'Display Window' / 'Focused B-Mode'
             if frame is None:
                 win_frame = capture_render_window()
                 if win_frame is not None and win_frame.size > 0:
@@ -995,8 +1004,10 @@ def publisher_page():
 
         image.onload = () => {{
           if (image.naturalWidth && image.naturalHeight) {{
-            canvas.width = image.naturalWidth;
-            canvas.height = image.naturalHeight;
+            if (canvas.width !== image.naturalWidth || canvas.height !== image.naturalHeight) {{
+              canvas.width = image.naturalWidth;
+              canvas.height = image.naturalHeight;
+            }}
           }}
 
           ctx.drawImage(image, 0, 0, canvas.width, canvas.height);

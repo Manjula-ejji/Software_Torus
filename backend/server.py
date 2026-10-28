@@ -109,7 +109,7 @@ def api_agora_config():
         return Response(status=204)
     database.load_env_file()
     token = os.environ.get("AGORA_TOKEN", "").strip()
-    app_id = os.environ.get("AGORA_APP_ID", "f320d3475b6d4b70ba512b06d09849d7").strip()
+    app_id = os.environ.get("AGORA_APP_ID", "73853929619b4c61a6752f4474b6f75c").strip()
     channel = os.environ.get("AGORA_CHANNEL", "torus").strip()
     return jsonify({
         "appId": app_id,

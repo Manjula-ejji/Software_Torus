@@ -9,8 +9,8 @@ var currentAuthenticatedRole = null;
 function connectDoctorMQTT(appId, channel) {
   const targetAppId = appId
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "f320d3475b6d4b70ba512b06d09849d7" : "")
-    || "f320d3475b6d4b70ba512b06d09849d7";
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "73853929619b4c61a6752f4474b6f75c" : "")
+    || "73853929619b4c61a6752f4474b6f75c";
   const targetChannel = channel
     || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "")
     || "torus";
@@ -1304,7 +1304,13 @@ async function joinCall() {
     });
 
     client.on("user-published", async (user, mediaType) => {
-      await client.subscribe(user, mediaType);
+      try {
+        await client.subscribe(user, mediaType);
+        console.log(`[Agora] Successfully subscribed to user ${user.uid} (${mediaType})`);
+      } catch (subErr) {
+        console.error(`[Agora] Error subscribing to user ${user.uid} (${mediaType}):`, subErr);
+        return;
+      }
 
       if (mediaType === "video") {
         if (user.uid !== 3001 && user.uid !== 4001 && user.uid !== 5001) {
@@ -1312,8 +1318,14 @@ async function joinCall() {
         }
 
         const remotePlayer = createRemotePlayer(user.uid, user.videoTrack);
-        remotePlayer.innerHTML = ""; // Clear placeholder
-        user.videoTrack.play(remotePlayer, { fit: "contain" });
+        if (remotePlayer && user.videoTrack) {
+          remotePlayer.innerHTML = ""; // Clear placeholder
+          try {
+            user.videoTrack.play(remotePlayer, { fit: "contain" });
+          } catch (playErr) {
+            console.error(`[Agora] Error playing videoTrack for UID ${user.uid}:`, playErr);
+          }
+        }
 
         // Apply active rotation specifically to ultrasound feed
         if (user.uid === 5001 && typeof _ultrasoundRotation !== "undefined" && _ultrasoundRotation !== 0) {
