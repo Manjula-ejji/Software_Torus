@@ -7,13 +7,13 @@ var currentAuthenticatedUser = null;
 var currentAuthenticatedRole = null;
 
 function connectDoctorMQTT(appId, channel) {
-  const targetAppId = appId || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "");
-  const targetChannel = channel || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "torus");
-
-  if (!targetAppId) {
-    console.warn("[Doctor MQTT] App ID is missing, skipping MQTT connection.");
-    return;
-  }
+  const targetAppId = appId
+    || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "f320d3475b6d4b70ba512b06d09849d7" : "")
+    || "f320d3475b6d4b70ba512b06d09849d7";
+  const targetChannel = channel
+    || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "")
+    || "torus";
 
   const cleanAppId = targetAppId.substring(0, 8);
   doctorControlTopic = `${targetChannel}-control-${cleanAppId}`;
@@ -61,7 +61,13 @@ function connectDoctorMQTT(appId, channel) {
 }
 
 function sendControlCommand(name, value) {
-  const payload = JSON.stringify({ control: name, value: value });
+  const payloadObj = {
+    control: name,
+    value: value,
+    timestamp: Date.now(),
+    source: "torus-doctor-ui"
+  };
+  const payload = JSON.stringify(payloadObj);
 
   // 1. Direct HTTP control bridge (works across all network topologies & local dev)
   try {
@@ -86,17 +92,19 @@ function sendControlCommand(name, value) {
     }
   } catch (_) { }
 
-  // 2. Doctor MQTT control bridge
-  if (roleInput && roleInput.value === "doctor") {
-    if (!doctorMqttClient || !doctorMqttClient.connected) {
-      console.log(`[Doctor MQTT] Not connected yet. Initiating connection and queuing: ${name} = ${value}`);
-      pendingMqttPayloads.push(payload);
-      connectDoctorMQTT();
-      return;
-    }
+  // 2. Doctor MQTT control bridge to remote Indore backend
+  if (!doctorMqttClient || !doctorMqttClient.connected) {
+    console.log(`[Doctor MQTT] Not connected yet. Initiating connection and queuing: ${name} = ${value}`);
+    pendingMqttPayloads.push(payload);
+    connectDoctorMQTT();
+    return;
+  }
 
+  try {
     doctorMqttClient.publish(doctorControlTopic, payload);
     console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
+  } catch (err) {
+    console.error("[Doctor MQTT] Error publishing command:", err);
   }
 }
 
@@ -1307,6 +1315,12 @@ async function joinCall() {
         remotePlayer.innerHTML = ""; // Clear placeholder
         user.videoTrack.play(remotePlayer, { fit: "contain" });
 
+        // Apply active rotation specifically to ultrasound feed
+        if (user.uid === 5001 && typeof _ultrasoundRotation !== "undefined" && _ultrasoundRotation !== 0) {
+          remotePlayer.style.transition = "transform 0.25s ease";
+          remotePlayer.style.transform = `rotate(${_ultrasoundRotation}deg)`;
+        }
+
         const card = document.getElementById(`remote-card-${user.uid}`);
         if (card) {
           applyTrackAspectRatio(card, user.videoTrack);
@@ -2465,41 +2479,57 @@ let _acqMediaRecorder = null;
 let _acqRecordedChunks = [];
 
 function getActiveUltrasoundVideoSource() {
-  return document.querySelector("#remote-player video")
-    || document.querySelector("#local-player video")
-    || document.querySelector(".player video")
-    || document.querySelector("#remote-player canvas")
-    || document.querySelector("#local-player canvas")
-    || document.querySelector(".player canvas")
-    || document.querySelector("video");
+  // STRICT TARGETING: Look ONLY for the Remote Ultrasound Feed (UID 5001)
+  // NEVER fall back to #local-player, #local-card, or arbitrary video tags (Doctor Camera)
+  const usPlayer = document.getElementById("remote-player-5001");
+  if (usPlayer) {
+    const media = usPlayer.querySelector("video, canvas");
+    if (media && ((media.tagName === "VIDEO" && media.videoWidth > 0) || (media.tagName === "CANVAS" && media.width > 0))) {
+      return media;
+    }
+    if (media) return media;
+  }
+
+  const usCard = document.getElementById("remote-card-5001");
+  if (usCard) {
+    const media = usCard.querySelector("video, canvas");
+    if (media && ((media.tagName === "VIDEO" && media.videoWidth > 0) || (media.tagName === "CANVAS" && media.width > 0))) {
+      return media;
+    }
+    if (media) return media;
+  }
+
+  // Check Agora client remote users for UID 5001 specifically
+  if (typeof client !== "undefined" && client && client.remoteUsers) {
+    const usUser = client.remoteUsers.find(u => Number(u.uid) === 5001);
+    if (usUser && usUser.videoTrack) {
+      const directVideo = document.querySelector("#remote-player-5001 video, #remote-card-5001 video");
+      if (directVideo) return directVideo;
+    }
+  }
+
+  // Ultrasound stream is NOT active or NOT present in DOM
+  return null;
 }
 
 if (controlCaptureBtn) {
   controlCaptureBtn.addEventListener("click", () => {
     try {
       const sourceEl = getActiveUltrasoundVideoSource();
+      if (!sourceEl) {
+        showToastNotification("Ultrasound feed unavailable. Please ensure remote acquisition is streaming.", "error");
+        console.warn("[Capture] Aborted: Ultrasound feed (UID 5001) not available in DOM. Doctor Camera protected.");
+        return;
+      }
+
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
 
-      if (sourceEl && ((sourceEl.tagName === "VIDEO" && sourceEl.videoWidth > 0) || (sourceEl.tagName === "CANVAS" && sourceEl.width > 0))) {
-        canvas.width = sourceEl.videoWidth || sourceEl.width || 640;
-        canvas.height = sourceEl.videoHeight || sourceEl.height || 480;
-        ctx.drawImage(sourceEl, 0, 0, canvas.width, canvas.height);
-      } else {
-        canvas.width = 640;
-        canvas.height = 480;
-        ctx.fillStyle = "#020617";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#38bdf8";
-        ctx.font = "bold 18px 'Inter', sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("TORUS Ultrasound Scan Frame", canvas.width / 2, canvas.height / 2 - 10);
-        ctx.font = "14px 'Inter', sans-serif";
-        ctx.fillStyle = "#94a3b8";
-        ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 18);
-      }
+      canvas.width = sourceEl.videoWidth || sourceEl.width || 640;
+      canvas.height = sourceEl.videoHeight || sourceEl.height || 480;
+      ctx.drawImage(sourceEl, 0, 0, canvas.width, canvas.height);
 
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
       try {
         const room = (typeof channel !== "undefined" && channel) ? channel : "DEFAULT";
         let captured = [];
@@ -2509,7 +2539,7 @@ if (controlCaptureBtn) {
           id: "snap-" + Date.now(),
           timestamp: new Date().toISOString(),
           dataUrl: dataUrl,
-          label: "B-Mode Scan Frame " + (captured.length + 1)
+          label: "Ultrasound B-Mode Frame " + (captured.length + 1)
         });
         localStorage.setItem("capturedImages-" + room, JSON.stringify(captured));
         localStorage.setItem("torus_captured_images", JSON.stringify(captured));
@@ -2521,7 +2551,7 @@ if (controlCaptureBtn) {
       showToastNotification("Ultrasound frame captured successfully");
     } catch (err) {
       console.error("[Capture] Error capturing frame:", err);
-      showToastNotification("Frame capture completed");
+      showToastNotification("Error capturing ultrasound frame: " + (err.message || err), "error");
     }
   });
 }
@@ -2535,20 +2565,29 @@ if (controlRecordBtn) {
         const label = controlRecordBtn.querySelector(".acq-action-label");
         if (label) label.textContent = "Record";
         sendControlCommand("record", false);
+        showToastNotification("Ultrasound recording stopped");
         return;
       }
 
       const videoSource = getActiveUltrasoundVideoSource();
+      if (!videoSource) {
+        showToastNotification("Ultrasound feed unavailable. Cannot record without active remote ultrasound stream.", "error");
+        console.warn("[Record] Aborted: Ultrasound feed (UID 5001) not available in DOM. Doctor Camera protected.");
+        return;
+      }
+
       let stream = null;
-      if (videoSource && videoSource.tagName === "VIDEO") {
-        stream = videoSource.captureStream ? videoSource.captureStream() : (videoSource.mozCaptureStream ? videoSource.mozCaptureStream() : null);
-      } else if (videoSource && videoSource.tagName === "CANVAS") {
-        stream = videoSource.captureStream ? videoSource.captureStream(15) : null;
+      if (videoSource.tagName === "VIDEO") {
+        stream = videoSource.captureStream ? videoSource.captureStream(25) : (videoSource.mozCaptureStream ? videoSource.mozCaptureStream(25) : null);
+      } else if (videoSource.tagName === "CANVAS") {
+        stream = videoSource.captureStream ? videoSource.captureStream(25) : null;
       }
 
       if (stream && stream.getVideoTracks().length > 0) {
         _acqRecordedChunks = [];
-        _acqMediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm" });
+        _acqMediaRecorder = new MediaRecorder(stream, {
+          mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm"
+        });
         _acqMediaRecorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) _acqRecordedChunks.push(e.data);
         };
@@ -2561,7 +2600,7 @@ if (controlRecordBtn) {
           document.body.appendChild(a);
           a.click();
           setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
-          showToastNotification("Ultrasound recording saved");
+          showToastNotification("Ultrasound recording saved to device");
         };
         _acqMediaRecorder.start();
         controlRecordBtn.classList.add("recording-active");
@@ -2570,19 +2609,11 @@ if (controlRecordBtn) {
         sendControlCommand("record", true);
         showToastNotification("Ultrasound recording started");
       } else {
-        const isRec = controlRecordBtn.classList.toggle("recording-active");
-        const label = controlRecordBtn.querySelector(".acq-action-label");
-        if (label) label.textContent = isRec ? "Stop Rec" : "Record";
-        sendControlCommand("record", isRec);
-        showToastNotification(isRec ? "Recording initiated" : "Recording stopped");
+        showToastNotification("Unable to capture video stream from ultrasound player.", "error");
       }
     } catch (err) {
-      console.warn("[Record] MediaRecorder fallback:", err);
-      const isRec = controlRecordBtn.classList.toggle("recording-active");
-      const label = controlRecordBtn.querySelector(".acq-action-label");
-      if (label) label.textContent = isRec ? "Stop Rec" : "Record";
-      sendControlCommand("record", isRec);
-      showToastNotification(isRec ? "Ultrasound recording started" : "Ultrasound recording stopped");
+      console.warn("[Record] MediaRecorder error:", err);
+      showToastNotification("Recording error: " + (err.message || err), "error");
     }
   });
 }
@@ -2590,26 +2621,36 @@ if (controlRecordBtn) {
 if (controlRotateBtn) {
   controlRotateBtn.addEventListener("click", () => {
     _ultrasoundRotation = (_ultrasoundRotation + 90) % 360;
-    const playerContainers = document.querySelectorAll("#remote-player, #local-player, .player video, .player canvas");
-    playerContainers.forEach(el => {
-      el.style.transition = "transform 0.25s ease";
-      el.style.transform = _ultrasoundRotation === 0 ? "" : `rotate(${_ultrasoundRotation}deg)`;
-    });
+    // Rotate ONLY Ultrasound Feed (UID 5001). NEVER touch #local-player or Doctor Camera!
+    const usContainers = document.querySelectorAll(
+      "#remote-player-5001, #remote-card-5001 .remote-player, #remote-card-5001 video, #remote-card-5001 canvas"
+    );
+    if (usContainers.length === 0) {
+      showToastNotification(`Ultrasound view rotated ${_ultrasoundRotation}° (will apply when remote feed arrives)`);
+    } else {
+      usContainers.forEach(el => {
+        el.style.transition = "transform 0.25s ease";
+        el.style.transform = _ultrasoundRotation === 0 ? "" : `rotate(${_ultrasoundRotation}deg)`;
+      });
+      showToastNotification(`Ultrasound view rotated ${_ultrasoundRotation}°`);
+    }
     sendControlCommand("rotate_image", _ultrasoundRotation);
-    showToastNotification(`Ultrasound view rotated ${_ultrasoundRotation}°`);
   });
 }
 
 if (controlResetPosBtn) {
   controlResetPosBtn.addEventListener("click", () => {
     _ultrasoundRotation = 0;
-    const playerContainers = document.querySelectorAll("#remote-player, #local-player, .player, .player video, .player canvas");
-    playerContainers.forEach(el => {
+    // Reset ONLY Ultrasound Feed (UID 5001). NEVER touch #local-player or Doctor Camera!
+    const usContainers = document.querySelectorAll(
+      "#remote-player-5001, #remote-card-5001 .remote-player, #remote-card-5001 video, #remote-card-5001 canvas"
+    );
+    usContainers.forEach(el => {
       el.style.transition = "transform 0.25s ease";
       el.style.transform = "";
     });
     sendControlCommand("reset_position", true);
-    showToastNotification("Ultrasound position & view reset");
+    showToastNotification("Ultrasound view & position reset");
   });
 }
 
