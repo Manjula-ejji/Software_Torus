@@ -1,6 +1,7 @@
 console.log("TORUS app.js LOADED");
 let doctorMqttClient = null;
 let doctorControlTopic = "";
+let doctorStatusTopic = "";
 let pendingMqttPayloads = [];
 var dbInstance = null;
 var currentAuthenticatedUser = null;
@@ -17,6 +18,7 @@ function connectDoctorMQTT(appId, channel) {
 
   const cleanAppId = targetAppId.substring(0, 8);
   doctorControlTopic = `${targetChannel}-control-${cleanAppId}`;
+  doctorStatusTopic = `${targetChannel}-status-${cleanAppId}`;
 
   if (doctorMqttClient && doctorMqttClient.connected) {
     return;
@@ -36,11 +38,98 @@ function connectDoctorMQTT(appId, channel) {
 
       doctorMqttClient.on("connect", () => {
         console.log(`[Doctor MQTT] Connected to ${url} on topic: ${doctorControlTopic}`);
+        const ipcLabel = document.getElementById("controlIpcLabel");
+        if (ipcLabel) {
+          ipcLabel.textContent = "CONNECTED";
+          ipcLabel.className = "status-val connected";
+        }
+
+        // Subscribe to real-time status updates broadcast from Indore acquisition system
+        doctorMqttClient.subscribe(doctorStatusTopic, (err) => {
+          if (!err) {
+            console.log(`[Doctor MQTT] Subscribed to status updates on: ${doctorStatusTopic}`);
+          }
+        });
+
         // Flush any queued payloads
         while (pendingMqttPayloads.length > 0) {
           const payload = pendingMqttPayloads.shift();
           doctorMqttClient.publish(doctorControlTopic, payload);
           console.log(`[Doctor MQTT] Flushed queued control to ${doctorControlTopic}:`, payload);
+        }
+      });
+
+      doctorMqttClient.on("message", (topic, message) => {
+        if (topic === doctorStatusTopic) {
+          try {
+            const data = JSON.parse(message.toString());
+            console.log("[Doctor MQTT] Received status update from Indore:", data);
+            if (data.status) {
+              const isRunning = data.status === "RUNNING";
+              if (typeof updateUltrasoundScanUI === "function") {
+                updateUltrasoundScanUI(isRunning);
+              }
+            }
+            if (data.voltage !== undefined) {
+              const vSlider = document.getElementById("voltageSlider");
+              const vInput = document.getElementById("voltageValueInput");
+              if (vSlider && document.activeElement !== vSlider) {
+                vSlider.value = data.voltage;
+                if (vInput) vInput.value = data.voltage;
+                if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
+              }
+            }
+            if (data.gain !== undefined) {
+              const gSlider = document.getElementById("gainSlider");
+              const gInput = document.getElementById("gainValueInput");
+              if (gSlider && document.activeElement !== gSlider) {
+                gSlider.value = data.gain;
+                if (gInput) gInput.value = data.gain;
+                if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
+              }
+            }
+            if (data.display !== undefined) {
+              const dToggle = document.getElementById("displayToggle");
+              if (dToggle && document.activeElement !== dToggle) {
+                dToggle.checked = Boolean(data.display);
+              }
+            }
+            if (data.tgc_enabled !== undefined) {
+              const tToggle = document.getElementById("tgcToggle");
+              const tContainer = document.getElementById("tgcSlidersContainer");
+              if (tToggle && document.activeElement !== tToggle) {
+                tToggle.checked = Boolean(data.tgc_enabled);
+                if (tContainer) {
+                  const sliders = tContainer.querySelectorAll(".tgc-range-slider");
+                  if (tToggle.checked) {
+                    tContainer.classList.remove("disabled");
+                    sliders.forEach(s => s.disabled = false);
+                  } else {
+                    tContainer.classList.add("disabled");
+                    sliders.forEach(s => s.disabled = true);
+                  }
+                }
+              }
+            }
+            if (Array.isArray(data.tgc_sliders)) {
+              data.tgc_sliders.forEach((val, idx) => {
+                const slider = document.getElementById(`tgcSlider${idx + 1}`);
+                const label = document.getElementById(`tgcVal${idx + 1}`);
+                if (slider && document.activeElement !== slider) {
+                  slider.value = val;
+                  if (label) label.textContent = val;
+                  if (typeof updateSliderBackground === "function") updateSliderBackground(slider);
+                }
+              });
+            }
+            const ipcLabel = document.getElementById("controlIpcLabel");
+            if (ipcLabel) {
+              ipcLabel.textContent = "CONNECTED";
+              ipcLabel.className = "status-val connected";
+            }
+          } catch (e) {
+            console.warn("[Doctor MQTT] Status parse error:", e);
+          }
         }
       });
 

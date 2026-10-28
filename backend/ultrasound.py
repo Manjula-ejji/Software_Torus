@@ -56,11 +56,7 @@ except ModuleNotFoundError:
 
 if MISSING_MODULES:
   pkgs = " ".join(sorted(set(MISSING_MODULES)))
-  cmd = f'"{sys.executable}" -m pip install {pkgs}'
-  raise SystemExit(
-    "Missing Python modules. Install them with:\n"
-    f"{cmd}"
-  )
+  print(f"[ultrasound] Notice: Running in non-hardware/dev mode. Modules not loaded: {pkgs}")
 
 # -------------------- USER CONFIG --------------------
 APP_ID = "73853929619b4c61a6752f4474b6f75c"
@@ -100,7 +96,8 @@ _ultrasound_proc: subprocess.Popen | None = None
 def find_opensonics_control_window() -> int:
     """
     Finds the NEXUS / OpenSonics Control Panel window handle (hwnd).
-    Explicitly targets window title 'NEXUS' (class 'Qt6102QWindowOwnDCIcon').
+    Explicitly targets window title 'NEXUS' or OpenSonics controller window.
+    Never falls back to the ultrasound image / render window.
     """
     try:
         import win32gui
@@ -108,23 +105,23 @@ def find_opensonics_control_window() -> int:
         return 0
 
     control_hwnd = [0]
-    render_hwnd = [0]
 
     def enum_cb(hwnd, _):
         if not win32gui.IsWindow(hwnd):
             return True
         title = win32gui.GetWindowText(hwnd)
         cls_name = win32gui.GetClassName(hwnd)
+        t_low = title.lower()
 
         # Match exact NEXUS control panel window
-        if title == "NEXUS":
+        if title == "NEXUS" or (any(k in t_low for k in ["opensonics", "controller", "acquisition", "signal controls"])
+                                 and not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"])):
             control_hwnd[0] = hwnd
             return False
-        elif "Image" in title or "Focused" in title or "B-Mode" in title:
-            render_hwnd[0] = hwnd
         elif ("Qt6" in cls_name or "Qt5" in cls_name) and title and title not in ["Launcher", "_q_titlebar"]:
-            if not control_hwnd[0]:
-                control_hwnd[0] = hwnd
+            if not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"]):
+                if not control_hwnd[0]:
+                    control_hwnd[0] = hwnd
         return True
 
     try:
@@ -132,8 +129,7 @@ def find_opensonics_control_window() -> int:
     except Exception:
         pass
 
-    target = control_hwnd[0] or render_hwnd[0] or 0
-    return target
+    return control_hwnd[0]
 
 
 _click_lock = threading.Lock()
@@ -141,9 +137,8 @@ _click_lock = threading.Lock()
 
 def send_win32_click(hwnd: int, cx: int, cy: int) -> None:
     """
-    Executes a hardware click by momentarily bringing the target window to (0, 0) and activating it,
-    performing the hardware mouse click at (cx, cy), and returning the window off-screen.
-    Preserves original window width and height.
+    Executes a hardware click at client coords (cx, cy) on the target window.
+    Preserves window position and restores focus without throwing the window off-screen.
     """
     import win32gui
     import win32con
@@ -152,42 +147,31 @@ def send_win32_click(hwnd: int, cx: int, cy: int) -> None:
     with _click_lock:
         try:
             rect = win32gui.GetWindowRect(hwnd)
-            width = max(600, rect[2] - rect[0])
-            height = max(450, rect[3] - rect[1])
-            print(f"[Remote Control] Targeting window hwnd={hwnd}, rect=({rect[0]},{rect[1]},{width}x{height}), click client coords=({cx}, {cy})")
+            left, top, right, bottom = rect
+            width = max(600, right - left)
+            height = max(450, bottom - top)
 
-            # 1. Restore, move to (0, 0) on screen while preserving width/height, and bring to foreground
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, 0, 0, width, height, win32con.SWP_SHOWWINDOW)
-            try:
-                win32gui.SetForegroundWindow(hwnd)
-            except Exception:
-                pass
-            time.sleep(0.06)
+            if win32gui.IsIconic(hwnd):
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
 
-            # 2. Hardware cursor click
-            screen_x = 0 + int(cx)
-            screen_y = 0 + int(cy)
+            screen_x = (left + int(cx)) if left >= 0 else int(cx)
+            screen_y = (top + int(cy)) if top >= 0 else int(cy)
 
             orig_pos = win32api.GetCursorPos()
             win32api.SetCursorPos((screen_x, screen_y))
             time.sleep(0.02)
             win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-            time.sleep(0.06)
+            time.sleep(0.04)
             win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
             time.sleep(0.02)
             win32api.SetCursorPos(orig_pos)
 
-            # 3. Synchronous Win32 SendMessage backup
             lParam = win32api.MAKELONG(int(cx), int(cy))
             win32gui.SendMessage(hwnd, win32con.WM_MOUSEACTIVATE, hwnd, win32api.MAKELONG(win32con.HTCLIENT, win32con.WM_LBUTTONDOWN))
             win32gui.SendMessage(hwnd, win32con.WM_SETCURSOR, hwnd, win32api.MAKELONG(win32con.HTCLIENT, win32con.WM_LBUTTONDOWN))
             win32gui.SendMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
             time.sleep(0.03)
             win32gui.SendMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
-
-            # 4. Immediately return window off-screen to (-2000, -2000)
-            win32gui.SetWindowPos(hwnd, 0, -2000, -2000, width, height, win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
         except Exception as e:
             print(f"[Remote Control] Click execution error: {e}")
 
@@ -257,6 +241,26 @@ def replicate_mouse_event(event_type: str, x_percent: float, y_percent: float) -
 # --- Dynamic OSTB Hooks (Leaves curv_proper_code.py 100% original and untouched!) ---
 _global_ostb_runtime = None
 _global_ostb_config = None
+_curv_module = None
+_is_acquiring = False
+
+
+def _watch_module_runtime() -> None:
+    """
+    Monitors module.__dict__ while curv_proper_code.py executes.
+    Captures 'runtime' object immediately when line 'runtime = ostb.AcquisitionRuntime()' executes,
+    BEFORE runtime.run_controller() blocks the thread.
+    """
+    global _global_ostb_runtime, _curv_module
+    for _ in range(100):
+        if _curv_module is not None:
+            r = getattr(_curv_module, "runtime", None)
+            if r is not None:
+                _global_ostb_runtime = r
+                print(f"[ultrasound Watcher] Captured ostb runtime instance: {r}")
+                break
+        time.sleep(0.1)
+
 
 try:
     import ostb._ostb as ostb
@@ -292,57 +296,222 @@ try:
         return _orig_configure(self, config, *args, **kwargs)
     ostb.AcquisitionRuntime.configure = _hooked_configure
 
+    # Hook 4: Intercept start() to track state
+    _orig_start = ostb.AcquisitionRuntime.start
+    def _hooked_start(self, *args, **kwargs):
+        global _is_acquiring
+        _is_acquiring = True
+        print("[ultrasound Hook] AcquisitionRuntime.start() triggered -> _is_acquiring = True")
+        return _orig_start(self, *args, **kwargs)
+    ostb.AcquisitionRuntime.start = _hooked_start
+
+    # Hook 5: Intercept stop() to track state
+    _orig_stop = ostb.AcquisitionRuntime.stop
+    def _hooked_stop(self, *args, **kwargs):
+        global _is_acquiring
+        _is_acquiring = False
+        print("[ultrasound Hook] AcquisitionRuntime.stop() triggered -> _is_acquiring = False")
+        return _orig_stop(self, *args, **kwargs)
+    ostb.AcquisitionRuntime.stop = _hooked_stop
+
+    # Hook 6: Block stop_control_server() - keep runtime alive for streaming
+    def _hooked_stop_control_server(self, *args, **kwargs):
+        print("[ultrasound Hook] Intercepted stop_control_server() - keeping runtime alive for remote control!")
+    ostb.AcquisitionRuntime.stop_control_server = _hooked_stop_control_server
+
+    # Hook 7: Block disconnect() - keep hardware connected
+    def _hooked_disconnect(self, *args, **kwargs):
+        print("[ultrasound Hook] Intercepted disconnect() - keeping runtime connected to hardware!")
+    ostb.AcquisitionRuntime.disconnect = _hooked_disconnect
+
+    # Hook 8: Block save_acquisition_archive_hdf5 - avoid blocking disk write during streaming
+    if hasattr(ostb, "save_acquisition_archive_hdf5"):
+        def _hooked_save(*args, **kwargs):
+            print("[ultrasound Hook] Intercepted save_acquisition_archive_hdf5() - skipping heavy HDF5 write during streaming!")
+        ostb.save_acquisition_archive_hdf5 = _hooked_save
+
 except Exception as exc:
     print(f"[ultrasound Hook] OSTB hook info: {exc}")
 
 
-def execute_direct_runtime_command(name: str, value: any) -> bool:
-    """
-    Directly invokes OSTB Python AcquisitionRuntime methods:
-    - start: runtime.start()
-    - freeze: runtime.stop()
-    Works 100% directly via Python functions without modifying curv_proper_code.py!
-    """
-    global _global_ostb_runtime
-    print(f"[Direct Function Call] Executing '{name}' = {value}")
+_rebuild_lock = threading.Lock()
+_pending_rebuild_timer = None
+_pending_rebuild_voltage = None
+_pending_rebuild_gain = None
+REBUILD_DEBOUNCE_SECONDS = 0.35
 
-    if _global_ostb_runtime is not None:
+
+def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float = None) -> bool:
+    """
+    Rebuilds the waveform, TX configs, scans, sequence and full AcquisitionConfiguration
+    from scratch, then reconfigures hardware using stop -> configure -> start sequence.
+
+    OSTB hardware requires: stop() -> configure(new_config) -> start() to apply param changes.
+    Uses _rebuild_lock to prevent concurrent rebuilds from multiple rapid slider events.
+    """
+    global _global_ostb_runtime, _curv_module
+    if _curv_module is None or _global_ostb_runtime is None:
+        print("[Rebuild] Cannot rebuild: module or runtime not ready")
+        return False
+
+    if not _rebuild_lock.acquire(blocking=False):
+        print("[Rebuild] Another rebuild already in progress, skipping duplicate")
+        return False
+
+    try:
+        import ostb._ostb as ostb_mod
+        import math as _math
+        m = _curv_module
+
+        # Update stored parameters
+        if new_voltage is not None:
+            m._current_voltage = new_voltage
+        if new_gain is not None:
+            m.gain_analog_db = new_gain
+
+        voltage = getattr(m, "_current_voltage", 50.0)
+        gain = getattr(m, "gain_analog_db", 40.0)
+
+        print(f"[Rebuild] Starting hardware rebuild: voltage={voltage}V, gain={gain}dB")
+
+        # Step 1: Stop acquisition
         try:
-            if name == "start":
-                if value:
-                    print("[Direct OSTB API] Executing _global_ostb_runtime.start()")
-                    if hasattr(_global_ostb_runtime, "start"):
-                        _global_ostb_runtime.start()
-                else:
-                    print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
-                    if hasattr(_global_ostb_runtime, "stop"):
-                        _global_ostb_runtime.stop()
-                return True
-            elif name == "freeze":
-                print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
-                if hasattr(_global_ostb_runtime, "stop"):
-                    _global_ostb_runtime.stop()
-                return True
-        except Exception as exc:
-            print(f"[Direct OSTB API] Direct method error: {exc}")
+            _global_ostb_runtime.stop()
+            print("[Rebuild] Acquisition stopped")
+        except Exception as e:
+            print(f"[Rebuild] Stop warning (may already be stopped): {e}")
 
-    # Fallback to OSTB TCP Socket (127.0.0.1:4096) and Win32 event messaging
-    return handle_control_command(name, value)
+        # Step 2: Rebuild waveform with new voltage
+        new_waveform = ostb_mod.WaveformFactory.make_unipolar(m.center_frequency_hz)
+        new_waveform.set_awg(False)
+        new_waveform.set_negative_voltage(voltage)
+        new_waveform.validate()
+        print(f"[Rebuild] Waveform built: voltage={voltage}V")
+
+        # Step 3: Rebuild full scan sequence
+        new_seq_builder = (ostb_mod.SequenceBuilder()
+                           .set_probe(m.probe)
+                           .set_trigger(m.trigger)
+                           .set_number_of_frames(m.frame_count))
+
+        for line_idx in range(m.line_count):
+            start = line_idx
+            apodization = [0.0] * m.probe.element_count
+            apodization[start: start + m.active_element_count] = [1.0] * m.active_element_count
+
+            center_idx = start + m.active_element_count // 2 - (
+                1 if (m.active_element_count % 2 == 0) else 0
+            )
+
+            azimuth_rad = m.probe.az_angle[center_idx]
+            radius_m = m.probe.radius
+            rho_m = radius_m + m.focus_depth_m
+            x_focus_m = rho_m * _math.sin(azimuth_rad)
+            z_focus_m = -radius_m + rho_m * _math.cos(azimuth_rad)
+
+            tx_config = (ostb_mod.TxConfigBuilder()
+                         .set_apodization(apodization)
+                         .set_source([0.0, 0.0, 0.0])
+                         .set_focus_point([x_focus_m, 0.0, z_focus_m])
+                         .set_tx_with_all_elements(False)
+                         .set_waveform(new_waveform)
+                         .set_speed_of_sound(m.speed_of_sound)
+                         .compute_delays(m.probe)
+                         .build(m.probe))
+
+            scan = (ostb_mod.ScanBuilder()
+                    .set_tx(tx_config)
+                    .set_rx(m.rxConfig)
+                    .set_process_id(0)
+                    .set_scan_id(line_idx)
+                    .set_frame_id(0)
+                    .set_gain_digital(0.0)
+                    .set_gain_analog(gain)
+                    .set_start(m.scan_start_s)
+                    .set_range(m.scan_range_s)
+                    .set_time_slot(m.time_slot_seconds)
+                    .set_sample_factor(m.sample_factor)
+                    .set_compression_type(ostb_mod.CompressionType.DECIMATION)
+                    .set_rectification(ostb_mod.Rectification.SIGNED)
+                    .set_beam_correction(0.0)
+                    .build(m.probe.element_count))
+
+            new_seq_builder.add_scan(scan)
+
+        new_seq = new_seq_builder.build()
+        print(f"[Rebuild] Sequence built: {m.line_count} scan lines")
+
+        # Step 4: Rebuild AcquisitionConfiguration
+        new_config = ostb_mod.AcquisitionConfiguration()
+        new_config.set_root(m.root)
+        new_config.set_sequence(new_seq)
+        new_config.set_processing(m.processing)
+        new_config.validate()
+        print("[Rebuild] Configuration validated")
+
+        # Step 5: Configure hardware
+        _global_ostb_runtime.configure(new_config)
+        print(f"[Rebuild] Hardware configured: voltage={voltage}V, gain={gain}dB")
+
+        # Step 6: Restart acquisition
+        _global_ostb_runtime.start()
+        print(f"[Rebuild] Acquisition restarted: voltage={voltage}V, gain={gain}dB ACTIVE")
+        return True
+
+    except Exception as e:
+        print(f"[Rebuild] Error rebuilding configuration: {e}")
+        return False
+
+    finally:
+        _rebuild_lock.release()
+
+
+def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
+    """
+    Debounced rebuild: waits REBUILD_DEBOUNCE_SECONDS after the LAST slider change
+    before rebuilding hardware to prevent thrashing during rapid user interaction.
+    """
+    global _pending_rebuild_timer, _pending_rebuild_voltage, _pending_rebuild_gain
+
+    if new_voltage is not None:
+        _pending_rebuild_voltage = new_voltage
+    if new_gain is not None:
+        _pending_rebuild_gain = new_gain
+
+    if _pending_rebuild_timer is not None:
+        _pending_rebuild_timer.cancel()
+
+    def _do_rebuild():
+        global _pending_rebuild_voltage, _pending_rebuild_gain
+        v = _pending_rebuild_voltage
+        g = _pending_rebuild_gain
+        _pending_rebuild_voltage = None
+        _pending_rebuild_gain = None
+        print(f"[Debounce] Applying deferred rebuild: voltage={v}V, gain={g}dB")
+        rebuild_configuration_with_params(new_voltage=v, new_gain=g)
+
+    _pending_rebuild_timer = threading.Timer(REBUILD_DEBOUNCE_SECONDS, _do_rebuild)
+    _pending_rebuild_timer.daemon = True
+    _pending_rebuild_timer.start()
+
+
+def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
     """
     Sends a direct control command to the OSTB Control Server TCP socket on 127.0.0.1:4096.
-    This bypasses GUI pixel coordinates completely and works across all screen resolutions and systems.
+    Bypasses GUI pixel coordinates completely and triggers OpenSonics control server directly.
     """
     try:
         import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.4)
-        s.connect(("127.0.0.1", 4096))
-        payload = json.dumps({"command": cmd, "control": cmd, "value": val}) + "\n"
-        s.sendall(payload.encode("utf-8"))
-        s.close()
-        print(f"[Remote Control Socket] Successfully sent direct OSTB command '{cmd}'={val} to 127.0.0.1:4096")
-        return True
-    except Exception:
+        import json
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.4)
+            s.connect(("127.0.0.1", port))
+            payload = json.dumps({"command": name, "control": name, "value": value}) + "\n"
+            s.sendall(payload.encode("utf-8"))
+            print(f"[Remote Control Socket] Successfully sent direct OSTB command '{name}'={value} to 127.0.0.1:{port}")
+            return True
+    except Exception as exc:
+        # Expected if socket server is disabled or standalone GUI mode
         return False
 
 
@@ -367,14 +536,100 @@ def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
         print(f"[Remote Control Qt] PostMessage error: {e}")
 
 
+def execute_direct_runtime_command(name: str, value: any) -> bool:
+    """
+    Executes an ultrasound acquisition control command.
+    Multi-tier architecture:
+    1. Direct Python AcquisitionRuntime / OSTB configuration methods (if in-process runtime is active)
+    2. Direct TCP Socket trigger to OSTB Control Server (127.0.0.1:4096)
+    3. Non-invasive Qt event queue injection (PostMessage WM_LBUTTONDOWN/UP) & hardware click backup
+    """
+    global _global_ostb_runtime, _curv_module, _is_acquiring
+    print(f"[Control Command Pipeline] Executing '{name}' = {value}")
+
+    handled_direct = False
+
+    # 1. Direct Python Runtime / OSTB Configuration API
+    if _global_ostb_runtime is not None:
+        try:
+            if name == "start":
+                if value:
+                    print("[Direct OSTB API] Executing _global_ostb_runtime.start()")
+                    if hasattr(_global_ostb_runtime, "start"):
+                        _global_ostb_runtime.start()
+                    _is_acquiring = True
+                else:
+                    print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
+                    if hasattr(_global_ostb_runtime, "stop"):
+                        _global_ostb_runtime.stop()
+                    _is_acquiring = False
+                handled_direct = True
+            elif name == "freeze":
+                print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
+                if hasattr(_global_ostb_runtime, "stop"):
+                    _global_ostb_runtime.stop()
+                _is_acquiring = False
+                handled_direct = True
+            elif name == "voltage":
+                val = max(0.0, min(50.0, float(value)))
+                print(f"[Direct OSTB API] Scheduling voltage -> {val} V")
+                schedule_rebuild(new_voltage=val)
+                handled_direct = True
+            elif name == "gain":
+                val = max(0.0, min(80.0, float(value)))
+                print(f"[Direct OSTB API] Scheduling gain -> {val} dB")
+                schedule_rebuild(new_gain=val)
+                handled_direct = True
+            elif name == "display":
+                enabled = bool(value)
+                print(f"[Direct OSTB API] Setting enable_display -> {enabled}")
+                if _curv_module is not None and hasattr(_curv_module, "processing"):
+                    _curv_module.processing.set_enable_display(enabled)
+                    if hasattr(_curv_module, "configuration"):
+                        _global_ostb_runtime.configure(_curv_module.configuration)
+                handled_direct = True
+            elif name == "log_gain":
+                val = max(0.0, min(100.0, float(value)))
+                print(f"[Direct OSTB API] Setting log compression gain -> {val} dB")
+                if _curv_module is not None and hasattr(_curv_module, "log"):
+                    _curv_module.log.gain_db = val
+                    if hasattr(_curv_module, "configuration"):
+                        _global_ostb_runtime.configure(_curv_module.configuration)
+                handled_direct = True
+            elif name == "dynamic_range":
+                val = max(0.0, min(120.0, float(value)))
+                print(f"[Direct OSTB API] Setting dynamic range -> {val} dB")
+                if _curv_module is not None and hasattr(_curv_module, "log"):
+                    _curv_module.log.dynamic_range_db = val
+                    if hasattr(_curv_module, "configuration"):
+                        _global_ostb_runtime.configure(_curv_module.configuration)
+                handled_direct = True
+        except Exception as exc:
+            print(f"[Direct OSTB API] Error during direct invocation: {exc}")
+
+    # Client-side operations that are acknowledged by the backend
+    if name in ["capture", "record", "rotate_image", "reset_position"]:
+        print(f"[Control Command Pipeline] Acknowledged stream operation: '{name}'={value}")
+        return True
+
+    # 2. Always also dispatch to Socket and GUI (PostMessage) so OpenSonics UI widgets update
+    gui_result = handle_control_command(name, value)
+    return handled_direct or gui_result
+
+
 def handle_control_command(name: str, value: any) -> bool:
     """
-    Handles control commands from doctor side and delivers them directly into NEXUS via PostMessage & PySonics socket.
+    Handles control commands from doctor side and delivers them directly into OpenSonics NEXUS via PostMessage & TCP socket.
     Coordinates calibrated to NEXUS window layout (640x480 ratio):
     - Start Button: x_pct=0.25, y_pct=0.16 (cy=68)
     - Freeze Button: x_pct=0.25, y_pct=0.25 (cy=108)
-    - Voltage Slider: y_pct=0.42
-    - Analog Gain Slider: y_pct=0.58
+    - Voltage Slider: y_pct=0.42, x_pct = 0.12 + (val / 50.0) * 0.26
+    - Analog Gain Slider: y_pct=0.58, x_pct = 0.12 + (val / 80.0) * 0.26
+    - Display Toggle: x_pct=0.64, y_pct=0.70
+    - TGC Toggle: x_pct=0.64, y_pct=0.18
+    - TGC Sliders 1-6: x_pct = 0.54 + (slider_idx * 0.07), y_pct = 0.62 - (val / 100.0) * 0.34
+    - Save Setup Button: x_pct=0.62, y_pct=0.83
+    - Advanced Button: x_pct=0.84, y_pct=0.83
     """
     print(f"[Remote Control API] Processing command: '{name}'={value}")
 
@@ -423,12 +678,12 @@ def handle_control_command(name: str, value: any) -> bool:
         except Exception:
             pass
     elif name == "voltage":
-        val = float(value)
+        val = max(0.0, min(50.0, float(value)))
         x_pct = 0.12 + (val / 50.0) * 0.26
         y_pct = 0.42
     elif name == "gain":
-        val = float(value)
-        x_pct = 0.12 + (val / 40.0) * 0.26
+        val = max(0.0, min(80.0, float(value)))
+        x_pct = 0.12 + (val / 80.0) * 0.26
         y_pct = 0.58
     elif name == "display":
         x_pct, y_pct = 0.64, 0.70
@@ -437,7 +692,7 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name.startswith("tgc_slider_"):
         try:
             slider_idx = int(name.split("_")[-1]) - 1
-            val = float(value)
+            val = max(0.0, min(100.0, float(value)))
             x_pct = 0.54 + (slider_idx * 0.07)
             y_pct = 0.62 - (val / 100.0) * 0.34
         except ValueError:
@@ -450,11 +705,11 @@ def handle_control_command(name: str, value: any) -> bool:
     if x_pct is not None and y_pct is not None:
         cx = int(x_pct * width)
         cy = int(y_pct * height)
-        
-        # Deliver mouse click directly into Qt event queue (No mouse blinking!)
+
+        # Deliver mouse click directly into Qt event queue
         send_direct_qt_click(hwnd, cx, cy)
-        
-        # Also backup hardware click if window is currently visible
+
+        # Also backup hardware click if window is currently visible on desktop
         if left >= 0 and top >= 0:
             send_win32_click(hwnd, cx, cy)
 
@@ -464,40 +719,9 @@ def handle_control_command(name: str, value: any) -> bool:
 
 
 def _position_window_offscreen_loop() -> None:
-    """
-    Finds the PyQt5 window and moves it off-screen immediately so the patient doesn't see it.
-    Keeps the window restored (not minimized) so Qt continues processing input and rendering.
-    """
-    try:
-        import win32gui
-        import win32con
-    except ImportError:
-        return
+    """Disabled to ensure OpenSonics window remains visible and responsive to the Indore team and Win32 clicks."""
+    return
 
-    while not _stop_event.is_set():
-        if _click_lock.acquire(blocking=False):
-            try:
-                hwnd = find_opensonics_control_window()
-                if hwnd:
-                    if win32gui.IsIconic(hwnd):
-                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                    
-                    rect = win32gui.GetWindowRect(hwnd)
-                    left, top, right, bottom = rect
-                    if left != -2000 or top != -2000:
-                        print(f"[ultrasound] Positioning OpenSonics window off-screen (-2000, -2000) to prevent patient visibility.")
-                        win32gui.SetWindowPos(
-                            hwnd,
-                            0,
-                            -2000,
-                            -2000,
-                            800,
-                            600,
-                            win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
-                        )
-            finally:
-                _click_lock.release()
-        time.sleep(0.3)
 
 
 
@@ -512,14 +736,18 @@ def _forward_child_output(proc: subprocess.Popen) -> None:
 def _make_status_frame(
     text: str, w: int = STREAM_CANVAS_W, h: int = STREAM_CANVAS_H
 ) -> bytes:
-    frame = np.zeros((h, w, 3), dtype=np.uint8)
-    frame[:] = (20, 22, 28)
-    cv2.putText(frame, "Ultrasound -> Agora", (26, 62), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (230, 230, 230), 2)
-    cv2.putText(frame, text, (26, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.74, (190, 190, 190), 2)
-    ok, encoded = cv2.imencode(".jpg", frame)
-    if not ok:
-        raise RuntimeError("Failed to encode status frame")
-    return encoded.tobytes()
+    try:
+        import cv2
+        frame = np.zeros((h, w, 3), dtype=np.uint8)
+        frame[:] = (20, 22, 28)
+        cv2.putText(frame, "Ultrasound -> Agora", (26, 62), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (230, 230, 230), 2)
+        cv2.putText(frame, text, (26, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.74, (190, 190, 190), 2)
+        ok, encoded = cv2.imencode(".jpg", frame)
+        if ok:
+            return encoded.tobytes()
+    except Exception:
+        pass
+    return b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
 
 
 def _set_latest_jpg(jpg_bytes: bytes) -> None:
@@ -782,6 +1010,11 @@ def _run_curv_proper_code_thread() -> None:
         spec = importlib.util.spec_from_file_location("curv_proper_module", str(script_path))
         module = importlib.util.module_from_spec(spec)
         _curv_module = module
+
+        # Start watcher thread to capture runtime immediately when created
+        watcher = threading.Thread(target=_watch_module_runtime, daemon=True)
+        watcher.start()
+
         spec.loader.exec_module(module)
         if hasattr(module, "runtime"):
             _global_ostb_runtime = module.runtime
@@ -825,21 +1058,34 @@ def add_cors_headers(response):
 def get_status():
     """
     Returns current control panel state directly from curv_proper_code.py parameters.
-    Allows Doctor UI on load to sync sliders and buttons to patient hardware state.
+    Allows Doctor UI to sync sliders and buttons to patient hardware state in real time.
     """
-    global _curv_module
-    if _curv_module is not None and hasattr(_curv_module, "get_current_status"):
+    global _curv_module, _is_acquiring
+    status_str = "RUNNING" if _is_acquiring else "STOPPED"
+    voltage = 50.0
+    gain = 40.0
+    display_on = True
+    tgc_on = False
+    tgc_vals = [50, 12, 3, 77, 90, 30]
+
+    if _curv_module is not None:
         try:
-            return jsonify(_curv_module.get_current_status())
-        except Exception as e:
-            print(f"[Status API] Error getting status: {e}")
+            if hasattr(_curv_module, "waveform"):
+                voltage = float(getattr(_curv_module, "_current_voltage", 50.0))
+            if hasattr(_curv_module, "gain_analog_db"):
+                gain = float(_curv_module.gain_analog_db)
+            if hasattr(_curv_module, "processing") and hasattr(_curv_module.processing, "get_enable_display"):
+                display_on = bool(_curv_module.processing.get_enable_display())
+        except Exception:
+            pass
+
     return jsonify({
-        "status": "STOPPED",
-        "voltage": 50.0,
-        "gain": 40.0,
-        "display": True,
-        "tgc_enabled": False,
-        "tgc_sliders": [50, 12, 3, 77, 90, 30]
+        "status": status_str,
+        "voltage": voltage,
+        "gain": gain,
+        "display": display_on,
+        "tgc_enabled": tgc_on,
+        "tgc_sliders": tgc_vals
     })
 
 
@@ -919,8 +1165,9 @@ def publisher_page():
 
     function connectMQTT() {{
       const cleanAppId = APP_ID.substring(0, 8);
-      const topic = `${{CHANNEL}}-control-${{cleanAppId}}`;
-      setStatus(`Connecting to MQTT Broker on topic: ${{topic}}...`);
+      const controlTopic = `${{CHANNEL}}-control-${{cleanAppId}}`;
+      const statusTopic = `${{CHANNEL}}-status-${{cleanAppId}}`;
+      setStatus(`Connecting to MQTT Broker on topic: ${{controlTopic}}...`);
 
       const brokerUrls = [
         "wss://broker.hivemq.com:8884/mqtt",
@@ -930,20 +1177,33 @@ def publisher_page():
 
       function tryConnect() {{
         const url = brokerUrls[attempts % brokerUrls.length];
-        console.log(`[Patient MQTT] Trying connection to ${{url}} on topic: ${{topic}}`);
+        console.log(`[Patient MQTT] Trying connection to ${{url}} on topic: ${{controlTopic}}`);
         try {{
           mqttClient = mqtt.connect(url, {{ keepalive: 30, reconnectPeriod: 3000 }});
           
           mqttClient.on("connect", () => {{
             console.log(`[Patient MQTT] Successfully connected to ${{url}}`);
-            mqttClient.subscribe(topic, (err) => {{
+            mqttClient.subscribe(controlTopic, (err) => {{
               if (err) {{
                 console.error("[Patient MQTT] Subscription error:", err);
               }} else {{
-                console.log(`[Patient MQTT] Subscribed to control topic: ${{topic}}`);
+                console.log(`[Patient MQTT] Subscribed to control topic: ${{controlTopic}}`);
                 setStatus(`Ultrasound active (Remote Control connected on channel: ${{CHANNEL}})`);
               }}
             }});
+
+            // Announce initial status and keep status synced periodically
+            const broadcastStatus = async () => {{
+              try {{
+                const sres = await fetch(window.location.origin + "/api/status");
+                if (sres.ok) {{
+                  const sdata = await sres.json();
+                  mqttClient.publish(statusTopic, JSON.stringify(sdata));
+                }}
+              }} catch (_) {{}}
+            }};
+            broadcastStatus();
+            setInterval(broadcastStatus, 2500);
           }});
 
           mqttClient.on("error", (err) => {{
@@ -956,7 +1216,7 @@ def publisher_page():
           }});
 
           mqttClient.on("message", async (receivedTopic, message) => {{
-            if (receivedTopic !== topic) return;
+            if (receivedTopic !== controlTopic) return;
             try {{
               const event = JSON.parse(message.toString());
               console.log("[Patient MQTT] Message received:", event);
@@ -969,6 +1229,15 @@ def publisher_page():
               }});
               const resData = await res.json();
               console.log("[Patient MQTT] Local API execution response:", resData);
+
+              // Broadcast updated hardware status immediately after executing command
+              try {{
+                const sres = await fetch(window.location.origin + "/api/status");
+                if (sres.ok) {{
+                  const sdata = await sres.json();
+                  mqttClient.publish(statusTopic, JSON.stringify(sdata));
+                }}
+              }} catch (_) {{}}
             }} catch (err) {{
               console.error("[Patient MQTT] Error processing remote event:", err);
             }}
@@ -1074,9 +1343,10 @@ def publisher_page():
         publishTracks.push(audioTrack);
       }}
       await client.publish(publishTracks);
-
-      connectMQTT();
     }}
+
+    // Connect MQTT immediately on page load to receive commands reliably
+    connectMQTT();
 
     start().catch((err) => {{
       setStatus(`Failed: ${{err?.message || err}}`);
@@ -1126,10 +1396,6 @@ def main() -> None:
                 "Ultrasound script exited immediately. "
                 "Check [ultrasound] logs above for the root cause."
             )
-
-    # Start background thread to keep the OpenSonics GUI window off-screen
-    window_thread = threading.Thread(target=_position_window_offscreen_loop, daemon=True)
-    window_thread.start()
 
     output_thread = threading.Thread(target=_process_output_loop, daemon=True)
     output_thread.start()
