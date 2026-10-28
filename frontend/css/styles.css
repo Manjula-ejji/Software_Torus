@@ -2497,6 +2497,86 @@ body[data-role="viewer"] #settings-uid-wrapper {
   background: #e2e8f0;
 }
 
+/* Four Action Buttons Row: Capture, Record, Rotate Image, Reset Position */
+.acq-action-row {
+  display: grid;
+  grid-template-columns: 0.88fr 0.84fr 1.28fr 1.35fr;
+  gap: 6px;
+  width: 100%;
+  margin-top: -6px;
+  margin-bottom: -4px;
+}
+
+.acq-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 4px 7px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  color: #1e293b;
+  min-width: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.acq-action-btn:hover {
+  background: #f8fafc;
+  border-color: #93c5fd;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.08);
+}
+
+.acq-action-btn:active {
+  background: #eff6ff;
+  transform: translateY(1px);
+}
+
+.acq-action-btn.recording-active {
+  background: #fee2e2;
+  border-color: #ef4444;
+  animation: pulseRecording 1.5s infinite;
+}
+
+.acq-action-btn.recording-active .acq-action-icon {
+  stroke: #dc2626;
+}
+
+@keyframes pulseRecording {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.acq-action-icon {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+
+.acq-action-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #334155;
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+  line-height: 1.1;
+  max-width: 100%;
+}
+
 .controls-divider-line {
   height: 1px;
   background: #e2e8f0;
@@ -2699,9 +2779,9 @@ body[data-role="viewer"] #settings-uid-wrapper {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 12px 8px;
+  padding: 14px 8px 12px;
   align-items: center;
-  min-height: 190px;
+  min-height: 245px;
   transition: opacity 0.3s ease;
 }
 
@@ -2725,7 +2805,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
 }
 
 .tgc-slider-wrapper {
-  height: 130px;
+  height: 185px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -2736,7 +2816,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   -webkit-appearance: slider-vertical;
   appearance: slider-vertical;
   width: 12px;
-  height: 120px;
+  height: 175px;
   padding: 0;
   background: #e2e8f0;
   border: none;
@@ -10655,7 +10735,7 @@ button.drep-collapse-btn:focus-visible,
   border-bottom: none;
 }
 
-.tsta-patient-row > div {
+.tsta-patient-row>div {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -11544,10 +11624,13 @@ body.torus-station-patients-active #docDashBackBtn {
 }
 
 @keyframes dhistDotPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.45;
     transform: scale(0.85);
@@ -12428,6 +12511,7 @@ body.torus-station-patients-active #docDashBackBtn {
     opacity: 0;
     transform: translateY(6px) scale(0.97);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -12439,6 +12523,7 @@ body.torus-station-patients-active #docDashBackBtn {
     opacity: 0;
     transform: translateY(-6px) scale(0.97);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);

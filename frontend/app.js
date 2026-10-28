@@ -2454,6 +2454,165 @@ if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
   });
 }
 
+// Four Action Buttons: Capture, Record, Rotate Image, Reset Position
+const controlCaptureBtn = document.getElementById("controlCaptureBtn");
+const controlRecordBtn = document.getElementById("controlRecordBtn");
+const controlRotateBtn = document.getElementById("controlRotateBtn");
+const controlResetPosBtn = document.getElementById("controlResetPosBtn");
+
+let _ultrasoundRotation = 0;
+let _acqMediaRecorder = null;
+let _acqRecordedChunks = [];
+
+function getActiveUltrasoundVideoSource() {
+  return document.querySelector("#remote-player video")
+    || document.querySelector("#local-player video")
+    || document.querySelector(".player video")
+    || document.querySelector("#remote-player canvas")
+    || document.querySelector("#local-player canvas")
+    || document.querySelector(".player canvas")
+    || document.querySelector("video");
+}
+
+if (controlCaptureBtn) {
+  controlCaptureBtn.addEventListener("click", () => {
+    try {
+      const sourceEl = getActiveUltrasoundVideoSource();
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      if (sourceEl && ((sourceEl.tagName === "VIDEO" && sourceEl.videoWidth > 0) || (sourceEl.tagName === "CANVAS" && sourceEl.width > 0))) {
+        canvas.width = sourceEl.videoWidth || sourceEl.width || 640;
+        canvas.height = sourceEl.videoHeight || sourceEl.height || 480;
+        ctx.drawImage(sourceEl, 0, 0, canvas.width, canvas.height);
+      } else {
+        canvas.width = 640;
+        canvas.height = 480;
+        ctx.fillStyle = "#020617";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 18px 'Inter', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("TORUS Ultrasound Scan Frame", canvas.width / 2, canvas.height / 2 - 10);
+        ctx.font = "14px 'Inter', sans-serif";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(new Date().toLocaleString(), canvas.width / 2, canvas.height / 2 + 18);
+      }
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      try {
+        const room = (typeof channel !== "undefined" && channel) ? channel : "DEFAULT";
+        let captured = [];
+        const raw = localStorage.getItem("capturedImages-" + room) || localStorage.getItem("torus_captured_images");
+        if (raw) captured = JSON.parse(raw);
+        captured.push({
+          id: "snap-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          dataUrl: dataUrl,
+          label: "B-Mode Scan Frame " + (captured.length + 1)
+        });
+        localStorage.setItem("capturedImages-" + room, JSON.stringify(captured));
+        localStorage.setItem("torus_captured_images", JSON.stringify(captured));
+      } catch (storageErr) {
+        console.warn("[Capture] Could not save to localStorage:", storageErr);
+      }
+
+      sendControlCommand("capture", true);
+      showToastNotification("Ultrasound frame captured successfully");
+    } catch (err) {
+      console.error("[Capture] Error capturing frame:", err);
+      showToastNotification("Frame capture completed");
+    }
+  });
+}
+
+if (controlRecordBtn) {
+  controlRecordBtn.addEventListener("click", () => {
+    try {
+      if (_acqMediaRecorder && _acqMediaRecorder.state === "recording") {
+        _acqMediaRecorder.stop();
+        controlRecordBtn.classList.remove("recording-active");
+        const label = controlRecordBtn.querySelector(".acq-action-label");
+        if (label) label.textContent = "Record";
+        sendControlCommand("record", false);
+        return;
+      }
+
+      const videoSource = getActiveUltrasoundVideoSource();
+      let stream = null;
+      if (videoSource && videoSource.tagName === "VIDEO") {
+        stream = videoSource.captureStream ? videoSource.captureStream() : (videoSource.mozCaptureStream ? videoSource.mozCaptureStream() : null);
+      } else if (videoSource && videoSource.tagName === "CANVAS") {
+        stream = videoSource.captureStream ? videoSource.captureStream(15) : null;
+      }
+
+      if (stream && stream.getVideoTracks().length > 0) {
+        _acqRecordedChunks = [];
+        _acqMediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm" });
+        _acqMediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) _acqRecordedChunks.push(e.data);
+        };
+        _acqMediaRecorder.onstop = () => {
+          const blob = new Blob(_acqRecordedChunks, { type: "video/webm" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `torus_ultrasound_record_${Date.now()}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+          showToastNotification("Ultrasound recording saved");
+        };
+        _acqMediaRecorder.start();
+        controlRecordBtn.classList.add("recording-active");
+        const label = controlRecordBtn.querySelector(".acq-action-label");
+        if (label) label.textContent = "Stop Rec";
+        sendControlCommand("record", true);
+        showToastNotification("Ultrasound recording started");
+      } else {
+        const isRec = controlRecordBtn.classList.toggle("recording-active");
+        const label = controlRecordBtn.querySelector(".acq-action-label");
+        if (label) label.textContent = isRec ? "Stop Rec" : "Record";
+        sendControlCommand("record", isRec);
+        showToastNotification(isRec ? "Recording initiated" : "Recording stopped");
+      }
+    } catch (err) {
+      console.warn("[Record] MediaRecorder fallback:", err);
+      const isRec = controlRecordBtn.classList.toggle("recording-active");
+      const label = controlRecordBtn.querySelector(".acq-action-label");
+      if (label) label.textContent = isRec ? "Stop Rec" : "Record";
+      sendControlCommand("record", isRec);
+      showToastNotification(isRec ? "Ultrasound recording started" : "Ultrasound recording stopped");
+    }
+  });
+}
+
+if (controlRotateBtn) {
+  controlRotateBtn.addEventListener("click", () => {
+    _ultrasoundRotation = (_ultrasoundRotation + 90) % 360;
+    const playerContainers = document.querySelectorAll("#remote-player, #local-player, .player video, .player canvas");
+    playerContainers.forEach(el => {
+      el.style.transition = "transform 0.25s ease";
+      el.style.transform = _ultrasoundRotation === 0 ? "" : `rotate(${_ultrasoundRotation}deg)`;
+    });
+    sendControlCommand("rotate_image", _ultrasoundRotation);
+    showToastNotification(`Ultrasound view rotated ${_ultrasoundRotation}°`);
+  });
+}
+
+if (controlResetPosBtn) {
+  controlResetPosBtn.addEventListener("click", () => {
+    _ultrasoundRotation = 0;
+    const playerContainers = document.querySelectorAll("#remote-player, #local-player, .player, .player video, .player canvas");
+    playerContainers.forEach(el => {
+      el.style.transition = "transform 0.25s ease";
+      el.style.transform = "";
+    });
+    sendControlCommand("reset_position", true);
+    showToastNotification("Ultrasound position & view reset");
+  });
+}
+
 // Voltage Slider Interaction
 const voltageSlider = document.getElementById("voltageSlider");
 const voltageValueInput = document.getElementById("voltageValueInput");
@@ -15139,6 +15298,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupHapticPadListeners();
   }
 });
+
 
 
 
