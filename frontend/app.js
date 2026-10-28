@@ -2235,7 +2235,7 @@ async function syncDoctorControlsFromPatientState() {
     }
 
     if (data.status) {
-      updateUltrasoundScanUI(data.status === "RUNNING");
+      updateUltrasoundScanUI(data.status);
     }
   } catch (err) {
     console.warn("[Doctor UI] Sync state info:", err);
@@ -2248,9 +2248,22 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 let isRunningState = false;
+let isFrozenState = false;
 
-function updateUltrasoundScanUI(running) {
-  isRunningState = Boolean(running);
+const SNOWFLAKE_ICON_SVG = `<line x1="12" y1="2" x2="12" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><path d="M20 16.66l-3.5-2.02m0-5.28L20 7.34m-8 4.66l-3.5 2.02m0-5.28L12 7.34m4.5 4.66l-3.5-2.02m0 5.28L13 16.66m-4.5-4.66l3.5 2.02m0-5.28L8.5 7.34"></path>`;
+const RESUME_ICON_SVG = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor"></polygon>`;
+
+function updateUltrasoundScanUI(status) {
+  if (status === "RUNNING" || status === true) {
+    isRunningState = true;
+    isFrozenState = false;
+  } else if (status === "FROZEN") {
+    isRunningState = false;
+    isFrozenState = true;
+  } else {
+    isRunningState = false;
+    isFrozenState = false;
+  }
 
   // 1. Update Start Scan / Stop Scan button next to Join Call
   const startScanBtn = document.getElementById("startScanBtn");
@@ -2259,6 +2272,10 @@ function updateUltrasoundScanUI(running) {
       startScanBtn.textContent = "Stop Scan";
       startScanBtn.classList.add("scanning");
       startScanBtn.title = "Stop Ultrasound Scanning";
+    } else if (isFrozenState) {
+      startScanBtn.textContent = "Resume Scan";
+      startScanBtn.classList.remove("scanning");
+      startScanBtn.title = "Resume Ultrasound Scanning";
     } else {
       startScanBtn.textContent = "Start Scan";
       startScanBtn.classList.remove("scanning");
@@ -2268,7 +2285,7 @@ function updateUltrasoundScanUI(running) {
 
   // 2. Update Modal Acquisition Start/Stop button
   if (controlStartBtn) {
-    if (isRunningState) {
+    if (isRunningState || isFrozenState) {
       controlStartBtn.classList.add("active", "running-stop-btn");
       if (startBtnText) startBtnText.textContent = "Stop";
       if (startBtnIcon) {
@@ -2284,34 +2301,53 @@ function updateUltrasoundScanUI(running) {
     }
   }
 
-  // 3. Update Freeze button state
+  // 3. Update Freeze / Resume button state
   if (controlFreezeBtn) {
-    if (isRunningState) {
-      controlFreezeBtn.classList.remove("active");
+    const fText = document.getElementById("freezeBtnText") || controlFreezeBtn.querySelector("span");
+    const fIcon = document.getElementById("freezeBtnIcon") || controlFreezeBtn.querySelector("svg");
+    if (isFrozenState) {
+      controlFreezeBtn.classList.add("active", "resuming-btn");
+      if (fText) fText.textContent = "Resume";
+      if (fIcon) {
+        fIcon.innerHTML = RESUME_ICON_SVG;
+        fIcon.setAttribute("viewBox", "0 0 24 24");
+      }
+    } else {
+      controlFreezeBtn.classList.remove("active", "resuming-btn");
+      if (fText) fText.textContent = "Freeze";
+      if (fIcon) {
+        fIcon.innerHTML = SNOWFLAKE_ICON_SVG;
+        fIcon.setAttribute("viewBox", "0 0 24 24");
+      }
     }
   }
 
   // 4. Update status labels
   if (controlStatusLabel) {
-    controlStatusLabel.textContent = isRunningState ? "RUNNING" : "STOPPED";
-    controlStatusLabel.className = isRunningState ? "status-val running" : "status-val stopped";
+    if (isRunningState) {
+      controlStatusLabel.textContent = "RUNNING";
+      controlStatusLabel.className = "status-val running";
+    } else if (isFrozenState) {
+      controlStatusLabel.textContent = "FROZEN";
+      controlStatusLabel.className = "status-val frozen";
+    } else {
+      controlStatusLabel.textContent = "STOPPED";
+      controlStatusLabel.className = "status-val stopped";
+    }
   }
 }
 window.updateUltrasoundScanUI = updateUltrasoundScanUI;
 
 function toggleUltrasoundScan(forceState = null) {
-  const nextState = (forceState !== null) ? Boolean(forceState) : !isRunningState;
-  updateUltrasoundScanUI(nextState);
-
-  // Trigger the actual hardware / backend ultrasound scanning commands
-  if (nextState) {
+  if (isRunningState || isFrozenState) {
+    updateUltrasoundScanUI("STOPPED");
+    sendControlCommand("stop", true);
+    console.log("[Ultrasound Scan] Scanning stopped. State set to STOPPED.");
+  } else {
     window.activeScanStartTime = Date.now();
+    updateUltrasoundScanUI("RUNNING");
     sendControlCommand("start", true);
     console.log("[Ultrasound Scan] Scanning started. State set to RUNNING.");
-  } else {
-    sendControlCommand("start", false);
-    sendControlCommand("freeze", true);
-    console.log("[Ultrasound Scan] Scanning stopped. State set to STOPPED.");
   }
 }
 window.toggleUltrasoundScan = toggleUltrasoundScan;
@@ -2320,7 +2356,12 @@ window.toggleUltrasoundScan = toggleUltrasoundScan;
 const startScanBtn = document.getElementById("startScanBtn");
 if (startScanBtn) {
   startScanBtn.addEventListener("click", () => {
-    toggleUltrasoundScan();
+    if (isFrozenState) {
+      updateUltrasoundScanUI("RUNNING");
+      sendControlCommand("resume", true);
+    } else {
+      toggleUltrasoundScan();
+    }
   });
 }
 
@@ -2561,13 +2602,28 @@ const startBtnIcon = document.getElementById("startBtnIcon");
 
 if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
   controlStartBtn.addEventListener("click", () => {
-    toggleUltrasoundScan();
+    if (isRunningState || isFrozenState) {
+      updateUltrasoundScanUI("STOPPED");
+      sendControlCommand("stop", true);
+      showToastNotification("Ultrasound acquisition stopped");
+    } else {
+      window.activeScanStartTime = Date.now();
+      updateUltrasoundScanUI("RUNNING");
+      sendControlCommand("start", true);
+      showToastNotification("Ultrasound acquisition started");
+    }
   });
 
   controlFreezeBtn.addEventListener("click", () => {
-    controlFreezeBtn.classList.add("active");
-    updateUltrasoundScanUI(false);
-    sendControlCommand("freeze", true);
+    if (isFrozenState) {
+      updateUltrasoundScanUI("RUNNING");
+      sendControlCommand("resume", true);
+      showToastNotification("Ultrasound acquisition resumed");
+    } else {
+      updateUltrasoundScanUI("FROZEN");
+      sendControlCommand("freeze", true);
+      showToastNotification("Ultrasound acquisition frozen");
+    }
   });
 }
 

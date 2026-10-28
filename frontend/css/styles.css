@@ -2918,8 +2918,18 @@ body[data-role="viewer"] #settings-uid-wrapper {
   color: #10b981;
 }
 
+.status-val.frozen {
+  color: #f59e0b;
+}
+
 .status-val.connected {
   color: #10b981;
+}
+
+.acq-btn.resuming-btn {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1.5px solid #2563eb;
 }
 
 /* Responsive adjustment for controls modal */

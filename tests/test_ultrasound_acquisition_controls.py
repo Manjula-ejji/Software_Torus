@@ -19,7 +19,9 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
         test_commands = [
             ("start", True),
             ("start", False),
+            ("stop", True),
             ("freeze", True),
+            ("resume", True),
             ("voltage", 45.0),
             ("voltage", "30"),
             ("gain", 40.0),
@@ -54,7 +56,9 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
         """Test that POST /api/remote-input successfully responds with 200 and success for every control."""
         test_payloads = [
             {"control": "start", "value": True},
+            {"control": "stop", "value": True},
             {"control": "freeze", "value": True},
+            {"control": "resume", "value": True},
             {"control": "voltage", "value": 42},
             {"control": "gain", "value": 55},
             {"control": "display", "value": True},
@@ -87,6 +91,7 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertIn("status", data)
+        self.assertIn("is_frozen", data)
         self.assertIn("voltage", data)
         self.assertIn("gain", data)
         self.assertIn("display", data)
