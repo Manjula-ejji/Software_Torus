@@ -108,8 +108,14 @@ def api_agora_config():
     if request.method == "OPTIONS":
         return Response(status=204)
     database.load_env_file()
+    app_id = os.environ.get("AGORA_APP_ID", "").strip()
+    if not app_id or app_id == "f320d3475b6d4b70ba512b06d09849d7":
+        app_id = "73853929619b4c61a6752f4474b6f75c"
+
     token = os.environ.get("AGORA_TOKEN", "").strip()
-    app_id = os.environ.get("AGORA_APP_ID", "73853929619b4c61a6752f4474b6f75c").strip()
+    if not token or "007eJxTYPB48" in token:
+        token = "007eJxTYDhaufRFXs8txacJsu1J303ynBdd95O7kfPssPSd/A2GevUKDObGFqbGlkaWZoaWSSbJZoaJZuamRmkmJuYmSWZp5qbJCnMeZjUEMjK8WarGxMgAgSA+K0NJflFpMQMDAKsZIIE="
+
     channel = os.environ.get("AGORA_CHANNEL", "torus").strip()
     return jsonify({
         "appId": app_id,

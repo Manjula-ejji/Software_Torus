@@ -221,8 +221,10 @@ async function fetchAgoraConfiguration() {
             tokenInputEl.value = data.token;
           }
         }
-        if (data.appId && typeof appIdInput !== "undefined" && appIdInput && !appIdInput.value.trim()) {
-          appIdInput.value = data.appId;
+        if (data.appId && typeof appIdInput !== "undefined" && appIdInput) {
+          if (!appIdInput.value.trim() || appIdInput.value.trim() === "f320d3475b6d4b70ba512b06d09849d7") {
+            appIdInput.value = data.appId;
+          }
         }
         if (data.channel && typeof channelInput !== "undefined" && channelInput && !channelInput.value.trim()) {
           channelInput.value = data.channel;
