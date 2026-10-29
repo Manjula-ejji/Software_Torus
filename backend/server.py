@@ -153,13 +153,13 @@ def api_agora_config():
     if request.method == "OPTIONS":
         return Response(status=204)
     database.load_env_file()
-    app_id = os.environ.get("AGORA_APP_ID", "").strip()
-    if not app_id or app_id == "f320d3475b6d4b70ba512b06d09849d7":
-        app_id = "73853929619b4c61a6752f4474b6f75c"
+    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "")).strip()
+    if not app_id or app_id in ["f320d3475b6d4b70ba512b06d09849d7", "73853929619b4c61a6752f4474b6f75c"]:
+        app_id = "1f40918151a84a3d9dc3ebd7f1f47706"
 
-    token = os.environ.get("AGORA_TOKEN", "").strip()
-    if not token or "007eJxTYPB48" in token:
-        token = "007eJxTYDhaufRFXs8txacJsu1J303ynBdd95O7kfPssPSd/A2GevUKDObGFqbGlkaWZoaWSSbJZoaJZuamRmkmJuYmSWZp5qbJCnMeZjUEMjK8WarGxMgAgSA+K0NJflFpMQMDAKsZIIE="
+    token = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "")).strip()
+    if not token or "007eJxTYPB48" in token or "007eJxTYDhauf" in token:
+        token = "007eJxTYDh76lkfH8upYwXrkzXfv1k/Wbn2UuVU1ourFS5wv/cxP7JRgcEwzcTA0tDC0NQw0cIk0TjFMiXZODUpxTwNKGFubmB2792jrIZARgb51fHMjAwQCOKzMpTkF5UWMzAAABeoIlo="
 
     channel = os.environ.get("AGORA_CHANNEL", "torus").strip()
     return jsonify({

@@ -10,8 +10,8 @@ var currentAuthenticatedRole = null;
 function connectDoctorMQTT(appId, channel) {
   const targetAppId = appId
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "73853929619b4c61a6752f4474b6f75c" : "")
-    || "73853929619b4c61a6752f4474b6f75c";
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "1f40918151a84a3d9dc3ebd7f1f47706" : "")
+    || "1f40918151a84a3d9dc3ebd7f1f47706";
   const targetChannel = channel
     || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "")
     || "torus";

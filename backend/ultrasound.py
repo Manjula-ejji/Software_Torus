@@ -58,11 +58,36 @@ if MISSING_MODULES:
   pkgs = " ".join(sorted(set(MISSING_MODULES)))
   print(f"[ultrasound] Notice: Running in non-hardware/dev mode. Modules not loaded: {pkgs}")
 
+import os
+
+def _load_opensonics_env():
+    candidates = [
+        Path(__file__).resolve().parent.parent / ".env",
+        Path(__file__).resolve().parent / ".env"
+    ]
+    for p in candidates:
+        if p.is_file():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_load_opensonics_env()
+
 # -------------------- USER CONFIG --------------------
-APP_ID = "73853929619b4c61a6752f4474b6f75c"
-TOKEN = "007eJxTYDhaufRFXs8txacJsu1J303ynBdd95O7kfPssPSd/A2GevUKDObGFqbGlkaWZoaWSSbJZoaJZuamRmkmJuYmSWZp5qbJCnMeZjUEMjK8WarGxMgAgSA+K0NJflFpMQMDAKsZIIE="
-CHANNEL = "torus"
-UID = 5001
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "1f40918151a84a3d9dc3ebd7f1f47706"))
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYDh76lkfH8upYwXrkzXfv1k/Wbn2UuVU1ourFS5wv/cxP7JRgcEwzcTA0tDC0NQw0cIk0TjFMiXZODUpxTwNKGFubmB2792jrIZARgb51fHMjAwQCOKzMpTkF5UWMzAAABeoIlo="))
+CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
+UID = int(os.environ.get("AGORA_UID", 5001))
 
 # Choose which ultrasound script to launch.
 ULTRASOUND_SCRIPT = "curv_proper_code.py"
