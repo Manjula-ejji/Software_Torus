@@ -10,6 +10,7 @@ import sys
 import re
 import json
 from pathlib import Path
+import datetime
 from flask import Flask, request, jsonify, Response, send_from_directory
 
 # Add backend directory to sys.path
@@ -94,7 +95,8 @@ def api_remote_input():
     ctrl = payload.get("control")
     val = payload.get("value")
 
-    print(f"[Unified Server API] Stage 2: Received control request: ctrl='{ctrl}', value={val}")
+    now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Received control request: ctrl='{ctrl}', value={val}")
 
     # Keep server cache synchronized in real-time
     if ctrl == "voltage" and val is not None:
@@ -134,10 +136,12 @@ def api_remote_input():
                     _cached_ultrasound_state["voltage"] = data["voltage"]
                 if "gain" in data:
                     _cached_ultrasound_state["gain"] = data["gain"]
-                print(f"[Unified Server API] Stage 5: Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")
+                now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")
             return jsonify(data), resp.status
     except Exception as exc:
-        print(f"[Unified Server API] Direct ultrasound HTTP bridge offline ({exc}); control dispatched via MQTT to remote hardware")
+        now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Direct ultrasound HTTP bridge offline ({exc}); control dispatched via MQTT to remote hardware")
         return jsonify({
             "status": "forwarded",
             "executed": True,

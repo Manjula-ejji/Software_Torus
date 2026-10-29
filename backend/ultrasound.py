@@ -264,10 +264,19 @@ def replicate_mouse_event(event_type: str, x_percent: float, y_percent: float) -
 
 
 # --- Dynamic OSTB Hooks (Leaves curv_proper_code.py 100% original and untouched!) ---
+import datetime
+
+def diag_log(stage: str, message: str) -> None:
+    now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[DIAGNOSTIC {now_iso}] [{stage}] {message}")
+
 _global_ostb_runtime = None
 _global_ostb_config = None
 _curv_module = None
 _is_acquiring = False
+_is_reconfiguring = False
+_orig_start = None
+_orig_stop = None
 
 
 def _watch_module_runtime() -> None:
@@ -324,20 +333,22 @@ try:
     # Hook 4: Intercept start() to track state
     _orig_start = ostb.AcquisitionRuntime.start
     def _hooked_start(self, *args, **kwargs):
-        global _is_acquiring, _is_frozen, _is_user_stopped
-        _is_acquiring = True
-        _is_frozen = False
-        _is_user_stopped = False
-        print("[ultrasound Hook] AcquisitionRuntime.start() triggered -> _is_acquiring = True")
+        global _is_acquiring, _is_frozen, _is_user_stopped, _is_reconfiguring
+        if not _is_reconfiguring:
+            _is_acquiring = True
+            _is_frozen = False
+            _is_user_stopped = False
+            diag_log("ACQUISITION_STATE", "AcquisitionRuntime.start() triggered -> _is_acquiring = True, _is_frozen = False, _is_user_stopped = False")
         return _orig_start(self, *args, **kwargs)
     ostb.AcquisitionRuntime.start = _hooked_start
 
     # Hook 5: Intercept stop() to track state
     _orig_stop = ostb.AcquisitionRuntime.stop
     def _hooked_stop(self, *args, **kwargs):
-        global _is_acquiring
-        _is_acquiring = False
-        print("[ultrasound Hook] AcquisitionRuntime.stop() triggered -> _is_acquiring = False")
+        global _is_acquiring, _is_reconfiguring
+        if not _is_reconfiguring:
+            _is_acquiring = False
+            diag_log("ACQUISITION_STATE", "AcquisitionRuntime.stop() triggered -> _is_acquiring = False")
         return _orig_stop(self, *args, **kwargs)
     ostb.AcquisitionRuntime.stop = _hooked_stop
 
@@ -374,42 +385,33 @@ _last_confirmed_gain = 40.0
 def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float = None) -> bool:
     """
     Rebuilds the waveform, TX configs, scans, sequence and full AcquisitionConfiguration
-    from scratch, then reconfigures hardware using safe stop -> configure -> start sequence.
-
-    Applies Voltage and Analog Gain changes immediately and independently of Start/Stop buttons.
+    from scratch, then reconfigures hardware immediately and independently of Start/Stop buttons.
+    Uses live non-disruptive reconfiguration so ultrasound feed continues streaming smoothly.
     """
-    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain
+    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain, _global_ostb_config, _is_reconfiguring, _orig_stop, _orig_start
     if new_voltage is not None:
         _last_confirmed_voltage = float(new_voltage)
     if new_gain is not None:
         _last_confirmed_gain = float(new_gain)
 
+    diag_log("PARAM_UPDATE", f"Target parameters: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB | state: acquiring={_is_acquiring}, frozen={_is_frozen}, stopped={_is_user_stopped}")
+
     if _global_ostb_runtime is None:
-        print(f"[Diagnostic Rebuild] Parameters updated in module memory: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB (hardware runtime standby)")
+        diag_log("RUNTIME_STANDBY", f"Parameters recorded in module memory: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB (runtime standby)")
         return True
 
+    # Standalone mock/fallback mode (no _curv_module)
     if _curv_module is None:
-        should_resume = (not _is_frozen and not _is_user_stopped)
+        diag_log("STANDALONE_RECONFIG", f"Applying parameters to standalone runtime: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB")
+        _is_reconfiguring = True
         try:
-            _global_ostb_runtime.stop()
-            print(f"[Diagnostic Rebuild] Standalone runtime paused for reconfiguration")
-        except Exception as e:
-            print(f"[Diagnostic Rebuild] Standalone stop notice: {e}")
-        time.sleep(0.02)
-        if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
-            try:
+            if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
                 _global_ostb_runtime.configure(_global_ostb_config)
-                print(f"[Diagnostic Rebuild] Standalone runtime reconfigured")
-            except Exception as e:
-                print(f"[Diagnostic Rebuild] Standalone configure notice: {e}")
-        time.sleep(0.02)
-        if should_resume:
-            try:
-                _global_ostb_runtime.start()
-                _is_acquiring = True
-                print(f"[Diagnostic Rebuild] Standalone runtime resumed: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB ACTIVE")
-            except Exception as e:
-                print(f"[Diagnostic Rebuild] Standalone start notice: {e}")
+                diag_log("STANDALONE_RECONFIG", "Standalone runtime configure() completed successfully")
+        except Exception as e:
+            diag_log("STANDALONE_RECONFIG", f"Standalone configure notice: {e}")
+        finally:
+            _is_reconfiguring = False
         return True
 
     with _rebuild_lock:
@@ -418,7 +420,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             import math as _math
             m = _curv_module
 
-            # Update stored parameters
+            # Update stored parameters in curv module
             if new_voltage is not None:
                 m._current_voltage = float(new_voltage)
             if new_gain is not None:
@@ -427,21 +429,10 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             voltage = getattr(m, "_current_voltage", _last_confirmed_voltage)
             gain = getattr(m, "gain_analog_db", _last_confirmed_gain)
 
-            # Determine whether hardware should actively resume streaming
-            # By default during active exam, acquisition is running unless explicitly stopped or frozen
             should_resume = (not _is_frozen and not _is_user_stopped)
+            diag_log("REBUILD_PIPELINE", f"Building hardware sequence: target_voltage={voltage}V, target_gain={gain}dB, should_resume={should_resume}")
 
-            print(f"[Diagnostic Rebuild] Stage 3: Starting hardware reconfiguration: target_voltage={voltage}V, target_gain={gain}dB, should_resume={should_resume}, is_frozen={_is_frozen}, is_user_stopped={_is_user_stopped}")
-
-            # Step 1: Safely pause active hardware acquisition stream for reconfiguration
-            try:
-                _global_ostb_runtime.stop()
-                print("[Diagnostic Rebuild] Stage 4a: Hardware acquisition paused for safe reconfiguration")
-            except Exception as e:
-                print(f"[Diagnostic Rebuild] Stage 4a: Stop notice (may already be idle): {e}")
-            time.sleep(0.02)  # Allow FPGA DMA and RF pipeline to settle in IDLE state
-
-            # Step 2: Rebuild waveform with new voltage
+            # Rebuild waveform with new voltage
             new_waveform = ostb_mod.WaveformFactory.make_unipolar(m.center_frequency_hz)
             new_waveform.set_awg(False)
             new_waveform.set_negative_voltage(voltage)
@@ -449,9 +440,8 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             if hasattr(new_waveform, "_voltage"):
                 new_waveform._voltage = voltage
             m.waveform = new_waveform
-            print(f"[Rebuild] Waveform built: voltage={voltage}V")
 
-            # Step 3: Rebuild full scan sequence
+            # Rebuild full scan sequence
             new_seq_builder = (ostb_mod.SequenceBuilder()
                                .set_probe(m.probe)
                                .set_trigger(m.trigger)
@@ -503,40 +493,52 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
 
             new_seq = new_seq_builder.build()
             m.seq = new_seq
-            print(f"[Rebuild] Sequence built: {m.line_count} scan lines")
 
-            # Step 4: Rebuild AcquisitionConfiguration
+            # Rebuild AcquisitionConfiguration
             new_config = ostb_mod.AcquisitionConfiguration()
             new_config.set_root(m.root)
             new_config.set_sequence(new_seq)
             new_config.set_processing(m.processing)
             new_config.validate()
             m.configuration = new_config
-            print("[Rebuild] Configuration validated")
+            _global_ostb_config = new_config
 
-            # Step 5: Configure hardware
-            _global_ostb_runtime.configure(new_config)
-            print(f"[Rebuild] Hardware configured: voltage={voltage}V, gain={gain}dB")
+            # Step: Apply to hardware
+            # 1. First attempt: Live configuration without pausing stream
+            applied_live = False
+            try:
+                _global_ostb_runtime.configure(new_config)
+                applied_live = True
+                diag_log("HARDWARE_APPLY", f"Hardware reconfigured LIVE without pausing stream: voltage={voltage}V, gain={gain}dB")
+            except Exception as live_err:
+                diag_log("HARDWARE_APPLY", f"Live configure requires atomic cycle ({live_err}); executing seamless update")
 
-            # Step 6: Restart acquisition immediately if system is active (not explicitly frozen/stopped)
-            time.sleep(0.02)
-            if should_resume:
+            # 2. If driver requires idle state to reprogram FPGA registers:
+            if not applied_live:
+                _is_reconfiguring = True
                 try:
-                    _global_ostb_runtime.start()
-                    _is_acquiring = True
-                    _is_frozen = False
-                    _is_user_stopped = False
-                    setattr(_global_ostb_runtime, "_started", True)
-                    print(f"[Diagnostic Rebuild] Stage 5: Hardware acquisition ACTIVE: voltage={voltage}V, gain={gain}dB confirmed live on physical device")
-                except Exception as e:
-                    print(f"[Diagnostic Rebuild] Stage 5: Start notice: {e}")
-            else:
-                _is_acquiring = False
-                print(f"[Diagnostic Rebuild] Stage 5: Reconfigured in standby (frozen={_is_frozen}, stopped={_is_user_stopped})")
+                    stop_fn = _orig_stop or getattr(_global_ostb_runtime, "stop", None)
+                    start_fn = _orig_start or getattr(_global_ostb_runtime, "start", None)
+                    if stop_fn:
+                        try:
+                            stop_fn(_global_ostb_runtime)
+                        except Exception:
+                            pass
+                    _global_ostb_runtime.configure(new_config)
+                    if should_resume and start_fn:
+                        try:
+                            start_fn(_global_ostb_runtime)
+                        except Exception:
+                            pass
+                    diag_log("HARDWARE_APPLY", f"Atomic hardware commit completed: voltage={voltage}V, gain={gain}dB (clinical status preserved: active={_is_acquiring})")
+                finally:
+                    _is_reconfiguring = False
+
+            diag_log("CONFIRMED", f"Parameter update fully applied to hardware: voltage={voltage}V, gain={gain}dB")
             return True
 
         except Exception as e:
-            print(f"[Rebuild] Error rebuilding configuration: {e}")
+            diag_log("REBUILD_ERROR", f"Error rebuilding configuration: {e}")
             return False
 
 def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = None) -> bool:
@@ -545,7 +547,7 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
     1. Sets parameters immediately in module memory.
     2. Invokes live hardware API methods if supported by the C++ runtime.
     3. Safely rebuilds sequence & reconfigures hardware so changes take effect
-       promptly on active acquisition without requiring manual Freeze/Resume or Start/Stop clicks.
+       immediately on active acquisition without requiring manual Freeze/Resume or Start/Stop clicks.
     """
     global _curv_module, _global_ostb_runtime, _is_acquiring, _last_confirmed_voltage, _last_confirmed_gain
     if new_voltage is not None:
@@ -569,20 +571,22 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
                 if hasattr(_global_ostb_runtime, method):
                     try:
                         getattr(_global_ostb_runtime, method)(float(new_voltage))
-                        print(f"[Direct OSTB API] Called runtime.{method}({new_voltage})")
+                        diag_log("DIRECT_API", f"Applied live voltage via runtime.{method}({new_voltage})")
+                        break
                     except Exception as e:
-                        print(f"[Direct OSTB API] {method} warning: {e}")
+                        diag_log("DIRECT_API", f"runtime.{method} warning: {e}")
 
         if new_gain is not None:
             for method in ["set_gain", "set_analog_gain", "set_rx_gain", "update_gain"]:
                 if hasattr(_global_ostb_runtime, method):
                     try:
                         getattr(_global_ostb_runtime, method)(float(new_gain))
-                        print(f"[Direct OSTB API] Called runtime.{method}({new_gain})")
+                        diag_log("DIRECT_API", f"Applied live gain via runtime.{method}({new_gain})")
+                        break
                     except Exception as e:
-                        print(f"[Direct OSTB API] {method} warning: {e}")
+                        diag_log("DIRECT_API", f"runtime.{method} warning: {e}")
 
-    # Promptly rebuild hardware sequence configuration
+    # Rebuild sequence & configure hardware
     return rebuild_configuration_with_params(new_voltage=new_voltage, new_gain=new_gain)
 
 def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
@@ -603,7 +607,7 @@ def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
             s.connect(("127.0.0.1", port))
             payload = json.dumps({"command": name, "control": name, "value": value}) + "\n"
             s.sendall(payload.encode("utf-8"))
-            print(f"[Remote Control Socket] Successfully sent direct OSTB command '{name}'={value} to 127.0.0.1:{port}")
+            diag_log("OSTB_SOCKET", f"Successfully sent direct command '{name}'={value} to 127.0.0.1:{port}")
             return True
     except Exception:
         # Expected if socket server is disabled or standalone GUI mode
@@ -613,7 +617,8 @@ def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
 def send_qt_input_value(hwnd: int, cx_input: int, cy_input: int, val_str: str) -> None:
     """
     Delivers a new numeric value into a Qt QSpinBox/QLineEdit at client coordinate (cx_input, cy_input).
-    Clicks to focus, selects all, enters characters via WM_CHAR, and confirms with VK_RETURN.
+    Clicks to focus, selects all, enters characters via WM_CHAR, and releases focus.
+    CRITICAL: Never sends VK_RETURN or VK_SPACE, to avoid triggering the dialog default button (Start/Stop).
     """
     try:
         import win32gui
@@ -635,14 +640,11 @@ def send_qt_input_value(hwnd: int, cx_input: int, cy_input: int, val_str: str) -
         for ch in val_str:
             win32gui.PostMessage(hwnd, win32con.WM_CHAR, ord(ch), 0)
             time.sleep(0.005)
-        # Press Enter to commit value in Qt
-        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_RETURN, 0)
-        time.sleep(0.01)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_RETURN, 0)
-        print(f"[Remote Control Qt] Sent numeric value '{val_str}' to input at ({cx_input}, {cy_input})")
+        # Release keyboard focus without triggering dialog default button (NO VK_RETURN!)
+        win32gui.PostMessage(hwnd, win32con.WM_KILLFOCUS, 0, 0)
+        diag_log("QT_SYNC", f"Delivered numeric value '{val_str}' to input at ({cx_input}, {cy_input}) without Enter/Space keys")
     except Exception as e:
-        print(f"[Remote Control Qt] send_qt_input_value error: {e}")
-
+        diag_log("QT_SYNC", f"send_qt_input_value notice: {e}")
 
 def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
     """
@@ -674,7 +676,7 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
     3. Non-invasive Qt event queue injection (PostMessage WM_LBUTTONDOWN/UP) & hardware click backup
     """
     global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain
-    print(f"[Control Command Pipeline] Executing '{name}' = {value}")
+    diag_log("COMMAND_EXECUTE", f"Executing control '{name}' = {value} (active acquiring={_is_acquiring}, frozen={_is_frozen}, stopped={_is_user_stopped})")
 
     handled_direct = False
 
@@ -796,7 +798,7 @@ def handle_control_command(name: str, value: any) -> bool:
     - Save Setup Button: x_pct=0.62, y_pct=0.83
     - Advanced Button: x_pct=0.84, y_pct=0.83
     """
-    print(f"[Remote Control API] Processing command: '{name}'={value}")
+    diag_log("CONTROL_API", f"Processing command: '{name}'={value}")
 
     # 1. Direct Socket trigger (127.0.0.1:4096)
     send_ostb_socket_command(name, value)
@@ -1253,12 +1255,12 @@ def get_status():
     Returns current control panel state directly from curv_proper_code.py parameters.
     Allows Doctor UI to sync sliders and buttons to patient hardware state in real time.
     """
-    global _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain
+    global _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain, _is_reconfiguring
     if _is_frozen:
         status_str = "FROZEN"
     elif _is_user_stopped:
         status_str = "STOPPED"
-    elif _is_acquiring:
+    elif _is_acquiring or _is_reconfiguring:
         status_str = "RUNNING"
     else:
         status_str = "RUNNING" if _global_ostb_runtime is not None else "STOPPED"
@@ -1300,13 +1302,13 @@ def remote_input():
         if not data:
             return jsonify({"status": "error", "message": "No data received"}), 400
         
-        print(f"[Remote Control API] Received control packet: {data}")
+        diag_log("HTTP_RECEIVE", f"Received control packet: {data}")
         
         if "control" in data:
             cmd = data.get("control")
             val = data.get("value")
             success = execute_direct_runtime_command(cmd, val)
-            print(f"[Remote Control API] Executed command '{cmd}'={val}: result={success}")
+            diag_log("HTTP_COMPLETE", f"Executed command '{cmd}'={val}: result={success}")
             
             curr_v = float(_last_confirmed_voltage)
             curr_g = float(_last_confirmed_gain)

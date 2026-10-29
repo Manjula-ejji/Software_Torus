@@ -221,17 +221,17 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
             us._is_user_stopped = False
             us._is_acquiring = True
 
-            # 1. Update Voltage to 28 V
+            # 1. Update Voltage to 28 V - must configure hardware immediately WITHOUT stopping or restarting acquisition
             res = self.app.post(
                 "/api/remote-input",
                 data=json.dumps({"control": "voltage", "value": 28}),
                 content_type="application/json"
             )
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(mock_rt.stop_count, 1)
             self.assertEqual(mock_rt.configure_count, 1)
-            self.assertEqual(mock_rt.start_count, 1)
-            self.assertTrue(us._is_acquiring)
+            self.assertEqual(mock_rt.stop_count, 0)  # No automatic stop
+            self.assertEqual(mock_rt.start_count, 0)  # No automatic restart
+            self.assertTrue(us._is_acquiring)  # Acquisition continuously active
 
             # Check status
             st = self.app.get("/api/status")
@@ -239,17 +239,17 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
             self.assertEqual(st_data["status"], "RUNNING")
             self.assertEqual(st_data["voltage"], 28.0)
 
-            # 2. Update Analog Gain to 56 dB
+            # 2. Update Analog Gain to 56 dB - must configure hardware immediately WITHOUT stopping or restarting acquisition
             res = self.app.post(
                 "/api/remote-input",
                 data=json.dumps({"control": "gain", "value": 56}),
                 content_type="application/json"
             )
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(mock_rt.stop_count, 2)
             self.assertEqual(mock_rt.configure_count, 2)
-            self.assertEqual(mock_rt.start_count, 2)
-            self.assertTrue(us._is_acquiring)
+            self.assertEqual(mock_rt.stop_count, 0)  # No automatic stop
+            self.assertEqual(mock_rt.start_count, 0)  # No automatic restart
+            self.assertTrue(us._is_acquiring)  # Acquisition continuously active
 
             # Check status
             st = self.app.get("/api/status")
