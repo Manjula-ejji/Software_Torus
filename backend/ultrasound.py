@@ -339,6 +339,8 @@ _pending_rebuild_timer = None
 _pending_rebuild_voltage = None
 _pending_rebuild_gain = None
 _is_frozen = False
+_last_confirmed_voltage = 50.0
+_last_confirmed_gain = 40.0
 
 
 def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float = None) -> bool:
@@ -346,11 +348,16 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
     Rebuilds the waveform, TX configs, scans, sequence and full AcquisitionConfiguration
     from scratch, then reconfigures hardware using safe stop -> configure -> start sequence.
 
-    Applies Voltage and Analog Gain changes promptly without requiring manual Freeze/Resume.
+    Applies Voltage and Analog Gain changes immediately and independently of Start/Stop buttons.
     """
-    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen
+    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _last_confirmed_voltage, _last_confirmed_gain
+    if new_voltage is not None:
+        _last_confirmed_voltage = float(new_voltage)
+    if new_gain is not None:
+        _last_confirmed_gain = float(new_gain)
+
     if _curv_module is None or _global_ostb_runtime is None:
-        print("[Rebuild] Notice: module or runtime not ready (standalone or dev mode)")
+        print(f"[Rebuild] Parameters updated in module memory: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB (hardware runtime standby)")
         return True
 
     with _rebuild_lock:
@@ -365,17 +372,30 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             if new_gain is not None:
                 m.gain_analog_db = float(new_gain)
 
-            voltage = getattr(m, "_current_voltage", 50.0)
-            gain = getattr(m, "gain_analog_db", 40.0)
+            voltage = getattr(m, "_current_voltage", _last_confirmed_voltage)
+            gain = getattr(m, "gain_analog_db", _last_confirmed_gain)
 
+            # Determine whether hardware acquisition is currently active
             was_running = bool(_is_acquiring)
-            print(f"[Rebuild] Starting hardware reconfiguration: voltage={voltage}V, gain={gain}dB (was_running={was_running})")
+            if not was_running and not _is_frozen and _global_ostb_runtime is not None:
+                for check_fn in ["is_running", "is_acquiring", "is_active", "get_is_running"]:
+                    if hasattr(_global_ostb_runtime, check_fn):
+                        try:
+                            was_running = bool(getattr(_global_ostb_runtime, check_fn)())
+                            if was_running:
+                                break
+                        except Exception:
+                            pass
+                if not was_running and hasattr(_global_ostb_runtime, "_started"):
+                    was_running = bool(getattr(_global_ostb_runtime, "_started", False))
+
+            print(f"[Rebuild] Applying immediate hardware reconfiguration: voltage={voltage}V, gain={gain}dB (was_running={was_running})")
 
             # Step 1: Safely pause active hardware acquisition stream for reconfiguration
             if was_running:
                 try:
                     _global_ostb_runtime.stop()
-                    time.sleep(0.04)  # Allow FPGA DMA and RF pipeline to settle in IDLE state
+                    time.sleep(0.02)  # Allow FPGA DMA and RF pipeline to settle in IDLE state
                     print("[Rebuild] Acquisition safely paused for reconfiguration")
                 except Exception as e:
                     print(f"[Rebuild] Stop warning: {e}")
@@ -463,6 +483,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
                 _global_ostb_runtime.start()
                 _is_acquiring = True
                 _is_frozen = False
+                setattr(_global_ostb_runtime, "_started", True)
                 print(f"[Rebuild] Acquisition resumed immediately: voltage={voltage}V, gain={gain}dB ACTIVE")
             return True
 
@@ -470,25 +491,27 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             print(f"[Rebuild] Error rebuilding configuration: {e}")
             return False
 
-
 def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = None) -> bool:
     """
     Applies voltage and analog gain promptly to hardware acquisition.
     1. Sets parameters immediately in module memory.
     2. Invokes live hardware API methods if supported by the C++ runtime.
     3. Safely rebuilds sequence & reconfigures hardware so changes take effect
-       promptly on active acquisition without requiring manual Freeze/Resume.
+       promptly on active acquisition without requiring manual Freeze/Resume or Start/Stop clicks.
     """
-    global _curv_module, _global_ostb_runtime, _is_acquiring
-    if _curv_module is not None:
-        if new_voltage is not None:
+    global _curv_module, _global_ostb_runtime, _is_acquiring, _last_confirmed_voltage, _last_confirmed_gain
+    if new_voltage is not None:
+        _last_confirmed_voltage = float(new_voltage)
+        if _curv_module is not None:
             _curv_module._current_voltage = float(new_voltage)
             if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                 try:
                     _curv_module.waveform.set_negative_voltage(float(new_voltage))
                 except Exception:
                     pass
-        if new_gain is not None:
+    if new_gain is not None:
+        _last_confirmed_gain = float(new_gain)
+        if _curv_module is not None:
             _curv_module.gain_analog_db = float(new_gain)
 
     # Check for direct live runtime API setters
@@ -513,7 +536,6 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
 
     # Promptly rebuild hardware sequence configuration
     return rebuild_configuration_with_params(new_voltage=new_voltage, new_gain=new_gain)
-
 
 def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
     """Applies voltage/gain promptly to hardware."""
@@ -569,10 +591,31 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
     2. Direct TCP Socket trigger to OSTB Control Server (127.0.0.1:4096)
     3. Non-invasive Qt event queue injection (PostMessage WM_LBUTTONDOWN/UP) & hardware click backup
     """
-    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen
+    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _last_confirmed_voltage, _last_confirmed_gain
     print(f"[Control Command Pipeline] Executing '{name}' = {value}")
 
     handled_direct = False
+
+    # Immediate parameter updates in local memory regardless of runtime initialization
+    if name == "voltage":
+        val = max(0.0, min(50.0, float(value)))
+        _last_confirmed_voltage = val
+        if _curv_module is not None:
+            _curv_module._current_voltage = val
+            if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
+                try:
+                    _curv_module.waveform.set_negative_voltage(val)
+                except Exception:
+                    pass
+        print(f"[Direct OSTB API] Immediate voltage set -> {val} V")
+        handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
+    elif name == "gain":
+        val = max(0.0, min(80.0, float(value)))
+        _last_confirmed_gain = val
+        if _curv_module is not None:
+            _curv_module.gain_analog_db = val
+        print(f"[Direct OSTB API] Immediate gain set -> {val} dB")
+        handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
 
     # 1. Direct Python Runtime / OSTB Configuration API
     if _global_ostb_runtime is not None:
@@ -584,12 +627,14 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                         _global_ostb_runtime.start()
                     _is_acquiring = True
                     _is_frozen = False
+                    setattr(_global_ostb_runtime, "_started", True)
                 else:
                     print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
                     if hasattr(_global_ostb_runtime, "stop"):
                         _global_ostb_runtime.stop()
                     _is_acquiring = False
                     _is_frozen = False
+                    setattr(_global_ostb_runtime, "_started", False)
                 handled_direct = True
             elif name == "stop":
                 print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
@@ -597,6 +642,7 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                     _global_ostb_runtime.stop()
                 _is_acquiring = False
                 _is_frozen = False
+                setattr(_global_ostb_runtime, "_started", False)
                 handled_direct = True
             elif name == "freeze":
                 print("[Direct OSTB API] Executing _global_ostb_runtime.stop() (Freeze)")
@@ -611,16 +657,7 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                     _global_ostb_runtime.start()
                 _is_acquiring = True
                 _is_frozen = False
-                handled_direct = True
-            elif name == "voltage":
-                val = max(0.0, min(50.0, float(value)))
-                print(f"[Direct OSTB API] Immediate voltage -> {val} V")
-                apply_runtime_voltage_and_gain(new_voltage=val)
-                handled_direct = True
-            elif name == "gain":
-                val = max(0.0, min(80.0, float(value)))
-                print(f"[Direct OSTB API] Immediate gain -> {val} dB")
-                apply_runtime_voltage_and_gain(new_gain=val)
+                setattr(_global_ostb_runtime, "_started", True)
                 handled_direct = True
             elif name == "display":
                 enabled = bool(value)
@@ -654,10 +691,9 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
         print(f"[Control Command Pipeline] Acknowledged stream operation: '{name}'={value}")
         return True
 
-    # 2. Always also dispatch to Socket and GUI (PostMessage) so OpenSonics UI widgets update
+    # 2. Also dispatch to Socket and GUI (PostMessage) so OpenSonics UI widgets update
     gui_result = handle_control_command(name, value)
     return handled_direct or gui_result
-
 
 def handle_control_command(name: str, value: any) -> bool:
     """
@@ -773,8 +809,8 @@ def handle_control_command(name: str, value: any) -> bool:
         # Deliver mouse click directly into Qt event queue
         send_direct_qt_click(hwnd, cx, cy)
 
-        # Also backup hardware click if window is currently visible on desktop
-        if left >= 0 and top >= 0:
+        # Also backup hardware click if window is currently visible on desktop (skip for sliders to avoid cursor jitter)
+        if left >= 0 and top >= 0 and name not in ["voltage", "gain"]:
             send_win32_click(hwnd, cx, cy)
 
         return True
@@ -1124,7 +1160,7 @@ def get_status():
     Returns current control panel state directly from curv_proper_code.py parameters.
     Allows Doctor UI to sync sliders and buttons to patient hardware state in real time.
     """
-    global _curv_module, _is_acquiring, _is_frozen
+    global _curv_module, _is_acquiring, _is_frozen, _last_confirmed_voltage, _last_confirmed_gain
     if _is_acquiring:
         status_str = "RUNNING"
     elif _is_frozen:
@@ -1132,8 +1168,8 @@ def get_status():
     else:
         status_str = "STOPPED"
 
-    voltage = 50.0
-    gain = 40.0
+    voltage = float(_last_confirmed_voltage)
+    gain = float(_last_confirmed_gain)
     display_on = True
     tgc_on = False
     tgc_vals = [50, 12, 3, 77, 90, 30]
@@ -1141,7 +1177,7 @@ def get_status():
     if _curv_module is not None:
         try:
             if hasattr(_curv_module, "waveform"):
-                voltage = float(getattr(_curv_module, "_current_voltage", 50.0))
+                voltage = float(getattr(_curv_module, "_current_voltage", voltage))
             if hasattr(_curv_module, "gain_analog_db"):
                 gain = float(_curv_module.gain_analog_db)
             if hasattr(_curv_module, "processing") and hasattr(_curv_module.processing, "get_enable_display"):
@@ -1159,9 +1195,9 @@ def get_status():
         "tgc_sliders": tgc_vals
     })
 
-
 @app.route("/api/remote-input", methods=["POST", "OPTIONS"])
 def remote_input():
+    global _last_confirmed_voltage, _last_confirmed_gain, _curv_module
     if request.method == "OPTIONS":
         return Response(status=204)
     try:
@@ -1172,9 +1208,25 @@ def remote_input():
         print(f"[Remote Control API] Received control packet: {data}")
         
         if "control" in data:
-            success = execute_direct_runtime_command(data.get("control"), data.get("value"))
-            print(f"[Remote Control API] Executed command '{data.get('control')}'={data.get('value')}: result={success}")
-            return jsonify({"status": "success", "executed": success})
+            cmd = data.get("control")
+            val = data.get("value")
+            success = execute_direct_runtime_command(cmd, val)
+            print(f"[Remote Control API] Executed command '{cmd}'={val}: result={success}")
+            
+            curr_v = float(_last_confirmed_voltage)
+            curr_g = float(_last_confirmed_gain)
+            if _curv_module is not None:
+                curr_v = float(getattr(_curv_module, "_current_voltage", curr_v))
+                curr_g = float(getattr(_curv_module, "gain_analog_db", curr_g))
+
+            return jsonify({
+                "status": "success" if success else "error",
+                "executed": success,
+                "voltage": curr_v,
+                "gain": curr_g,
+                "control": cmd,
+                "value": val
+            }), (200 if success else 500)
 
         event_type = data.get("type")
         x_percent = float(data.get("x", 0.0))
@@ -1185,7 +1237,6 @@ def remote_input():
     except Exception as e:
         print(f"[Remote Control API] Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route("/frame.jpg", methods=["GET"])
 def frame_jpg():

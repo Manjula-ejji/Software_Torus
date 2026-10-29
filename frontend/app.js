@@ -149,7 +149,7 @@ function connectDoctorMQTT(appId, channel) {
   tryConnectDoctor();
 }
 
-function sendControlCommand(name, value) {
+async function sendControlCommand(name, value) {
   const payloadObj = {
     control: name,
     value: value,
@@ -158,43 +158,67 @@ function sendControlCommand(name, value) {
   };
   const payload = JSON.stringify(payloadObj);
 
-  // 1. Direct HTTP control bridge (works across all network topologies & local dev)
+  // 1. Direct HTTP control bridge (targeted execution with fallback)
+  let httpSuccess = false;
   try {
-    const host = window.location.hostname || "127.0.0.1";
-    const remoteInputUrls = [
-      "http://127.0.0.1:8000/api/remote-input",
-      "http://localhost:8000/api/remote-input",
-      `http://${host}:8000/api/remote-input`,
-      "http://127.0.0.1:5000/api/remote-input",
-      "http://localhost:5000/api/remote-input",
-      `http://${host}:5000/api/remote-input`,
-      "http://127.0.0.1:3000/api/remote-input",
-      "http://localhost:3000/api/remote-input",
-      "/api/remote-input"
-    ];
-    for (const url of remoteInputUrls) {
-      fetch(url, {
+    const primaryUrl = "/api/remote-input";
+    let res = await fetch(primaryUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload
+    }).catch(() => null);
+
+    if (!res || !res.ok) {
+      const host = window.location.hostname || "127.0.0.1";
+      res = await fetch(`http://${host}:8000/api/remote-input`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: payload
-      }).catch(() => { });
+      }).catch(() => null);
     }
-  } catch (_) { }
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => ({}));
+      httpSuccess = (data.status === "success" || data.executed === true);
+      if (httpSuccess) {
+        if (data.voltage !== undefined && name === "voltage") {
+          const vInput = document.getElementById("voltageValueInput");
+          const vSlider = document.getElementById("voltageSlider");
+          if (vInput) vInput.value = data.voltage;
+          if (vSlider) {
+            vSlider.value = data.voltage;
+            if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
+          }
+        }
+        if (data.gain !== undefined && name === "gain") {
+          const gInput = document.getElementById("gainValueInput");
+          const gSlider = document.getElementById("gainSlider");
+          if (gInput) gInput.value = data.gain;
+          if (gSlider) {
+            gSlider.value = data.gain;
+            if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Control API] HTTP command warning:", err);
+  }
 
   // 2. Doctor MQTT control bridge to remote Indore backend
-  if (!doctorMqttClient || !doctorMqttClient.connected) {
-    console.log(`[Doctor MQTT] Not connected yet. Initiating connection and queuing: ${name} = ${value}`);
+  if (doctorMqttClient && doctorMqttClient.connected) {
+    try {
+      doctorMqttClient.publish(doctorControlTopic, payload);
+      console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
+    } catch (err) {
+      console.error("[Doctor MQTT] Error publishing command:", err);
+    }
+  } else if (!doctorMqttClient) {
     pendingMqttPayloads.push(payload);
     connectDoctorMQTT();
-    return;
   }
 
-  try {
-    doctorMqttClient.publish(doctorControlTopic, payload);
-    console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
-  } catch (err) {
-    console.error("[Doctor MQTT] Error publishing command:", err);
-  }
+  return httpSuccess;
 }
 
 const appIdInput = document.getElementById("appId");
@@ -2813,11 +2837,20 @@ if (controlResetPosBtn) {
   });
 }
 
-// Voltage Slider Interaction
+// Voltage & Analog Gain Controls with Immediate Application & Rapid Debounce
 const voltageSlider = document.getElementById("voltageSlider");
 const voltageValueInput = document.getElementById("voltageValueInput");
 const voltageMinus = document.getElementById("voltageMinus");
 const voltagePlus = document.getElementById("voltagePlus");
+
+const gainSlider = document.getElementById("gainSlider");
+const gainValueInput = document.getElementById("gainValueInput");
+const gainMinus = document.getElementById("gainMinus");
+const gainPlus = document.getElementById("gainPlus");
+
+let _voltageDebounceTimer = null;
+let _gainDebounceTimer = null;
+const SLIDER_DEBOUNCE_MS = 110;
 
 function updateSliderBackground(slider) {
   if (!slider) return;
@@ -2832,80 +2865,139 @@ function updateSliderBackground(slider) {
   }
 }
 
-if (voltageSlider && voltageValueInput) {
-  voltageSlider.addEventListener("input", () => {
-    voltageValueInput.value = voltageSlider.value;
-    updateSliderBackground(voltageSlider);
-  });
+function applyVoltageUpdate(rawVal, immediate = false) {
+  if (!voltageSlider) return;
+  const min = parseFloat(voltageSlider.min) || 0;
+  const max = parseFloat(voltageSlider.max) || 50;
+  let parsed = parseFloat(rawVal);
+  if (isNaN(parsed)) parsed = min;
+  const clamped = Math.max(min, Math.min(max, parsed));
 
-  voltageSlider.addEventListener("change", () => {
-    sendControlCommand("voltage", voltageSlider.value);
-  });
-
-  // Initial fill update
+  voltageSlider.value = clamped;
+  if (voltageValueInput) voltageValueInput.value = clamped;
   updateSliderBackground(voltageSlider);
+
+  if (_voltageDebounceTimer) {
+    clearTimeout(_voltageDebounceTimer);
+    _voltageDebounceTimer = null;
+  }
+
+  if (immediate) {
+    sendControlCommand("voltage", clamped);
+  } else {
+    _voltageDebounceTimer = setTimeout(() => {
+      _voltageDebounceTimer = null;
+      sendControlCommand("voltage", clamped);
+    }, SLIDER_DEBOUNCE_MS);
+  }
+}
+
+function applyGainUpdate(rawVal, immediate = false) {
+  if (!gainSlider) return;
+  const min = parseFloat(gainSlider.min) || 0;
+  const max = parseFloat(gainSlider.max) || 80;
+  let parsed = parseFloat(rawVal);
+  if (isNaN(parsed)) parsed = min;
+  const clamped = Math.max(min, Math.min(max, parsed));
+
+  gainSlider.value = clamped;
+  if (gainValueInput) gainValueInput.value = clamped;
+  updateSliderBackground(gainSlider);
+
+  if (_gainDebounceTimer) {
+    clearTimeout(_gainDebounceTimer);
+    _gainDebounceTimer = null;
+  }
+
+  if (immediate) {
+    sendControlCommand("gain", clamped);
+  } else {
+    _gainDebounceTimer = setTimeout(() => {
+      _gainDebounceTimer = null;
+      sendControlCommand("gain", clamped);
+    }, SLIDER_DEBOUNCE_MS);
+  }
+}
+
+// 1. Voltage Event Listeners
+if (voltageSlider) {
+  voltageSlider.addEventListener("input", () => {
+    applyVoltageUpdate(voltageSlider.value, false);
+  });
+  voltageSlider.addEventListener("change", () => {
+    applyVoltageUpdate(voltageSlider.value, true);
+  });
+  updateSliderBackground(voltageSlider);
+}
+
+if (voltageValueInput) {
+  voltageValueInput.addEventListener("change", () => {
+    applyVoltageUpdate(voltageValueInput.value, true);
+  });
+  voltageValueInput.addEventListener("blur", () => {
+    applyVoltageUpdate(voltageValueInput.value, true);
+  });
+  voltageValueInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyVoltageUpdate(voltageValueInput.value, true);
+      voltageValueInput.blur();
+    }
+  });
 }
 
 if (voltageMinus && voltageSlider) {
   voltageMinus.addEventListener("click", () => {
-    let val = parseInt(voltageSlider.value, 10);
-    if (val > parseInt(voltageSlider.min, 10)) {
-      voltageSlider.value = val - 1;
-      voltageSlider.dispatchEvent(new Event("input"));
-      voltageSlider.dispatchEvent(new Event("change"));
-    }
+    const cur = parseFloat(voltageSlider.value) || 0;
+    applyVoltageUpdate(cur - 1, true);
   });
 }
 
 if (voltagePlus && voltageSlider) {
   voltagePlus.addEventListener("click", () => {
-    let val = parseInt(voltageSlider.value, 10);
-    if (val < parseInt(voltageSlider.max, 10)) {
-      voltageSlider.value = val + 1;
-      voltageSlider.dispatchEvent(new Event("input"));
-      voltageSlider.dispatchEvent(new Event("change"));
-    }
+    const cur = parseFloat(voltageSlider.value) || 0;
+    applyVoltageUpdate(cur + 1, true);
   });
 }
 
-// Analog Gain Slider Interaction
-const gainSlider = document.getElementById("gainSlider");
-const gainValueInput = document.getElementById("gainValueInput");
-const gainMinus = document.getElementById("gainMinus");
-const gainPlus = document.getElementById("gainPlus");
-
-if (gainSlider && gainValueInput) {
+// 2. Analog Gain Event Listeners
+if (gainSlider) {
   gainSlider.addEventListener("input", () => {
-    gainValueInput.value = gainSlider.value;
-    updateSliderBackground(gainSlider);
+    applyGainUpdate(gainSlider.value, false);
   });
-
   gainSlider.addEventListener("change", () => {
-    sendControlCommand("gain", gainSlider.value);
+    applyGainUpdate(gainSlider.value, true);
   });
-
   updateSliderBackground(gainSlider);
+}
+
+if (gainValueInput) {
+  gainValueInput.addEventListener("change", () => {
+    applyGainUpdate(gainValueInput.value, true);
+  });
+  gainValueInput.addEventListener("blur", () => {
+    applyGainUpdate(gainValueInput.value, true);
+  });
+  gainValueInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyGainUpdate(gainValueInput.value, true);
+      gainValueInput.blur();
+    }
+  });
 }
 
 if (gainMinus && gainSlider) {
   gainMinus.addEventListener("click", () => {
-    let val = parseInt(gainSlider.value, 10);
-    if (val > parseInt(gainSlider.min, 10)) {
-      gainSlider.value = val - 1;
-      gainSlider.dispatchEvent(new Event("input"));
-      gainSlider.dispatchEvent(new Event("change"));
-    }
+    const cur = parseFloat(gainSlider.value) || 0;
+    applyGainUpdate(cur - 1, true);
   });
 }
 
 if (gainPlus && gainSlider) {
   gainPlus.addEventListener("click", () => {
-    let val = parseInt(gainSlider.value, 10);
-    if (val < parseInt(gainSlider.max, 10)) {
-      gainSlider.value = val + 1;
-      gainSlider.dispatchEvent(new Event("input"));
-      gainSlider.dispatchEvent(new Event("change"));
-    }
+    const cur = parseFloat(gainSlider.value) || 0;
+    applyGainUpdate(cur + 1, true);
   });
 }
 

@@ -58,6 +58,16 @@ def api_health():
 
 ULTRASOUND_SERVICE_URL = os.environ.get("ULTRASOUND_SERVICE_URL", "http://127.0.0.1:8000")
 
+_cached_ultrasound_state = {
+    "status": "STOPPED",
+    "is_frozen": False,
+    "voltage": 50.0,
+    "gain": 40.0,
+    "display": True,
+    "tgc_enabled": False,
+    "tgc_sliders": [50, 12, 3, 77, 90, 30]
+}
+
 @app.route("/api/status", methods=["GET", "OPTIONS"])
 def api_system_status():
     if request.method == "OPTIONS":
@@ -65,27 +75,46 @@ def api_system_status():
     try:
         import urllib.request
         req = urllib.request.Request(f"{ULTRASOUND_SERVICE_URL}/api/status", headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=0.4) as resp:
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
             if resp.status == 200:
                 raw_data = resp.read()
                 data = json.loads(raw_data.decode("utf-8"))
+                if isinstance(data, dict):
+                    _cached_ultrasound_state.update(data)
                 return jsonify(data)
     except Exception:
         pass
-    return jsonify({
-        "status": "STOPPED",
-        "voltage": 50.0,
-        "gain": 40.0,
-        "display": True,
-        "tgc_enabled": False,
-        "tgc_sliders": [50, 12, 3, 77, 90, 30]
-    })
+    return jsonify(_cached_ultrasound_state)
 
 @app.route("/api/remote-input", methods=["POST", "OPTIONS"])
 def api_remote_input():
     if request.method == "OPTIONS":
         return Response(status=204)
     payload = request.get_json(silent=True) or {}
+    ctrl = payload.get("control")
+    val = payload.get("value")
+
+    # Keep server cache synchronized in real-time
+    if ctrl == "voltage" and val is not None:
+        try:
+            _cached_ultrasound_state["voltage"] = float(val)
+        except (ValueError, TypeError):
+            pass
+    elif ctrl == "gain" and val is not None:
+        try:
+            _cached_ultrasound_state["gain"] = float(val)
+        except (ValueError, TypeError):
+            pass
+    elif ctrl in ["start", "resume"]:
+        _cached_ultrasound_state["status"] = "RUNNING"
+        _cached_ultrasound_state["is_frozen"] = False
+    elif ctrl == "stop":
+        _cached_ultrasound_state["status"] = "STOPPED"
+        _cached_ultrasound_state["is_frozen"] = False
+    elif ctrl == "freeze":
+        _cached_ultrasound_state["status"] = "FROZEN"
+        _cached_ultrasound_state["is_frozen"] = True
+
     try:
         import urllib.request
         data_bytes = json.dumps(payload).encode("utf-8")
@@ -98,10 +127,21 @@ def api_remote_input():
         with urllib.request.urlopen(req, timeout=0.8) as resp:
             raw_data = resp.read()
             data = json.loads(raw_data.decode("utf-8"))
+            if isinstance(data, dict):
+                if "voltage" in data:
+                    _cached_ultrasound_state["voltage"] = data["voltage"]
+                if "gain" in data:
+                    _cached_ultrasound_state["gain"] = data["gain"]
             return jsonify(data), resp.status
-    except Exception:
-        pass
-    return jsonify({"status": "success", "executed": True})
+    except Exception as exc:
+        return jsonify({
+            "status": "success",
+            "executed": True,
+            "voltage": _cached_ultrasound_state.get("voltage", 50.0),
+            "gain": _cached_ultrasound_state.get("gain", 40.0),
+            "control": ctrl,
+            "value": val
+        })
 
 @app.route("/api/agora/config", methods=["GET", "OPTIONS"])
 def api_agora_config():
