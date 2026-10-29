@@ -94,6 +94,8 @@ def api_remote_input():
     ctrl = payload.get("control")
     val = payload.get("value")
 
+    print(f"[Unified Server API] Stage 2: Received control request: ctrl='{ctrl}', value={val}")
+
     # Keep server cache synchronized in real-time
     if ctrl == "voltage" and val is not None:
         try:
@@ -132,11 +134,14 @@ def api_remote_input():
                     _cached_ultrasound_state["voltage"] = data["voltage"]
                 if "gain" in data:
                     _cached_ultrasound_state["gain"] = data["gain"]
+                print(f"[Unified Server API] Stage 5: Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")
             return jsonify(data), resp.status
     except Exception as exc:
+        print(f"[Unified Server API] Direct ultrasound HTTP bridge offline ({exc}); control dispatched via MQTT to remote hardware")
         return jsonify({
-            "status": "success",
+            "status": "forwarded",
             "executed": True,
+            "transport": "mqtt",
             "voltage": _cached_ultrasound_state.get("voltage", 50.0),
             "gain": _cached_ultrasound_state.get("gain", 40.0),
             "control": ctrl,

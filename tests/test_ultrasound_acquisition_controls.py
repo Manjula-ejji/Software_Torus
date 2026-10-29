@@ -177,5 +177,133 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
             self.assertEqual(data.get("gain"), expected_val)
 
 
+    def test_mock_hardware_runtime_stop_configure_start_lifecycle(self):
+        """
+        Verify that when a hardware runtime is active:
+        1. Changing Voltage (e.g. 28 V) executes stop -> configure -> start cycle immediately.
+        2. Changing Analog Gain (e.g. 56 dB) executes stop -> configure -> start cycle immediately.
+        3. Acquisition state remains RUNNING without requiring Start/Stop buttons.
+        4. When FROZEN or STOPPED, reconfiguring updates hardware registers without resuming acquisition.
+        """
+        import backend.ultrasound as us
+
+        class MockRuntime:
+            def __init__(self):
+                self.stop_count = 0
+                self.configure_count = 0
+                self.start_count = 0
+                self.last_config = None
+                self._started = False
+
+            def stop(self):
+                self.stop_count += 1
+                self._started = False
+
+            def configure(self, config):
+                self.configure_count += 1
+                self.last_config = config
+
+            def start(self):
+                self.start_count += 1
+                self._started = True
+
+        mock_rt = MockRuntime()
+        orig_rt = us._global_ostb_runtime
+        orig_frozen = us._is_frozen
+        orig_stopped = us._is_user_stopped
+        orig_acquiring = us._is_acquiring
+
+        orig_config = us._global_ostb_config
+        try:
+            us._global_ostb_runtime = mock_rt
+            us._global_ostb_config = object()
+            us._is_frozen = False
+            us._is_user_stopped = False
+            us._is_acquiring = True
+
+            # 1. Update Voltage to 28 V
+            res = self.app.post(
+                "/api/remote-input",
+                data=json.dumps({"control": "voltage", "value": 28}),
+                content_type="application/json"
+            )
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(mock_rt.stop_count, 1)
+            self.assertEqual(mock_rt.configure_count, 1)
+            self.assertEqual(mock_rt.start_count, 1)
+            self.assertTrue(us._is_acquiring)
+
+            # Check status
+            st = self.app.get("/api/status")
+            st_data = json.loads(st.data)
+            self.assertEqual(st_data["status"], "RUNNING")
+            self.assertEqual(st_data["voltage"], 28.0)
+
+            # 2. Update Analog Gain to 56 dB
+            res = self.app.post(
+                "/api/remote-input",
+                data=json.dumps({"control": "gain", "value": 56}),
+                content_type="application/json"
+            )
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(mock_rt.stop_count, 2)
+            self.assertEqual(mock_rt.configure_count, 2)
+            self.assertEqual(mock_rt.start_count, 2)
+            self.assertTrue(us._is_acquiring)
+
+            # Check status
+            st = self.app.get("/api/status")
+            st_data = json.loads(st.data)
+            self.assertEqual(st_data["status"], "RUNNING")
+            self.assertEqual(st_data["gain"], 56.0)
+
+            # 3. Test Freeze state
+            self.app.post("/api/remote-input", data=json.dumps({"control": "freeze", "value": True}), content_type="application/json")
+            self.assertTrue(us._is_frozen)
+            st_frozen = json.loads(self.app.get("/api/status").data)
+            self.assertEqual(st_frozen["status"], "FROZEN")
+
+            # Changing voltage while frozen should configure but NOT call start()
+            prev_starts = mock_rt.start_count
+            self.app.post("/api/remote-input", data=json.dumps({"control": "voltage", "value": 35}), content_type="application/json")
+            self.assertEqual(mock_rt.start_count, prev_starts)  # No new starts
+            self.assertTrue(us._is_frozen)
+
+            # Resume
+            self.app.post("/api/remote-input", data=json.dumps({"control": "resume", "value": True}), content_type="application/json")
+            self.assertFalse(us._is_frozen)
+            self.assertTrue(us._is_acquiring)
+            st_resumed = json.loads(self.app.get("/api/status").data)
+            self.assertEqual(st_resumed["status"], "RUNNING")
+            self.assertEqual(st_resumed["voltage"], 35.0)
+
+            # 4. Test Stop state
+            self.app.post("/api/remote-input", data=json.dumps({"control": "stop", "value": True}), content_type="application/json")
+            self.assertTrue(us._is_user_stopped)
+            st_stopped = json.loads(self.app.get("/api/status").data)
+            self.assertEqual(st_stopped["status"], "STOPPED")
+
+            # Changing gain while stopped should configure but NOT call start()
+            prev_starts = mock_rt.start_count
+            self.app.post("/api/remote-input", data=json.dumps({"control": "gain", "value": 65}), content_type="application/json")
+            self.assertEqual(mock_rt.start_count, prev_starts)  # No new starts
+            self.assertTrue(us._is_user_stopped)
+
+            # Start
+            self.app.post("/api/remote-input", data=json.dumps({"control": "start", "value": True}), content_type="application/json")
+            self.assertFalse(us._is_user_stopped)
+            self.assertTrue(us._is_acquiring)
+            st_started = json.loads(self.app.get("/api/status").data)
+            self.assertEqual(st_started["status"], "RUNNING")
+            self.assertEqual(st_started["gain"], 65.0)
+
+        finally:
+            us._global_ostb_runtime = orig_rt
+            us._global_ostb_config = orig_config
+            us._is_frozen = orig_frozen
+            us._is_user_stopped = orig_stopped
+            us._is_acquiring = orig_acquiring
+
+
 if __name__ == "__main__":
     unittest.main()

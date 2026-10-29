@@ -63,17 +63,16 @@ function connectDoctorMQTT(appId, channel) {
         if (topic === doctorStatusTopic) {
           try {
             const data = JSON.parse(message.toString());
-            console.log("[Doctor MQTT] Received status update from Indore:", data);
+            console.log("[Doctor MQTT] Received live hardware status from ultrasound device:", data);
             if (data.status) {
-              const isRunning = data.status === "RUNNING";
               if (typeof updateUltrasoundScanUI === "function") {
-                updateUltrasoundScanUI(isRunning);
+                updateUltrasoundScanUI(data.status);
               }
             }
             if (data.voltage !== undefined) {
               const vSlider = document.getElementById("voltageSlider");
               const vInput = document.getElementById("voltageValueInput");
-              if (vSlider && document.activeElement !== vSlider) {
+              if (vSlider && document.activeElement !== vSlider && document.activeElement !== vInput) {
                 vSlider.value = data.voltage;
                 if (vInput) vInput.value = data.voltage;
                 if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
@@ -82,7 +81,7 @@ function connectDoctorMQTT(appId, channel) {
             if (data.gain !== undefined) {
               const gSlider = document.getElementById("gainSlider");
               const gInput = document.getElementById("gainValueInput");
-              if (gSlider && document.activeElement !== gSlider) {
+              if (gSlider && document.activeElement !== gSlider && document.activeElement !== gInput) {
                 gSlider.value = data.gain;
                 if (gInput) gInput.value = data.gain;
                 if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
