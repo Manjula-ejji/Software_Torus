@@ -1224,6 +1224,175 @@ def _cleanup() -> None:
             _ultrasound_proc.wait(timeout=5)
 
 
+
+def _start_native_mqtt_listener() -> None:
+    """
+    Continuous background native Python MQTT subscriber.
+    Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
+    Subscribes to all control topics and executes commands immediately on hardware runtime.
+    """
+    clean_app_id = (APP_ID or "1f40918151a84a3d9dc3ebd7f1f47706")[:8]
+    control_topics = [
+        f"{CHANNEL}-control-{clean_app_id}",
+        f"{CHANNEL}-control-1f409181",
+        f"{CHANNEL}-control-f320d347",
+        f"{CHANNEL}-control"
+    ]
+    status_topic = f"{CHANNEL}-status-{clean_app_id}"
+    brokers = [
+        ("broker.hivemq.com", 1883),
+        ("broker.emqx.io", 1883)
+    ]
+
+    def _decode_publish(data: bytes):
+        if not data or (data[0] & 0xf0) != 0x30:
+            return None, None
+        idx = 1
+        multiplier = 1
+        rem_len = 0
+        while True:
+            if idx >= len(data):
+                return None, None
+            b = data[idx]
+            idx += 1
+            rem_len += (b & 0x7f) * multiplier
+            multiplier *= 128
+            if (b & 0x80) == 0:
+                break
+        qos = (data[0] >> 1) & 0x03
+        if idx + 2 > len(data):
+            return None, None
+        t_len = (data[idx] << 8) | data[idx+1]
+        idx += 2
+        if idx + t_len > len(data):
+            return None, None
+        topic = data[idx:idx+t_len].decode("utf-8", errors="ignore")
+        idx += t_len
+        if qos > 0:
+            idx += 2
+        payload = data[idx:].decode("utf-8", errors="ignore")
+        return topic, payload
+
+    def _worker():
+        import socket
+        import json
+        diag_log("NATIVE_MQTT", f"Native background MQTT listener starting for topics: {control_topics}")
+        broker_idx = 0
+        while not _stop_event.is_set():
+            host, port = brokers[broker_idx % len(brokers)]
+            broker_idx += 1
+            s = None
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(10.0)
+                s.connect((host, port))
+                cid = f"us-sub-{int(time.time()*1000)%100000}".encode()
+                vh = b"\x00\x04MQTT\x04\x02\x00<\x00" + bytes([len(cid) >> 8, len(cid) & 0xff]) + cid
+                rem_len = len(vh)
+                conn_header = bytearray([0x10])
+                while True:
+                    b = rem_len % 128
+                    rem_len //= 128
+                    if rem_len > 0:
+                        b |= 128
+                    conn_header.append(b)
+                    if rem_len <= 0:
+                        break
+                s.sendall(bytes(conn_header) + vh)
+                connack = s.recv(4)
+                if len(connack) < 4 or connack[0] != 0x20:
+                    s.close()
+                    time.sleep(2.0)
+                    continue
+
+                pkt_id = 1
+                for topic in set(control_topics):
+                    topic_b = topic.encode("utf-8")
+                    sub_vh = bytes([pkt_id >> 8, pkt_id & 0xff, len(topic_b) >> 8, len(topic_b) & 0xff]) + topic_b + b"\x00"
+                    rem_sub = len(sub_vh)
+                    sub_header = bytearray([0x82])
+                    while True:
+                        b = rem_sub % 128
+                        rem_sub //= 128
+                        if rem_sub > 0:
+                            b |= 128
+                        sub_header.append(b)
+                        if rem_sub <= 0:
+                            break
+                    s.sendall(bytes(sub_header) + sub_vh)
+                    pkt_id += 1
+                    try:
+                        s.recv(5)
+                    except Exception:
+                        pass
+
+                diag_log("NATIVE_MQTT", f"Connected and subscribed on {host}:{port}")
+
+                last_ping = time.time()
+                while not _stop_event.is_set():
+                    try:
+                        s.settimeout(2.0)
+                        data = s.recv(4096)
+                        if not data:
+                            break
+                        if data[0] == 0xd0:
+                            continue
+                        if (data[0] & 0xf0) == 0x30:
+                            topic, payload_str = _decode_publish(data)
+                            if payload_str:
+                                try:
+                                    payload_obj = json.loads(payload_str)
+                                    ctrl = payload_obj.get("control")
+                                    val = payload_obj.get("value")
+                                    diag_log("NATIVE_MQTT", f"Received command on topic '{topic}': control='{ctrl}', value={val}")
+                                    if ctrl:
+                                        execute_direct_runtime_command(ctrl, val)
+                                        curr_v = float(getattr(_curv_module, "_current_voltage", _last_confirmed_voltage) if _curv_module else _last_confirmed_voltage)
+                                        curr_g = float(getattr(_curv_module, "gain_analog_db", _last_confirmed_gain) if _curv_module else _last_confirmed_gain)
+                                        status_payload = json.dumps({
+                                            "status": "RUNNING" if _is_acquiring else ("FROZEN" if _is_frozen else "STOPPED"),
+                                            "voltage": curr_v,
+                                            "gain": curr_g,
+                                            "display": True,
+                                            "control": ctrl,
+                                            "value": val,
+                                            "source": "native-ultrasound-backend"
+                                        }).encode("utf-8")
+                                        stat_top_b = status_topic.encode("utf-8")
+                                        rem_len = 2 + len(stat_top_b) + len(status_payload)
+                                        stat_header = bytearray([0x30])
+                                        while True:
+                                            b = rem_len % 128
+                                            rem_len //= 128
+                                            if rem_len > 0:
+                                                b |= 128
+                                            stat_header.append(b)
+                                            if rem_len <= 0:
+                                                break
+                                        s.sendall(bytes(stat_header) + bytes([len(stat_top_b) >> 8, len(stat_top_b) & 0xff]) + stat_top_b + status_payload)
+                                except Exception as e:
+                                    diag_log("NATIVE_MQTT", f"Error processing MQTT message: {e}")
+                    except socket.timeout:
+                        pass
+                    if time.time() - last_ping > 25:
+                        s.sendall(b"\xc0\x00")
+                        last_ping = time.time()
+            except Exception as e:
+                diag_log("NATIVE_MQTT", f"Socket connection notice ({host}:{port}): {e}")
+            finally:
+                if s:
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
+            time.sleep(2.0)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+# Launch native MQTT listener in background
+_start_native_mqtt_listener()
+
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"

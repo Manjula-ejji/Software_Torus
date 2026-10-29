@@ -3,15 +3,21 @@ let doctorMqttClient = null;
 let doctorControlTopic = "";
 let doctorStatusTopic = "";
 let pendingMqttPayloads = [];
+if (!window._torusClientInstanceId) {
+  window._torusClientInstanceId = "torus-" + Math.random().toString(36).substring(2, 9);
+}
 var dbInstance = null;
 var currentAuthenticatedUser = null;
 var currentAuthenticatedRole = null;
 
 function connectDoctorMQTT(appId, channel) {
-  const targetAppId = appId
+  let targetAppId = appId
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
     || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "1f40918151a84a3d9dc3ebd7f1f47706" : "")
     || "1f40918151a84a3d9dc3ebd7f1f47706";
+  if (targetAppId.startsWith("f320") || targetAppId.startsWith("7385")) {
+    targetAppId = "1f40918151a84a3d9dc3ebd7f1f47706";
+  }
   const targetChannel = channel
     || (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "")
     || "torus";
@@ -19,6 +25,19 @@ function connectDoctorMQTT(appId, channel) {
   const cleanAppId = targetAppId.substring(0, 8);
   doctorControlTopic = `${targetChannel}-control-${cleanAppId}`;
   doctorStatusTopic = `${targetChannel}-status-${cleanAppId}`;
+
+  const allControlTopics = [
+    doctorControlTopic,
+    `${targetChannel}-control-1f409181`,
+    `${targetChannel}-control-f320d347`,
+    `${targetChannel}-control`
+  ];
+  const allStatusTopics = [
+    doctorStatusTopic,
+    `${targetChannel}-status-1f409181`,
+    `${targetChannel}-status-f320d347`,
+    `${targetChannel}-status`
+  ];
 
   if (doctorMqttClient && doctorMqttClient.connected) {
     return;
@@ -32,38 +51,95 @@ function connectDoctorMQTT(appId, channel) {
 
   function tryConnectDoctor() {
     const url = brokerUrls[attempts % brokerUrls.length];
-    console.log(`[Doctor MQTT] Connecting to ${url} on topic: ${doctorControlTopic}`);
+    console.log(`[Torus MQTT] Connecting to ${url} for topics:`, allControlTopics, allStatusTopics);
     try {
       doctorMqttClient = mqtt.connect(url, { keepalive: 30, reconnectPeriod: 3000 });
 
       doctorMqttClient.on("connect", () => {
-        console.log(`[Doctor MQTT] Connected to ${url} on topic: ${doctorControlTopic}`);
+        console.log(`[Torus MQTT] Connected to ${url}`);
         const ipcLabel = document.getElementById("controlIpcLabel");
         if (ipcLabel) {
           ipcLabel.textContent = "CONNECTED";
           ipcLabel.className = "status-val connected";
         }
 
-        // Subscribe to real-time status updates broadcast from Indore acquisition system
-        doctorMqttClient.subscribe(doctorStatusTopic, (err) => {
-          if (!err) {
-            console.log(`[Doctor MQTT] Subscribed to status updates on: ${doctorStatusTopic}`);
-          }
+        // Subscribe to real-time status and control topics for universal sync
+        const topicsToSub = Array.from(new Set(allStatusTopics.concat(allControlTopics)));
+        topicsToSub.forEach((top) => {
+          doctorMqttClient.subscribe(top, (err) => {
+            if (!err) {
+              console.log(`[Torus MQTT] Subscribed to topic: ${top}`);
+            }
+          });
         });
 
         // Flush any queued payloads
         while (pendingMqttPayloads.length > 0) {
           const payload = pendingMqttPayloads.shift();
-          doctorMqttClient.publish(doctorControlTopic, payload);
-          console.log(`[Doctor MQTT] Flushed queued control to ${doctorControlTopic}:`, payload);
+          const pubTops = Array.from(new Set([doctorControlTopic, `${targetChannel}-control-1f409181`, `${targetChannel}-control`]));
+          pubTops.forEach(t => doctorMqttClient.publish(t, payload));
+          console.log(`[Torus MQTT] Flushed queued control to ${pubTops.join(", ")}:`, payload);
         }
       });
 
       doctorMqttClient.on("message", (topic, message) => {
-        if (topic === doctorStatusTopic) {
+        const msgStr = message.toString();
+        let data;
+        try {
+          data = JSON.parse(msgStr);
+        } catch (e) {
+          return;
+        }
+
+        const isControl = topic.includes("-control");
+        const isStatus = topic.includes("-status");
+
+        if (isControl) {
+          // Prevent echo loops from same client session
+          if (data.senderId && data.senderId === window._torusClientInstanceId) {
+            return;
+          }
+          console.log(`[Torus MQTT] Remote control received on '${topic}':`, data);
+          const ctrl = data.control;
+          const val = data.value;
+
+          // Update UI controls immediately on patient / remote screen
+          if (ctrl === "voltage" && val !== undefined) {
+            const vSlider = document.getElementById("voltageSlider");
+            const vInput = document.getElementById("voltageValueInput");
+            if (vSlider) {
+              vSlider.value = val;
+              if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
+            }
+            if (vInput) vInput.value = val;
+          } else if (ctrl === "gain" && val !== undefined) {
+            const gSlider = document.getElementById("gainSlider");
+            const gInput = document.getElementById("gainValueInput");
+            if (gSlider) {
+              gSlider.value = val;
+              if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
+            }
+            if (gInput) gInput.value = val;
+          } else if (ctrl === "stop") {
+            if (typeof updateUltrasoundScanUI === "function") updateUltrasoundScanUI("STOPPED");
+          } else if (ctrl === "start" || ctrl === "resume") {
+            if (typeof updateUltrasoundScanUI === "function") updateUltrasoundScanUI("RUNNING");
+          } else if (ctrl === "freeze") {
+            if (typeof updateUltrasoundScanUI === "function") updateUltrasoundScanUI("FROZEN");
+          } else if (ctrl === "display" && val !== undefined) {
+            const dToggle = document.getElementById("displayToggle");
+            if (dToggle) dToggle.checked = Boolean(val);
+          }
+
+          // Forward to local ultrasound backend if available on localhost:8000
+          fetch("http://127.0.0.1:8000/api/remote-input", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ control: ctrl, value: val, source: "mqtt-forwarded" })
+          }).catch(() => {});
+        } else if (isStatus) {
           try {
-            const data = JSON.parse(message.toString());
-            console.log("[Doctor MQTT] Received live hardware status from ultrasound device:", data);
+            console.log("[Torus MQTT] Received live hardware status from ultrasound device:", data);
             if (data.status) {
               if (typeof updateUltrasoundScanUI === "function") {
                 updateUltrasoundScanUI(data.status);
@@ -127,13 +203,13 @@ function connectDoctorMQTT(appId, channel) {
               ipcLabel.className = "status-val connected";
             }
           } catch (e) {
-            console.warn("[Doctor MQTT] Status parse error:", e);
+            console.warn("[Torus MQTT] Status parse error:", e);
           }
         }
       });
 
       doctorMqttClient.on("error", (err) => {
-        console.error(`[Doctor MQTT] Connection error on ${url}:`, err);
+        console.error(`[Torus MQTT] Connection error on ${url}:`, err);
         doctorMqttClient.end();
         attempts++;
         if (attempts < 4) {
@@ -141,7 +217,7 @@ function connectDoctorMQTT(appId, channel) {
         }
       });
     } catch (e) {
-      console.error("[Doctor MQTT] Exception on connection attempt:", e);
+      console.error("[Torus MQTT] Exception on connection attempt:", e);
     }
   }
 
@@ -153,6 +229,7 @@ async function sendControlCommand(name, value) {
     control: name,
     value: value,
     timestamp: Date.now(),
+    senderId: window._torusClientInstanceId,
     source: "torus-doctor-ui"
   };
   const payload = JSON.stringify(payloadObj);
@@ -204,20 +281,39 @@ async function sendControlCommand(name, value) {
     console.warn("[Control API] HTTP command warning:", err);
   }
 
-  // 2. Doctor MQTT control bridge to remote Indore backend
+  // 2. Torus MQTT control bridge to remote Indore workstation
+  const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
+  const pubTopics = Array.from(new Set([
+    doctorControlTopic,
+    `${targetChannel}-control-1f409181`,
+    `${targetChannel}-control-f320d347`,
+    `${targetChannel}-control`
+  ])).filter(Boolean);
+
   if (doctorMqttClient && doctorMqttClient.connected) {
     try {
-      doctorMqttClient.publish(doctorControlTopic, payload);
-      console.log(`[Doctor MQTT] Published control: ${name} = ${value} to ${doctorControlTopic}`);
+      pubTopics.forEach(top => {
+        doctorMqttClient.publish(top, payload);
+      });
+      console.log(`[Torus MQTT] Published control: ${name} = ${value} to ${pubTopics.join(", ")}`);
     } catch (err) {
-      console.error("[Doctor MQTT] Error publishing command:", err);
+      console.error("[Torus MQTT] Error publishing command:", err);
     }
-  } else if (!doctorMqttClient) {
+  } else {
     pendingMqttPayloads.push(payload);
     connectDoctorMQTT();
   }
 
   return httpSuccess;
+}
+
+// Auto-connect Torus MQTT bridge immediately on page load
+if (typeof window !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => connectDoctorMQTT());
+  } else {
+    setTimeout(connectDoctorMQTT, 300);
+  }
 }
 
 const appIdInput = document.getElementById("appId");
@@ -1395,9 +1491,8 @@ async function joinCall() {
     return;
   }
 
-  if (role === "doctor") {
-    connectDoctorMQTT(appId, channel);
-  }
+  // Connect Torus MQTT for all roles (Doctor, Patient, Operator, etc.)
+  connectDoctorMQTT(appId, channel);
 
   joinBtn.disabled = true;
 
@@ -5330,7 +5425,7 @@ async function setAuthenticatedDoctorSession(doctor) {
   }
 
   // Connect Doctor MQTT
-  connectDoctorMQTT(appIdInput ? appIdInput.value : "f320d3475b6d4b70ba512b06d09849d7", channelInput ? channelInput.value : "torus");
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "1f40918151a84a3d9dc3ebd7f1f47706", channelInput ? channelInput.value : "torus");
 
   // Create real backend clinical session and store for Agora Settings
   try {

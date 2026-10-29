@@ -87,6 +87,67 @@ def api_system_status():
         pass
     return jsonify(_cached_ultrasound_state)
 
+def _dispatch_mqtt_control(payload_dict: dict) -> bool:
+    """Dispatches a control command payload directly to MQTT broker via pure TCP socket."""
+    import socket
+    import json
+    import time
+    clean_app_id = "1f409181"
+    channel = os.environ.get("AGORA_CHANNEL", "torus")
+    topics = [
+        f"{channel}-control-{clean_app_id}",
+        f"{channel}-control-f320d347",
+        f"{channel}-control"
+    ]
+    brokers = [
+        ("broker.hivemq.com", 1883),
+        ("broker.emqx.io", 1883)
+    ]
+    payload_b = json.dumps(payload_dict).encode("utf-8")
+    for host, port in brokers:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2.5)
+            s.connect((host, port))
+            cid = f"srv-pub-{int(time.time()*1000)%100000}".encode()
+            vh = b"\x00\x04MQTT\x04\x02\x00<\x00" + bytes([len(cid) >> 8, len(cid) & 0xff]) + cid
+            rem_len = len(vh)
+            conn_header = bytearray([0x10])
+            while True:
+                b = rem_len % 128
+                rem_len //= 128
+                if rem_len > 0:
+                    b |= 128
+                conn_header.append(b)
+                if rem_len <= 0:
+                    break
+            s.sendall(bytes(conn_header) + vh)
+            connack = s.recv(4)
+            if len(connack) < 4 or connack[0] != 0x20:
+                s.close()
+                continue
+            for topic in set(topics):
+                topic_b = topic.encode("utf-8")
+                rem_len = 2 + len(topic_b) + len(payload_b)
+                pub_header = bytearray([0x30])
+                while True:
+                    b = rem_len % 128
+                    rem_len //= 128
+                    if rem_len > 0:
+                        b |= 128
+                    pub_header.append(b)
+                    if rem_len <= 0:
+                        break
+                pub_packet = bytes(pub_header) + bytes([len(topic_b) >> 8, len(topic_b) & 0xff]) + topic_b + payload_b
+                s.sendall(pub_packet)
+            s.close()
+            now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Successfully published control to MQTT on {host}:{port}")
+            return True
+        except Exception:
+            pass
+    return False
+
 @app.route("/api/remote-input", methods=["POST", "OPTIONS"])
 def api_remote_input():
     if request.method == "OPTIONS":
@@ -141,7 +202,8 @@ def api_remote_input():
             return jsonify(data), resp.status
     except Exception as exc:
         now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Direct ultrasound HTTP bridge offline ({exc}); control dispatched via MQTT to remote hardware")
+        print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Direct ultrasound HTTP bridge offline ({exc}); dispatching via MQTT to remote hardware")
+        threading.Thread(target=_dispatch_mqtt_control, args=(payload,), daemon=True).start()
         return jsonify({
             "status": "forwarded",
             "executed": True,
