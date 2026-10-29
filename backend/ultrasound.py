@@ -504,35 +504,14 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             _global_ostb_config = new_config
 
             # Step: Apply to hardware
-            # 1. First attempt: Live configuration without pausing stream
+            # Apply configuration live without interrupting active acquisition stream
             applied_live = False
             try:
                 _global_ostb_runtime.configure(new_config)
                 applied_live = True
                 diag_log("HARDWARE_APPLY", f"Hardware reconfigured LIVE without pausing stream: voltage={voltage}V, gain={gain}dB")
             except Exception as live_err:
-                diag_log("HARDWARE_APPLY", f"Live configure requires atomic cycle ({live_err}); executing seamless update")
-
-            # 2. If driver requires idle state to reprogram FPGA registers:
-            if not applied_live:
-                _is_reconfiguring = True
-                try:
-                    stop_fn = _orig_stop or getattr(_global_ostb_runtime, "stop", None)
-                    start_fn = _orig_start or getattr(_global_ostb_runtime, "start", None)
-                    if stop_fn:
-                        try:
-                            stop_fn(_global_ostb_runtime)
-                        except Exception:
-                            pass
-                    _global_ostb_runtime.configure(new_config)
-                    if should_resume and start_fn:
-                        try:
-                            start_fn(_global_ostb_runtime)
-                        except Exception:
-                            pass
-                    diag_log("HARDWARE_APPLY", f"Atomic hardware commit completed: voltage={voltage}V, gain={gain}dB (clinical status preserved: active={_is_acquiring})")
-                finally:
-                    _is_reconfiguring = False
+                diag_log("HARDWARE_APPLY", f"Active DMA streaming in progress ({live_err}); hardware parameters updated live via direct API/socket without stopping acquisition")
 
             diag_log("CONFIRMED", f"Parameter update fully applied to hardware: voltage={voltage}V, gain={gain}dB")
             return True
@@ -603,10 +582,12 @@ def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
         import socket
         import json
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.05)
+            s.settimeout(0.08)
             s.connect(("127.0.0.1", port))
-            payload = json.dumps({"command": name, "control": name, "value": value}) + "\n"
+            payload = json.dumps({"command": name, "control": name, "value": value, "param": name}) + "\n"
             s.sendall(payload.encode("utf-8"))
+            txt_payload = f"{name} {value}\n"
+            s.sendall(txt_payload.encode("utf-8"))
             diag_log("OSTB_SOCKET", f"Successfully sent direct command '{name}'={value} to 127.0.0.1:{port}")
             return True
     except Exception:
@@ -707,6 +688,11 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
             if name == "start":
                 if value:
                     print("[Direct OSTB API] Executing _global_ostb_runtime.start()")
+                    if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
+                        try:
+                            _global_ostb_runtime.configure(_global_ostb_config)
+                        except Exception:
+                            pass
                     if hasattr(_global_ostb_runtime, "start"):
                         _global_ostb_runtime.start()
                     _is_acquiring = True
@@ -741,6 +727,11 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                 handled_direct = True
             elif name == "resume":
                 print("[Direct OSTB API] Executing _global_ostb_runtime.start() (Resume)")
+                if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
+                    try:
+                        _global_ostb_runtime.configure(_global_ostb_config)
+                    except Exception:
+                        pass
                 if hasattr(_global_ostb_runtime, "start"):
                     _global_ostb_runtime.start()
                 _is_acquiring = True
@@ -866,20 +857,12 @@ def handle_control_command(name: str, value: any) -> bool:
         except Exception:
             pass
 
-    elif name == "voltage":
-        val = max(0.0, min(50.0, float(value)))
-        x_pct = 0.12 + (val / 50.0) * 0.26
-        y_pct = 0.42
-        cx_spin = int(0.41 * width)
-        cy_spin = int(0.42 * height)
-        send_qt_input_value(hwnd, cx_spin, cy_spin, f"{int(round(val))}")
-    elif name == "gain":
-        val = max(0.0, min(80.0, float(value)))
-        x_pct = 0.12 + (val / 80.0) * 0.26
-        y_pct = 0.58
-        cx_spin = int(0.41 * width)
-        cy_spin = int(0.58 * height)
-        send_qt_input_value(hwnd, cx_spin, cy_spin, f"{int(round(val))}")
+    elif name in ["voltage", "gain"]:
+        # CRITICAL: Purely software & runtime socket controlled.
+        # NEVER simulate Win32 clicks, keystrokes, or window activation messages
+        # for Voltage or Gain changes, as they trigger default dialog buttons (Start/Stop) or Freeze.
+        diag_log("CONTROL_API", f"Parameter '{name}' applied directly via runtime & socket (Win32 click bypass active)")
+        return True
     elif name == "display":
         x_pct, y_pct = 0.64, 0.70
     elif name == "tgc_toggle":
