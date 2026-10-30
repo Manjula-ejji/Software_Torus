@@ -308,21 +308,59 @@ def parse_haptic_packet(line: str) -> dict | None:
     except Exception:
         return None
 
-def find_candidate_ports() -> list[str]:
-    ports = []
+CLOUD_BACKEND_URL = os.environ.get("TORUS_CLOUD_URL", "https://software-torus.onrender.com")
+
+def _forward_cloud_haptic_report(connected: bool, port: str = None, telemetry: dict = None, packets_rx: int = 0):
+    """Asynchronously relays physical STM32 hardware connection state to the deployed cloud instance."""
+    import urllib.request
+    import json
+    # Avoid recursion if running directly on Render
+    if "onrender.com" in os.environ.get("RENDER_EXTERNAL_URL", ""):
+        return
+    url = f"{CLOUD_BACKEND_URL}/api/haptic-pad/report" if connected else f"{CLOUD_BACKEND_URL}/api/haptic-pad/disconnect"
+    payload = {
+        "connected": connected,
+        "port": port,
+        "device": "STM32 Haptic Pad",
+        "packets_rx": packets_rx,
+        "telemetry": telemetry or {}
+    }
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "X-Haptic-Agent-Secret": HAPTIC_AGENT_SECRET
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            pass
+    except Exception:
+        pass
+
+def find_candidate_ports() -> list[tuple[str, bool]]:
+    """
+    Scans system serial ports and identifies STMicroelectronics / STM32 hardware dynamically.
+    Returns a list of tuples: (port_device_path, is_stm32_hardware).
+    Does NOT hardcode any specific COM port (e.g. COM5 or COM6).
+    """
+    st_ports = []
+    other_ports = []
     try:
         for p in serial.tools.list_ports.comports():
             hwid = (p.hwid or "").lower()
             desc = (p.description or "").lower()
             vid = p.vid
-            if (vid == ST_VID_INT) or (ST_VID_HEX in hwid) or any(d in desc for d in ST_DESCRIPTIONS):
-                ports.append(p.device)
-        for p in serial.tools.list_ports.comports():
-            if p.device not in ports:
-                ports.append(p.device)
+            is_st = (vid == ST_VID_INT) or (ST_VID_HEX in hwid) or any(d in desc for d in ST_DESCRIPTIONS)
+            if is_st:
+                st_ports.append((p.device, True))
+            else:
+                other_ports.append((p.device, False))
     except Exception:
         pass
-    return ports
+    return st_ports + other_ports
 
 class LocalHapticPadMonitor(threading.Thread):
     def __init__(self):
@@ -330,43 +368,79 @@ class LocalHapticPadMonitor(threading.Thread):
         self.running = True
         self.ser: serial.Serial | None = None
         self.active_port: str | None = None
+        self._last_cloud_sync = 0.0
 
     def run(self):
         print("[HAPTIC HARDWARE] Real USB Haptic Pad background monitor service active.", flush=True)
         while self.running:
+            # Yield to external agent if an external agent is actively reporting
+            with haptic_state_lock:
+                ext_active = (haptic_device_state.get("source") == "external_agent" and 
+                              haptic_device_state["connected"] and 
+                              (time.time() - haptic_device_state["last_heartbeat"] < HAPTIC_HEARTBEAT_TIMEOUT))
+            if ext_active:
+                time.sleep(1.0)
+                continue
+
             candidate_ports = find_candidate_ports()
             found_port = None
             
-            for port_name in candidate_ports:
+            for port_name, is_st in candidate_ports:
                 ser = None
                 try:
                     ser = serial.Serial(port_name, HAPTIC_BAUD_RATE, timeout=0.2)
-                    t_end = time.time() + 0.8
-                    has_haptic_data = False
+                    try:
+                        ser.dtr = True
+                        ser.rts = True
+                    except Exception:
+                        pass
+                    
                     first_packet = None
-                    while time.time() < t_end:
-                        raw = ser.readline().decode("utf-8", errors="ignore").strip()
-                        if raw and ("JX:" in raw or "JY:" in raw or "JZ:" in raw):
-                            pkt = parse_haptic_packet(raw)
-                            if pkt:
-                                has_haptic_data = True
-                                first_packet = pkt
-                                break
+                    has_haptic_data = False
+                    
+                    if is_st:
+                        # Genuine STMicroelectronics STM32 Nucleo hardware verified by USB VID/PID / STLink description
+                        has_haptic_data = True
+                        # Check briefly if telemetry is already actively streaming
+                        t_end = time.time() + 0.3
+                        while time.time() < t_end:
+                            raw = ser.readline().decode("utf-8", errors="ignore").strip()
+                            if raw:
+                                pkt = parse_haptic_packet(raw)
+                                if pkt:
+                                    first_packet = pkt
+                                    break
+                    else:
+                        # Generic unknown COM port: require valid telemetry packet before claiming it's a Haptic Pad
+                        t_end = time.time() + 0.8
+                        while time.time() < t_end:
+                            raw = ser.readline().decode("utf-8", errors="ignore").strip()
+                            if raw and ("JX:" in raw or "JY:" in raw or "JZ:" in raw):
+                                pkt = parse_haptic_packet(raw)
+                                if pkt:
+                                    has_haptic_data = True
+                                    first_packet = pkt
+                                    break
+
                     if has_haptic_data:
                         found_port = port_name
                         self.ser = ser
                         self.active_port = port_name
+                        now = time.time()
                         with haptic_state_lock:
                             haptic_device_state["connected"] = True
                             haptic_device_state["status"] = "CONNECTED"
                             haptic_device_state["port"] = port_name
                             haptic_device_state["device"] = "STM32 Haptic Pad"
-                            haptic_device_state["last_heartbeat"] = time.time()
-                            haptic_device_state["last_packet_time"] = time.time()
-                            haptic_device_state["packets_rx"] += 1
+                            haptic_device_state["source"] = "local_monitor"
+                            haptic_device_state["last_heartbeat"] = now
+                            haptic_device_state["last_packet_time"] = now
+                            haptic_device_state["packets_rx"] += (1 if first_packet else 0)
                             if first_packet:
                                 haptic_device_state["telemetry"] = first_packet
                         print(f"[HAPTIC HARDWARE] Real STM32 Haptic Pad online & synchronized on {port_name}", flush=True)
+                        threading.Thread(target=_forward_cloud_haptic_report, args=(True, port_name, first_packet, 1), daemon=True).start()
+                        self._last_cloud_sync = now
                         break
                     else:
                         ser.close()
@@ -380,31 +454,39 @@ class LocalHapticPadMonitor(threading.Thread):
                     continue
 
             if not found_port:
-                time.sleep(2.5)
+                time.sleep(2.0)
                 continue
 
-            # Active packet reading loop
+            # Active packet reading & connection maintenance loop
             while self.running and self.ser and self.ser.is_open:
                 try:
                     raw = self.ser.readline().decode("utf-8", errors="ignore").strip()
-                    if not raw:
-                        continue
-
-                    pkt = parse_haptic_packet(raw)
                     now = time.time()
-                    if pkt:
-                        with haptic_state_lock:
-                            haptic_device_state["connected"] = True
-                            haptic_device_state["status"] = "CONNECTED"
-                            haptic_device_state["port"] = self.active_port
-                            haptic_device_state["device"] = "STM32 Haptic Pad"
-                            haptic_device_state["last_heartbeat"] = now
-                            haptic_device_state["last_packet_time"] = now
-                            haptic_device_state["packets_rx"] += 1
-                            haptic_device_state["telemetry"] = pkt
+                    if raw:
+                        pkt = parse_haptic_packet(raw)
+                        if pkt:
+                            with haptic_state_lock:
+                                haptic_device_state["connected"] = True
+                                haptic_device_state["status"] = "CONNECTED"
+                                haptic_device_state["port"] = self.active_port
+                                haptic_device_state["device"] = "STM32 Haptic Pad"
+                                haptic_device_state["last_heartbeat"] = now
+                                haptic_device_state["last_packet_time"] = now
+                                haptic_device_state["packets_rx"] += 1
+                                haptic_device_state["telemetry"] = pkt
                     else:
                         with haptic_state_lock:
                             haptic_device_state["last_heartbeat"] = now
+
+                    # Periodic cloud sync (every 1.5 seconds)
+                    if now - self._last_cloud_sync >= 1.5:
+                        self._last_cloud_sync = now
+                        with haptic_state_lock:
+                            telem = dict(haptic_device_state.get("telemetry") or {})
+                            rx_cnt = haptic_device_state.get("packets_rx", 0)
+                            active_p = self.active_port
+                        threading.Thread(target=_forward_cloud_haptic_report, args=(True, active_p, telem, rx_cnt), daemon=True).start()
+
                 except (serial.SerialException, OSError) as err:
                     print(f"[HAPTIC HARDWARE] USB Disconnect / I/O error on {self.active_port}: {err}", flush=True)
                     break
@@ -417,14 +499,18 @@ class LocalHapticPadMonitor(threading.Thread):
                 haptic_device_state["connected"] = False
                 haptic_device_state["status"] = "NOT_CONNECTED"
                 haptic_device_state["device"] = None
+                haptic_device_state["port"] = None
+                haptic_device_state["source"] = None
             if self.ser:
                 try:
                     self.ser.close()
                 except Exception:
                     pass
                 self.ser = None
+            p_disc = self.active_port
             self.active_port = None
             print("[HAPTIC HARDWARE] Haptic Pad disconnected. Retrying scan for reconnect...", flush=True)
+            threading.Thread(target=_forward_cloud_haptic_report, args=(False, p_disc), daemon=True).start()
             time.sleep(1.0)
 
 # Start background real hardware monitor automatically with server
@@ -464,6 +550,7 @@ def api_haptic_pad_report():
         haptic_device_state["port"] = data.get("port")
         haptic_device_state["device"] = data.get("device", "STM32 Haptic Pad") if is_connected else None
         haptic_device_state["packets_rx"] = int(data.get("packets_rx", 0))
+        haptic_device_state["source"] = "external_agent"
         haptic_device_state["last_heartbeat"] = now
         if is_connected:
             haptic_device_state["last_packet_time"] = now

@@ -28,6 +28,7 @@ import serial.tools.list_ports
 # ── Config ────────────────────────────────────────────────────────────────────
 BAUD_RATE = 115200
 DEFAULT_BACKEND_URL = os.environ.get("TORUS_BACKEND_URL", "http://127.0.0.1:5000")
+DEFAULT_CLOUD_URL = os.environ.get("TORUS_CLOUD_URL", "https://software-torus.onrender.com")
 DEFAULT_AGENT_SECRET = os.environ.get("HAPTIC_AGENT_SECRET", "torus_haptic_sec_2026")
 SLAVE_IP_FILE = "slave_ip.txt"
 
@@ -119,8 +120,9 @@ def parse_packet(line: str) -> dict | None:
 
 
 class HapticPadAgent:
-    def __init__(self, backend_url: str, secret: str, slave_ip: str | None = None):
+    def __init__(self, backend_url: str, secret: str, slave_ip: str | None = None, cloud_url: str | None = DEFAULT_CLOUD_URL):
         self.backend_url = backend_url.rstrip("/")
+        self.cloud_url = cloud_url.rstrip("/") if cloud_url else None
         self.secret = secret
         self.slave_ip = slave_ip
         self.running = True
@@ -133,7 +135,10 @@ class HapticPadAgent:
         self.probe_flag = threading.Event()
 
     def send_backend_report(self, connected: bool, telemetry: dict | None = None):
-        url = f"{self.backend_url}/api/haptic-pad/report" if connected else f"{self.backend_url}/api/haptic-pad/disconnect"
+        targets = [self.backend_url]
+        if self.cloud_url and self.cloud_url != self.backend_url:
+            targets.append(self.cloud_url)
+
         payload = {
             "connected": connected,
             "port": self.current_port,
@@ -141,20 +146,26 @@ class HapticPadAgent:
             "packets_rx": self.packets_rx,
             "telemetry": telemetry or self.latest_telemetry
         }
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Haptic-Agent-Secret": self.secret
-                },
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                return resp.status == 200
-        except Exception as e:
-            return False
+        
+        success = False
+        for base in targets:
+            url = f"{base}/api/haptic-pad/report" if connected else f"{base}/api/haptic-pad/disconnect"
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Haptic-Agent-Secret": self.secret
+                    },
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                    if resp.status == 200:
+                        success = True
+            except Exception:
+                pass
+        return success
 
     def heartbeat_worker(self):
         """Continuously reports device status and heartbeat to TORUS backend."""
@@ -189,9 +200,31 @@ class HapticPadAgent:
 
             try:
                 self.ser = serial.Serial(port, BAUD_RATE, timeout=0.2)
+                try:
+                    self.ser.dtr = True
+                    self.ser.rts = True
+                except Exception:
+                    pass
                 log(f"[HAPTIC] Serial connection established on {port}")
-            except Exception as e:
-                log(f"[HAPTIC] Serial connection failed: {e}")
+            except (serial.SerialException, PermissionError, OSError) as e:
+                # Check if local server is already managing this port
+                try:
+                    check_url = f"{self.backend_url}/api/haptic-pad/status"
+                    req = urllib.request.Request(check_url, headers={"Content-Type": "application/json"})
+                    with urllib.request.urlopen(req, timeout=1.0) as resp:
+                        s_data = json.loads(resp.read().decode())
+                        if s_data.get("connected") and s_data.get("port") == port:
+                            log(f"[HAPTIC] Local server is managing {port}. Relaying cloud telemetry heartbeat...")
+                            self.current_port = port
+                            with self.lock:
+                                self.is_connected = True
+                            self.send_backend_report(True)
+                            time.sleep(1.5)
+                            continue
+                except Exception:
+                    pass
+
+                log(f"[HAPTIC] Serial connection failed on {port}: {e}")
                 self.current_port = None
                 time.sleep(1.5)
                 continue

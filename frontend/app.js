@@ -9709,14 +9709,26 @@ const HapticPadService = {
       };
     }
 
-    const endpoints = [
-      "/api/haptic-pad/status"
-    ];
+    const origin = window.location.origin || "";
+    const isDirectLocal = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost";
+    const endpoints = isDirectLocal
+      ? [
+          "/api/haptic-pad/status",
+          "http://127.0.0.1:5000/api/haptic-pad/status",
+          "http://localhost:5000/api/haptic-pad/status"
+        ]
+      : [
+          "http://127.0.0.1:5000/api/haptic-pad/status",
+          "http://localhost:5000/api/haptic-pad/status",
+          `${origin}/api/haptic-pad/status`,
+          "/api/haptic-pad/status"
+        ];
 
+    let lastKnownData = null;
     for (const url of endpoints) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 2500);
+        const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 1800);
 
         const response = await fetch(url, {
           method: "GET",
@@ -9727,19 +9739,35 @@ const HapticPadService = {
         clearTimeout(timeoutId);
 
         if (response && response.ok) {
-          const data = await response.json();
-          return {
-            success: true,
-            connected: Boolean(data.connected),
-            device: data.device || null,
-            port: data.port || null,
-            packets_rx: data.packets_rx || 0,
-            message: data.message || ""
-          };
+          const data = await response.json().catch(() => null);
+          if (data) {
+            lastKnownData = data;
+            if (data.connected) {
+              return {
+                success: true,
+                connected: true,
+                device: data.device || "STM32 Haptic Pad",
+                port: data.port || "USB",
+                packets_rx: data.packets_rx || 0,
+                message: data.message || ""
+              };
+            }
+          }
         }
       } catch (err) {
         // Continue to next endpoint fallback
       }
+    }
+
+    if (lastKnownData) {
+      return {
+        success: true,
+        connected: false,
+        device: null,
+        port: null,
+        packets_rx: lastKnownData.packets_rx || 0,
+        message: lastKnownData.message || "Haptic Pad device not detected."
+      };
     }
 
     return {
