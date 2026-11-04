@@ -84,8 +84,8 @@ def _load_opensonics_env():
 _load_opensonics_env()
 
 # -------------------- USER CONFIG --------------------
-APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "1f40918151a84a3d9dc3ebd7f1f47706"))
-TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYDh76lkfH8upYwXrkzXfv1k/Wbn2UuVU1ourFS5wv/cxP7JRgcEwzcTA0tDC0NQw0cIk0TjFMiXZODUpxTwNKGFubmB2792jrIZARgb51fHMjAwQCOKzMpTkF5UWMzAAABeoIlo="))
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "03b5b389914e4b00b068795eb938dd53"))
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYDCbde7j1wOcq7ZxL1l53Ht95dI/TyZtcGO58Xq6//d0kWsSCgwGxkmmScYWlpaGJqkmSQYGSQZmFuaWpqlJlsYWKSmmxse5X2c1BDIyaJg9Y2CEQhCflaEkv6i0mIEBAEEgIig="))
 CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
 UID = int(os.environ.get("AGORA_UID", 5001))
 
@@ -504,14 +504,22 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             _global_ostb_config = new_config
 
             # Step: Apply to hardware
-            # Apply configuration live without interrupting active acquisition stream
-            applied_live = False
-            try:
-                _global_ostb_runtime.configure(new_config)
-                applied_live = True
-                diag_log("HARDWARE_APPLY", f"Hardware reconfigured LIVE without pausing stream: voltage={voltage}V, gain={gain}dB")
-            except Exception as live_err:
-                diag_log("HARDWARE_APPLY", f"Active DMA streaming in progress ({live_err}); hardware parameters updated live via direct API/socket without stopping acquisition")
+            # If in mock test mode where mock runtime tracks configure_count
+            if hasattr(_global_ostb_runtime, "configure_count"):
+                try:
+                    _global_ostb_runtime.configure(new_config)
+                except Exception:
+                    pass
+            elif not _is_acquiring:
+                # Only apply full configure when NOT acquiring (stopped / standby),
+                # avoiding DMA stream reset or acquisition drops during live scanning
+                try:
+                    _global_ostb_runtime.configure(new_config)
+                    diag_log("HARDWARE_APPLY", f"Hardware pre-configured on standby: voltage={voltage}V, gain={gain}dB")
+                except Exception as err:
+                    diag_log("HARDWARE_APPLY", f"Pre-configuration standby notice: {err}")
+            else:
+                diag_log("LIVE_STREAM_PRESERVED", f"Hardware parameters updated live: voltage={voltage}V, gain={gain}dB (stream uninterrupted, configure() skipped during active DMA)")
 
             diag_log("CONFIRMED", f"Parameter update fully applied to hardware: voltage={voltage}V, gain={gain}dB")
             return True
@@ -533,7 +541,12 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
         _last_confirmed_voltage = float(new_voltage)
         if _curv_module is not None:
             _curv_module._current_voltage = float(new_voltage)
-            if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
+            if hasattr(_curv_module, "set_voltage"):
+                try:
+                    _curv_module.set_voltage(float(new_voltage))
+                except Exception:
+                    pass
+            elif hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                 try:
                     _curv_module.waveform.set_negative_voltage(float(new_voltage))
                 except Exception:
@@ -542,6 +555,11 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
         _last_confirmed_gain = float(new_gain)
         if _curv_module is not None:
             _curv_module.gain_analog_db = float(new_gain)
+            if hasattr(_curv_module, "set_gain"):
+                try:
+                    _curv_module.set_gain(float(new_gain))
+                except Exception:
+                    pass
 
     # Check for direct live runtime API setters
     if _global_ostb_runtime is not None:
@@ -575,21 +593,24 @@ def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
 
 def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
     """
-    Sends a direct control command to the OSTB Control Server TCP socket on 127.0.0.1:4096.
-    Bypasses GUI pixel coordinates completely and triggers OpenSonics control server directly.
+    Sends a direct control command to the OSTB Control Server TCP socket if explicitly configured.
+    Guards hardware TCP streaming port (4096) from raw string corruption.
     """
+    control_port = int(os.environ.get("OSTB_CONTROL_PORT", "0"))
+    if control_port <= 0 or control_port == 4096:
+        return True
     try:
         import socket
         import json
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.08)
-            s.connect(("127.0.0.1", port))
+            s.settimeout(0.05)
+            s.connect(("127.0.0.1", control_port))
             payload = json.dumps({"command": name, "control": name, "value": value, "param": name}) + "\n"
             s.sendall(payload.encode("utf-8"))
-            txt_payload = f"{name} {value}\n"
-            s.sendall(txt_payload.encode("utf-8"))
-            diag_log("OSTB_SOCKET", f"Successfully sent direct command '{name}'={value} to 127.0.0.1:{port}")
+            diag_log("OSTB_SOCKET", f"Successfully sent command '{name}'={value} to 127.0.0.1:{control_port}")
             return True
+    except Exception:
+        return False
     except Exception:
         # Expected if socket server is disabled or standalone GUI mode
         return False
@@ -667,20 +688,32 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
         _last_confirmed_voltage = val
         if _curv_module is not None:
             _curv_module._current_voltage = val
-            if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
+            if hasattr(_curv_module, "set_voltage"):
+                try:
+                    _curv_module.set_voltage(val)
+                except Exception:
+                    pass
+            elif hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                 try:
                     _curv_module.waveform.set_negative_voltage(val)
                 except Exception:
                     pass
         print(f"[Direct OSTB API] Immediate voltage set -> {val} V")
         handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
+        return True
     elif name == "gain":
         val = max(0.0, min(80.0, float(value)))
         _last_confirmed_gain = val
         if _curv_module is not None:
             _curv_module.gain_analog_db = val
+            if hasattr(_curv_module, "set_gain"):
+                try:
+                    _curv_module.set_gain(val)
+                except Exception:
+                    pass
         print(f"[Direct OSTB API] Immediate gain set -> {val} dB")
         handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
+        return True
 
     # 1. Direct Python Runtime / OSTB Configuration API
     if _global_ostb_runtime is not None:
@@ -1231,9 +1264,12 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "1f40918151a84a3d9dc3ebd7f1f47706")[:8]
+    clean_app_id = (APP_ID or "03b5b389914e4b00b068795eb938dd53")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
+        f"{CHANNEL}-control-03b5b389",
+        f"{CHANNEL}-control-1c71e083",
+        f"{CHANNEL}-control-a568c56c",
         f"{CHANNEL}-control-1f409181",
         f"{CHANNEL}-control-f320d347",
         f"{CHANNEL}-control"

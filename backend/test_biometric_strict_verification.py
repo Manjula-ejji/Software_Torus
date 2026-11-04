@@ -269,54 +269,55 @@ def run_strict_biometric_verification():
     # TEST 9: REGISTER UP TO R20 -> ATTEMPT USER 21 -> BLOCKED
     # --------------------------------------------------------------------------
     print("\n--- TEST 9: Register users sequentially up to R20; attempt User 21 ---")
-    # We already have R1 (admin), R2 (user2), R3 (user3). Enroll R4 through R20:
-    for i in range(4, 21):
-        user_email = f"doctor_{i}@torus.local"
+    max_s = database.MAX_BIOMETRIC_SLOTS
+    # We already have R1 (admin), R2 (user2), R3 (user3). Enroll R4 through max_s:
+    for i in range(4, max_s + 1):
+        user_email = f'doctor_{i}@torus.local'
         with database.get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM doctors WHERE LOWER(email) = ?", (user_email,))
+            cursor.execute('SELECT id FROM doctors WHERE LOWER(email) = ?', (user_email,))
             if not cursor.fetchone():
-                database.register_doctor(f"Dr. Test {i}", user_email, "Test@2026Doctor!", mobile=f"+91 9876543{i:03d}", uid=f"DOC-U{i}")
+                database.register_doctor(f'Dr. Test {i}', user_email, 'Test@2026Doctor!', mobile=f'+91 9876543{i:03d}', uid=f'DOC-U{i}')
 
-        expected_slot = f"R{i}"
+        expected_slot = f'R{i}'
         avail = database.get_next_available_biometric_slot()
-        assert avail == expected_slot, f"Expected {expected_slot}, got {avail}"
+        assert avail == expected_slot, f'Expected {expected_slot}, got {avail}'
 
         reg_res = database.register_doctor_biometric(
             identifier=user_email,
             fingerprint_slot=expected_slot,
-            template_data=f"R307_SLOT_{i}",
-            scanner_model="STM32 / R307 Optical Biometric Scanner"
+            template_data=f'FPM383C_SLOT_{i}',
+            scanner_model='STM32 / HLK-FPM383C Fingerprint Scanner'
         )
-        assert reg_res.get("success") is True, f"Failed to register slot {expected_slot}"
+        assert reg_res.get('success') is True, f'Failed to register slot {expected_slot}'
 
-    # Verify all 20 slots occupied
+    # Verify all max_s slots occupied
     slot_info = biometrics.hardware_manager.get_slot_info()
-    print(f"  Occupied slots count: {slot_info.get('used_slots')}/20. Available: {slot_info.get('available_slots')}")
+    print(f'  Occupied slots count: {slot_info.get("used_slots")}/{max_s}. Available: {slot_info.get("available_slots")}')
 
-    # Now attempt 21st user registration:
-    u21_email = "doctor_21@torus.local"
+    # Now attempt overflow user registration:
+    overflow_email = f'doctor_{max_s + 1}@torus.local'
     with database.get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM doctors WHERE LOWER(email) = ?", (u21_email,))
+        cursor.execute('SELECT id FROM doctors WHERE LOWER(email) = ?', (overflow_email,))
         if not cursor.fetchone():
-            database.register_doctor("Dr. Test 21", u21_email, "Test@2026Doctor!", mobile="+91 9876543021", uid="DOC-U21")
+            database.register_doctor(f'Dr. Test {max_s + 1}', overflow_email, 'Test@2026Doctor!', mobile='+91 9876543099', uid=f'DOC-U{max_s+1}')
 
-    slot_21_avail = database.get_next_available_biometric_slot()
-    u21_enroll_check = biometrics.hardware_manager._validate_doctor_for_enrollment(u21_email)
+    overflow_slot_avail = database.get_next_available_biometric_slot()
+    overflow_enroll_check = biometrics.hardware_manager._validate_doctor_for_enrollment(overflow_email)
 
     test9_pass = (
-        (slot_info.get("used_slots") == 20)
-        and (slot_21_avail is None)
-        and (not u21_enroll_check.get("ok"))
-        and (u21_enroll_check.get("code") == "ALL_SLOTS_FULL")
+        (slot_info.get('used_slots') == max_s)
+        and (overflow_slot_avail is None)
+        and (not overflow_enroll_check.get('ok'))
+        and (overflow_enroll_check.get('code') == 'ALL_SLOTS_FULL')
     )
     if test9_pass:
-        print(f"[PASS] TEST 9: All 20 slots (R1..R20) successfully registered. User 21 blocked with: '{u21_enroll_check.get('error')}'. No overwrite occurred.")
-        results["test9"] = "PASS"
+        print(f'[PASS] TEST 9: All {max_s} slots (R1..R{max_s}) successfully registered. Overflow blocked with: {overflow_enroll_check.get("error")}. No overwrite occurred.')
+        results['test9'] = 'PASS'
     else:
-        print(f"[FAIL] TEST 9: 20-slot overflow test failed: avail={slot_21_avail}, check={u21_enroll_check}")
-        results["test9"] = "FAIL"
+        print(f'[FAIL] TEST 9: overflow test failed: avail={overflow_slot_avail}, check={overflow_enroll_check}')
+        results['test9'] = 'FAIL'
 
     # Reset back to completely clean state (0 active registrations)
     print("\n--- RESETTING TO CLEAN EMPTY STATE (0 active registrations) ---")

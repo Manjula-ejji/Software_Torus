@@ -2497,92 +2497,6 @@ body[data-role="viewer"] #settings-uid-wrapper {
   background: #e2e8f0;
 }
 
-/* Four Action Buttons Row: Capture, Record, Rotate Image, Reset Position */
-.acq-action-row {
-  display: grid;
-  grid-template-columns: 0.88fr 0.84fr 1.28fr 1.35fr;
-  gap: 6px;
-  width: 100%;
-  margin-top: -6px;
-  margin-bottom: -4px;
-}
-
-.acq-action-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 8px 4px 7px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-family: inherit;
-  color: #1e293b;
-  min-width: 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-.acq-action-btn:hover {
-  background: #f8fafc;
-  border-color: #93c5fd;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.08);
-}
-
-.acq-action-btn:active {
-  background: #eff6ff;
-  transform: translateY(1px);
-}
-
-.acq-action-btn.recording-active {
-  background: #fee2e2;
-  border-color: #ef4444;
-  animation: pulseRecording 1.5s infinite;
-}
-
-.acq-action-btn.recording-active .acq-action-icon {
-  stroke: #dc2626;
-}
-
-@keyframes pulseRecording {
-  0% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
-  }
-
-  70% {
-    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
-}
-
-.acq-action-icon {
-  width: 19px;
-  height: 19px;
-  display: block;
-}
-
-.acq-action-label {
-  font-size: 0.62rem;
-  font-weight: 600;
-  color: #334155;
-  text-align: center;
-  white-space: nowrap;
-  letter-spacing: -0.2px;
-  line-height: 1.1;
-  max-width: 100%;
-}
-
-.controls-divider-line {
-  height: 1px;
-  background: #e2e8f0;
-  margin: 10px 0;
-}
-
 .acq-icon {
   width: 16px;
   height: 16px;
@@ -2591,6 +2505,13 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .acq-icon-snowflake {
   width: 16px;
   height: 16px;
+}
+
+/* Controls Divider Line */
+.controls-divider-line {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 0 8px 0;
 }
 
 /* Slider Controls (Voltage / Analog Gain) */
