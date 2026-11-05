@@ -322,6 +322,14 @@ def set_voltage(val: float) -> float:
                     break
                 except Exception:
                     pass
+    # Propagate to hardware controller via ultrasound service if available
+    try:
+        import sys
+        us = sys.modules.get("backend.ultrasound") or sys.modules.get("ultrasound")
+        if us and hasattr(us, "handle_control_command"):
+            us.handle_control_command("voltage", val)
+    except Exception:
+        pass
     return _current_voltage
 
 def set_gain(val: float) -> float:
@@ -337,6 +345,14 @@ def set_gain(val: float) -> float:
                     break
                 except Exception:
                     pass
+    # Propagate to hardware controller via ultrasound service if available
+    try:
+        import sys
+        us = sys.modules.get("backend.ultrasound") or sys.modules.get("ultrasound")
+        if us and hasattr(us, "handle_control_command"):
+            us.handle_control_command("gain", val)
+    except Exception:
+        pass
     return gain_analog_db
 
 def update_parameters(voltage: float = None, gain: float = None) -> dict:
@@ -357,4 +373,4 @@ def get_current_status():
         "display": True,
         "tgc_enabled": False,
         "tgc_sliders": [50, 12, 3, 77, 90, 30]
-    }
+    }

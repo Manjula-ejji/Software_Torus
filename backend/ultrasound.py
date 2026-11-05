@@ -123,34 +123,61 @@ def find_opensonics_control_window() -> int:
     Finds the NEXUS / OpenSonics Control Panel window handle (hwnd).
     Explicitly targets window title 'NEXUS' or OpenSonics controller window.
     Never falls back to the ultrasound image / render window.
+    Supports both win32gui and ctypes for maximum platform reliability.
     """
-    try:
-        import win32gui
-    except ImportError:
-        return 0
-
     control_hwnd = [0]
 
-    def enum_cb(hwnd, _):
-        if not win32gui.IsWindow(hwnd):
-            return True
-        title = win32gui.GetWindowText(hwnd)
-        cls_name = win32gui.GetClassName(hwnd)
-        t_low = title.lower()
-
-        # Match exact NEXUS control panel window
+    def _check_window(hwnd, title, cls_name):
+        t_low = (title or "").lower()
+        cls_low = (cls_name or "").lower()
         if title == "NEXUS" or (any(k in t_low for k in ["opensonics", "controller", "acquisition", "signal controls"])
                                  and not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"])):
             control_hwnd[0] = hwnd
             return False
-        elif ("Qt6" in cls_name or "Qt5" in cls_name) and title and title not in ["Launcher", "_q_titlebar"]:
+        elif ("qt6" in cls_low or "qt5" in cls_low) and title and title not in ["Launcher", "_q_titlebar"]:
             if not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"]):
                 if not control_hwnd[0]:
                     control_hwnd[0] = hwnd
         return True
 
+    # 1. Try win32gui
     try:
+        import win32gui
+        def enum_cb(hwnd, _):
+            if not win32gui.IsWindow(hwnd):
+                return True
+            title = win32gui.GetWindowText(hwnd)
+            cls_name = win32gui.GetClassName(hwnd)
+            return _check_window(hwnd, title, cls_name)
         win32gui.EnumWindows(enum_cb, None)
+        if control_hwnd[0]:
+            return control_hwnd[0]
+    except Exception:
+        pass
+
+    # 2. Fallback to ctypes
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HWND, wintypes.LPARAM)
+        def enum_proc(hwnd, lparam):
+            if not user32.IsWindow(hwnd):
+                return 1
+            length = user32.GetWindowTextLengthW(hwnd)
+            title = ""
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buff, length + 1)
+                title = buff.value
+            cls_buff = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, cls_buff, 256)
+            cls_name = cls_buff.value
+            if not _check_window(hwnd, title, cls_name):
+                return 0
+            return 1
+        proc = WNDENUMPROC(enum_proc)
+        user32.EnumWindows(proc, 0)
     except Exception:
         pass
 
@@ -616,57 +643,152 @@ def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
         return False
 
 
+
+def _apply_in_process_qt_parameter(param_name: str, value: float) -> bool:
+    """
+    Attempts to update the parameter via in-process Qt widget calls if QApplication exists.
+    Directly invokes setValue() on matching QSpinBox/QSlider.
+    """
+    try:
+        qapp_cls = None
+        for mod_name in ["PyQt5.QtWidgets", "PySide2.QtWidgets", "PyQt6.QtWidgets", "PySide6.QtWidgets"]:
+            if mod_name in sys.modules:
+                mod = sys.modules[mod_name]
+                if hasattr(mod, "QApplication"):
+                    qapp_cls = getattr(mod, "QApplication")
+                    break
+        if not qapp_cls:
+            return False
+
+        app = qapp_cls.instance()
+        if not app:
+            return False
+
+        widgets = app.allWidgets() if hasattr(app, "allWidgets") else app.topLevelWidgets()
+        applied = False
+        target = "volt" if "volt" in param_name.lower() else "gain"
+
+        for w in widgets:
+            try:
+                w_name = (w.objectName() or "").lower()
+                w_acc = (w.accessibleName() or "").lower()
+                w_tip = (w.toolTip() or "").lower()
+                if target in w_name or target in w_acc or target in w_tip:
+                    if hasattr(w, "setValue"):
+                        w.setValue(int(round(value)))
+                        applied = True
+                        diag_log("IN_PROCESS_QT", f"Applied in-process Qt setValue({value}) on widget: {w_name or w}")
+            except Exception:
+                continue
+
+        return applied
+    except Exception as e:
+        diag_log("IN_PROCESS_QT", f"In-process Qt lookup notice: {e}")
+        return False
+
+
 def send_qt_input_value(hwnd: int, cx_input: int, cy_input: int, val_str: str) -> None:
     """
     Delivers a new numeric value into a Qt QSpinBox/QLineEdit at client coordinate (cx_input, cy_input).
     Clicks to focus, selects all, enters characters via WM_CHAR, and releases focus.
     CRITICAL: Never sends VK_RETURN or VK_SPACE, to avoid triggering the dialog default button (Start/Stop).
+    Supports both win32gui and ctypes.windll.user32.
     """
+    if not hwnd:
+        return
+    lParam = (int(cy_input) << 16) | (int(cx_input) & 0xFFFF)
+
+    WM_ACTIVATE = 0x0006
+    WA_ACTIVE = 1
+    WM_LBUTTONDOWN = 0x0201
+    WM_LBUTTONUP = 0x0202
+    MK_LBUTTON = 0x0001
+    WM_KEYDOWN = 0x0100
+    WM_KEYUP = 0x0101
+    WM_CHAR = 0x0102
+    WM_KILLFOCUS = 0x0008
+    VK_CONTROL = 0x11
+    VK_A = ord('A')
+
+    def _post(msg, wparam, lparam):
+        try:
+            import win32gui
+            win32gui.PostMessage(hwnd, msg, wparam, lparam)
+            return
+        except Exception:
+            pass
+        try:
+            import ctypes
+            ctypes.windll.user32.PostMessageW(hwnd, msg, wparam, lparam)
+        except Exception:
+            pass
+
     try:
-        import win32gui
-        import win32con
-        import win32api
-        lParam = win32api.MAKELONG(int(cx_input), int(cy_input))
-        win32gui.PostMessage(hwnd, win32con.WM_ACTIVATE, win32con.WA_ACTIVE, 0)
-        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+        # Click to focus the input box
+        _post(WM_ACTIVATE, WA_ACTIVE, 0)
+        _post(WM_LBUTTONDOWN, MK_LBUTTON, lParam)
         time.sleep(0.01)
-        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+        _post(WM_LBUTTONUP, 0, lParam)
         time.sleep(0.01)
+
         # Select all text (Ctrl+A)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_CONTROL, 0)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, ord('A'), 0)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, ord('A'), 0)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_CONTROL, 0)
+        _post(WM_KEYDOWN, VK_CONTROL, 0)
+        _post(WM_KEYDOWN, VK_A, 0)
+        _post(WM_KEYUP, VK_A, 0)
+        _post(WM_KEYUP, VK_CONTROL, 0)
         time.sleep(0.01)
+
         # Type characters of new value
         for ch in val_str:
-            win32gui.PostMessage(hwnd, win32con.WM_CHAR, ord(ch), 0)
+            _post(WM_CHAR, ord(ch), 0)
             time.sleep(0.005)
+
         # Release keyboard focus without triggering dialog default button (NO VK_RETURN!)
-        win32gui.PostMessage(hwnd, win32con.WM_KILLFOCUS, 0, 0)
+        _post(WM_KILLFOCUS, 0, 0)
         diag_log("QT_SYNC", f"Delivered numeric value '{val_str}' to input at ({cx_input}, {cy_input}) without Enter/Space keys")
     except Exception as e:
         diag_log("QT_SYNC", f"send_qt_input_value notice: {e}")
+
 
 def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
     """
     Sends direct Win32 WM_LBUTTONDOWN and WM_LBUTTONUP messages directly to Qt's event queue.
     Does NOT move the physical cursor or blink the mouse pointer on screen.
+    Supports both win32gui and ctypes.windll.user32.
     """
-    import win32gui
-    import win32con
-    import win32api
-
+    if not hwnd:
+        return
+    lParam = (int(cy) << 16) | (int(cx) & 0xFFFF)
     try:
-        lParam = win32api.MAKELONG(int(cx), int(cy))
-        print(f"[Remote Control Qt] Posting WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy})")
+        import win32gui
+        import win32con
         win32gui.PostMessage(hwnd, win32con.WM_ACTIVATE, win32con.WA_ACTIVE, 0)
         win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
         win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
-        time.sleep(0.03)
+        time.sleep(0.02)
         win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+        diag_log("QT_CLICK", f"Posted WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy}) via win32gui")
+        return
+    except Exception:
+        pass
+
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        WM_ACTIVATE = 0x0006
+        WA_ACTIVE = 1
+        WM_MOUSEMOVE = 0x0200
+        WM_LBUTTONDOWN = 0x0201
+        WM_LBUTTONUP = 0x0202
+        MK_LBUTTON = 0x0001
+        user32.PostMessageW(hwnd, WM_ACTIVATE, WA_ACTIVE, 0)
+        user32.PostMessageW(hwnd, WM_MOUSEMOVE, 0, lParam)
+        user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam)
+        time.sleep(0.02)
+        user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lParam)
+        diag_log("QT_CLICK", f"Posted WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy}) via ctypes")
     except Exception as e:
-        print(f"[Remote Control Qt] PostMessage error: {e}")
+        diag_log("QT_CLICK", f"PostMessage error: {e}")
 
 
 def execute_direct_runtime_command(name: str, value: any) -> bool:
@@ -700,7 +822,6 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                     pass
         print(f"[Direct OSTB API] Immediate voltage set -> {val} V")
         handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
-        return True
     elif name == "gain":
         val = max(0.0, min(80.0, float(value)))
         _last_confirmed_gain = val
@@ -713,7 +834,6 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                     pass
         print(f"[Direct OSTB API] Immediate gain set -> {val} dB")
         handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
-        return True
 
     # 1. Direct Python Runtime / OSTB Configuration API
     if _global_ostb_runtime is not None:
@@ -811,11 +931,13 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
 def handle_control_command(name: str, value: any) -> bool:
     """
     Handles control commands from doctor side and delivers them directly into OpenSonics NEXUS via PostMessage & TCP socket.
-    Coordinates calibrated to NEXUS window layout (640x480 ratio):
-    - Start Button: x_pct=0.25, y_pct=0.16 (cy=68)
-    - Freeze / Resume Button: x_pct=0.25, y_pct=0.25 (cy=108)
-    - Voltage Slider: y_pct=0.42, x_pct = 0.12 + (val / 50.0) * 0.26
-    - Analog Gain Slider: y_pct=0.58, x_pct = 0.12 + (val / 80.0) * 0.26
+    Coordinates calibrated to NEXUS window layout (872x717 ratio):
+    - Start Button: x_pct=0.25, y_pct=0.16
+    - Freeze / Resume Button: x_pct=0.25, y_pct=0.25
+    - Voltage Input Box: x_pct=0.408, y_pct=0.499
+    - Voltage Slider Track: y_pct=0.555, x_pct = 0.105 + (val / 50.0) * 0.305
+    - Analog Gain Input Box: x_pct=0.411, y_pct=0.634
+    - Analog Gain Slider Track: y_pct=0.691, x_pct = 0.105 + (val / 80.0) * 0.305
     - Display Toggle: x_pct=0.64, y_pct=0.70
     - TGC Toggle: x_pct=0.64, y_pct=0.18
     - TGC Sliders 1-6: x_pct = 0.54 + (slider_idx * 0.07), y_pct = 0.62 - (val / 100.0) * 0.34
@@ -827,20 +949,34 @@ def handle_control_command(name: str, value: any) -> bool:
     # 1. Direct Socket trigger (127.0.0.1:4096)
     send_ostb_socket_command(name, value)
 
-    try:
-        import win32gui
-        import win32con
-        import win32api
-    except ImportError:
-        return True
+    # 2. In-Process Qt Dispatch (Tier 1)
+    if name in ["voltage", "gain"]:
+        val = float(value)
+        val = max(0.0, min(50.0, val)) if name == "voltage" else max(0.0, min(80.0, val))
+        if _apply_in_process_qt_parameter(name, val):
+            diag_log("CONTROL_API", f"Parameter '{name}' applied directly via in-process Qt widget to {val}")
+            return True
 
     hwnd = find_opensonics_control_window()
     if not hwnd:
         print("[Remote Control] OpenSonics window not found for control command.")
         return True
 
-    rect = win32gui.GetWindowRect(hwnd)
-    left, top, right, bottom = rect
+    left, top, right, bottom = 0, 0, 872, 717
+    try:
+        import win32gui
+        rect = win32gui.GetWindowRect(hwnd)
+        left, top, right, bottom = rect
+    except Exception:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            r = wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
+            left, top, right, bottom = r.left, r.top, r.right, r.bottom
+        except Exception:
+            pass
+
     width = max(500, right - left)
     height = max(380, bottom - top)
 
@@ -849,8 +985,8 @@ def handle_control_command(name: str, value: any) -> bool:
 
     if name == "start":
         x_pct, y_pct = 0.25, 0.16
-        # Send Space/Enter keypresses directly into Qt window
         try:
+            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -863,6 +999,7 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "stop":
         x_pct, y_pct = 0.25, 0.16
         try:
+            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -872,6 +1009,7 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "freeze":
         x_pct, y_pct = 0.25, 0.25
         try:
+            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -881,6 +1019,7 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "resume":
         x_pct, y_pct = 0.25, 0.25
         try:
+            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -890,12 +1029,34 @@ def handle_control_command(name: str, value: any) -> bool:
         except Exception:
             pass
 
-    elif name in ["voltage", "gain"]:
-        # CRITICAL: Purely software & runtime socket controlled.
-        # NEVER simulate Win32 clicks, keystrokes, or window activation messages
-        # for Voltage or Gain changes, as they trigger default dialog buttons (Start/Stop) or Freeze.
-        diag_log("CONTROL_API", f"Parameter '{name}' applied directly via runtime & socket (Win32 click bypass active)")
+    elif name == "voltage":
+        val = max(0.0, min(50.0, float(value)))
+        val_str = str(int(round(val)))
+        cx_input = int(0.408 * width)
+        cy_input = int(0.499 * height)
+        send_qt_input_value(hwnd, cx_input, cy_input, val_str)
+        x_pct = 0.105 + (val / 50.0) * 0.305
+        y_pct = 0.555
+        cx_slider = int(x_pct * width)
+        cy_slider = int(y_pct * height)
+        send_direct_qt_click(hwnd, cx_slider, cy_slider)
+        diag_log("CONTROL_API", f"Applied Voltage={val}V to OpenSonics controller at input ({cx_input}, {cy_input}) and slider ({cx_slider}, {cy_slider})")
         return True
+
+    elif name == "gain":
+        val = max(0.0, min(80.0, float(value)))
+        val_str = str(int(round(val)))
+        cx_input = int(0.411 * width)
+        cy_input = int(0.634 * height)
+        send_qt_input_value(hwnd, cx_input, cy_input, val_str)
+        x_pct = 0.105 + (val / 80.0) * 0.305
+        y_pct = 0.691
+        cx_slider = int(x_pct * width)
+        cy_slider = int(y_pct * height)
+        send_direct_qt_click(hwnd, cx_slider, cy_slider)
+        diag_log("CONTROL_API", f"Applied Analog Gain={val}dB to OpenSonics controller at input ({cx_input}, {cy_input}) and slider ({cx_slider}, {cy_slider})")
+        return True
+
     elif name == "display":
         x_pct, y_pct = 0.64, 0.70
     elif name == "tgc_toggle":
@@ -917,10 +1078,8 @@ def handle_control_command(name: str, value: any) -> bool:
         cx = int(x_pct * width)
         cy = int(y_pct * height)
 
-        # Deliver mouse click directly into Qt event queue
         send_direct_qt_click(hwnd, cx, cy)
 
-        # Also backup hardware click if window is currently visible on desktop (skip for sliders to avoid cursor jitter)
         if left >= 0 and top >= 0 and name not in ["voltage", "gain"]:
             send_win32_click(hwnd, cx, cy)
 

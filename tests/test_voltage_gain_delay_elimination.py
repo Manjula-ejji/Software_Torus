@@ -244,27 +244,104 @@ class TestVoltageGainDelayElimination(unittest.TestCase):
             us._global_ostb_runtime = orig_rt
             us._is_acquiring = orig_acquiring
 
-    def test_voltage_and_gain_bypass_win32_click_and_window_focus(self):
+    def test_voltage_and_gain_hardware_controller_dispatch_when_window_present(self):
         """
-        Verify that handle_control_command('voltage', ...) and ('gain', ...)
-        never invoke send_qt_input_value, send_direct_qt_click, or send_win32_click,
-        preventing accidental triggering of default dialog buttons or window focus shifts.
+        Verify that when the OpenSonics NEXUS controller window is present on desktop:
+        1. Voltage and Gain are delivered directly into the controller inputs and sliders.
+        2. send_win32_click is NEVER called (preventing mouse cursor movement and focus stealing).
+        3. Coordinates match calibrated OpenSonics UI geometry.
         """
-        with patch.object(us, "send_qt_input_value") as mock_input, \
+        mock_hwnd = 12345
+        with patch.object(us, "find_opensonics_control_window", return_value=mock_hwnd), \
+             patch.object(us, "send_qt_input_value") as mock_input, \
              patch.object(us, "send_direct_qt_click") as mock_qt_click, \
              patch.object(us, "send_win32_click") as mock_win32_click:
 
-            res_v = us.handle_control_command("voltage", 26)
+            # 1. Voltage change to 31 V
+            res_v = us.handle_control_command("voltage", 31)
             self.assertTrue(res_v)
-            mock_input.assert_not_called()
-            mock_qt_click.assert_not_called()
+            # send_qt_input_value must deliver "31" to the numeric input box
+            mock_input.assert_called_once()
+            hwnd_arg, cx_in, cy_in, val_str = mock_input.call_args[0]
+            self.assertEqual(hwnd_arg, mock_hwnd)
+            self.assertEqual(val_str, "31")
+            # send_direct_qt_click must click the calibrated slider coordinate
+            mock_qt_click.assert_called_once()
+            # send_win32_click MUST NOT be called (protects desktop mouse pointer)
             mock_win32_click.assert_not_called()
 
-            res_g = us.handle_control_command("gain", 49)
+            mock_input.reset_mock()
+            mock_qt_click.reset_mock()
+
+            # 2. Gain change to 45 dB
+            res_g = us.handle_control_command("gain", 45)
             self.assertTrue(res_g)
-            mock_input.assert_not_called()
-            mock_qt_click.assert_not_called()
+            mock_input.assert_called_once()
+            hwnd_arg, cx_in, cy_in, val_str = mock_input.call_args[0]
+            self.assertEqual(hwnd_arg, mock_hwnd)
+            self.assertEqual(val_str, "45")
+            mock_qt_click.assert_called_once()
             mock_win32_click.assert_not_called()
+
+    def test_in_process_qt_widget_direct_dispatch(self):
+        """
+        Verify that when in-process Qt application is active,
+        _apply_in_process_qt_parameter sets values directly on matching widgets.
+        """
+        class MockQtWidget:
+            def __init__(self, name):
+                self._name = name
+                self.value = 0
+
+            def objectName(self):
+                return self._name
+
+            def accessibleName(self):
+                return ""
+
+            def toolTip(self):
+                return ""
+
+            def setValue(self, v):
+                self.value = v
+
+        class MockQApp:
+            def __init__(self, widgets):
+                self._widgets = widgets
+
+            def allWidgets(self):
+                return self._widgets
+
+        v_widget = MockQtWidget("voltageSlider")
+        g_widget = MockQtWidget("gainSpinBox")
+
+        mock_qapp_inst = MockQApp([v_widget, g_widget])
+        mock_qt_mod = MagicMock()
+        mock_qt_mod.QApplication.instance.return_value = mock_qapp_inst
+
+        with patch.dict("sys.modules", {"PyQt5.QtWidgets": mock_qt_mod}):
+            applied_v = us._apply_in_process_qt_parameter("voltage", 31.0)
+            self.assertTrue(applied_v)
+            self.assertEqual(v_widget.value, 31)
+
+            applied_g = us._apply_in_process_qt_parameter("gain", 45.0)
+            self.assertTrue(applied_g)
+            self.assertEqual(g_widget.value, 45)
+
+    def test_curv_proper_code_propagates_to_ultrasound_control(self):
+        """
+        Verify that invoking set_voltage() and set_gain() in curv_proper_code.py
+        propagates to handle_control_command, ensuring hardware updates are executed.
+        """
+        mock_ostb = MagicMock()
+        with patch.dict("sys.modules", {"ostb": mock_ostb, "ostb._ostb": mock_ostb}):
+            import backend.curv_proper_code as curv
+            with patch.object(us, "handle_control_command") as mock_ctrl:
+                curv.set_voltage(31)
+                mock_ctrl.assert_called_with("voltage", 31.0)
+
+                curv.set_gain(42)
+                mock_ctrl.assert_called_with("gain", 42.0)
 
 
 if __name__ == "__main__":
