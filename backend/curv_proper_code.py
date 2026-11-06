@@ -300,77 +300,44 @@ runtime.stop_control_server()
 runtime.disconnect()
 print("Done.")
 
-_current_voltage = 50.0
-
-def set_voltage(val: float) -> float:
-    """Sets negative voltage directly without interrupting active acquisition."""
-    global _current_voltage, waveform
-    val = max(0.0, min(50.0, float(val)))
-    _current_voltage = val
-    if hasattr(waveform, "set_negative_voltage"):
-        try:
-            waveform.set_negative_voltage(val)
-        except Exception:
-            pass
-    if hasattr(waveform, "_voltage"):
-        waveform._voltage = val
-    if 'runtime' in globals() and runtime is not None:
-        for m in ("set_voltage", "set_tx_voltage", "set_high_voltage", "update_voltage"):
-            if hasattr(runtime, m):
-                try:
-                    getattr(runtime, m)(val)
-                    break
-                except Exception:
-                    pass
-    # Propagate to hardware controller via ultrasound service if available
-    try:
-        import sys
-        us = sys.modules.get("backend.ultrasound") or sys.modules.get("ultrasound")
-        if us and hasattr(us, "handle_control_command"):
-            us.handle_control_command("voltage", val)
-    except Exception:
-        pass
-    return _current_voltage
-
-def set_gain(val: float) -> float:
-    """Sets analog gain directly without interrupting active acquisition."""
-    global gain_analog_db
-    val = max(0.0, min(80.0, float(val)))
-    gain_analog_db = val
-    if 'runtime' in globals() and runtime is not None:
-        for m in ("set_gain", "set_analog_gain", "set_rx_gain", "update_gain"):
-            if hasattr(runtime, m):
-                try:
-                    getattr(runtime, m)(val)
-                    break
-                except Exception:
-                    pass
-    # Propagate to hardware controller via ultrasound service if available
-    try:
-        import sys
-        us = sys.modules.get("backend.ultrasound") or sys.modules.get("ultrasound")
-        if us and hasattr(us, "handle_control_command"):
-            us.handle_control_command("gain", val)
-    except Exception:
-        pass
-    return gain_analog_db
-
-def update_parameters(voltage: float = None, gain: float = None) -> dict:
-    """Updates voltage and gain in-place for active acquisition system."""
-    res = {}
-    if voltage is not None:
-        res["voltage"] = set_voltage(voltage)
-    if gain is not None:
-        res["gain"] = set_gain(gain)
-    return res
 
 def get_current_status():
     """Returns current hardware configuration state for remote control/UI synchronization."""
     return {
         "status": "RUNNING",
-        "voltage": float(getattr(waveform, "_voltage", _current_voltage)),
+        "voltage": float(getattr(waveform, "_voltage", 50.0) if hasattr(waveform, "_voltage") else 50.0),
         "gain": float(gain_analog_db),
         "display": True,
         "tgc_enabled": False,
         "tgc_sliders": [50, 12, 3, 77, 90, 30]
     }
+
+
+def set_voltage(val: float) -> bool:
+    """Sets ultrasound excitation voltage and dispatches to control handler."""
+    global waveform, _current_voltage
+    val = float(val)
+    _current_voltage = val
+    if "waveform" in globals() and hasattr(waveform, "set_negative_voltage"):
+        try:
+            waveform.set_negative_voltage(val)
+        except Exception:
+            pass
+    try:
+        import backend.ultrasound as us
+        return us.handle_control_command("voltage", val)
+    except Exception:
+        return True
+
+
+def set_gain(val: float) -> bool:
+    """Sets analog gain and dispatches to control handler."""
+    global gain_analog_db
+    val = float(val)
+    gain_analog_db = val
+    try:
+        import backend.ultrasound as us
+        return us.handle_control_command("gain", val)
+    except Exception:
+        return True
+

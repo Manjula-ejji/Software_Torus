@@ -28,13 +28,13 @@ function connectDoctorMQTT(appId, channel) {
 
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
 
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "03b5b389914e4b00b068795eb938dd53" : "")
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "1f40918151a84a3d9dc3ebd7f1f47706" : "")
 
-    || "03b5b389914e4b00b068795eb938dd53";
+    || "1f40918151a84a3d9dc3ebd7f1f47706";
 
   if (targetAppId.startsWith("f320") || targetAppId.startsWith("7385")) {
 
-    targetAppId = "03b5b389914e4b00b068795eb938dd53";
+    targetAppId = "1f40918151a84a3d9dc3ebd7f1f47706";
 
   }
 
@@ -57,8 +57,6 @@ function connectDoctorMQTT(appId, channel) {
   const allControlTopics = [
 
     doctorControlTopic,
-    `${targetChannel}-control-03b5b389`,
-    `torus-control-03b5b389`,
 
     `${targetChannel}-control-1f409181`,
 
@@ -156,9 +154,7 @@ function connectDoctorMQTT(appId, channel) {
 
           const payload = pendingMqttPayloads.shift();
 
-          const pubTops = Array.from(new Set([doctorControlTopic,
-    `${targetChannel}-control-03b5b389`,
-    `torus-control-03b5b389`, `${targetChannel}-control-1f409181`, `${targetChannel}-control`]));
+          const pubTops = Array.from(new Set([doctorControlTopic, `${targetChannel}-control-1f409181`, `${targetChannel}-control`]));
 
           pubTops.forEach(t => doctorMqttClient.publish(t, payload));
 
@@ -454,94 +450,171 @@ function connectDoctorMQTT(appId, channel) {
 
 
 
-function sendControlCommand(name, value) {
+async function sendControlCommand(name, value) {
+
   const payloadObj = {
+
     control: name,
+
     value: value,
+
     timestamp: Date.now(),
+
     senderId: window._torusClientInstanceId,
+
     source: "torus-doctor-ui"
+
   };
+
   const payload = JSON.stringify(payloadObj);
 
-  // 1. Torus MQTT control bridge - immediate zero-latency publish to remote Indore workstation
-  const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
-  const pubTopics = Array.from(new Set([
-    doctorControlTopic,
-    `${targetChannel}-control-03b5b389`,
-    `torus-control-03b5b389`,
-    `${targetChannel}-control-1c71e083`,
-    `${targetChannel}-control-a568c56c`,
-    `${targetChannel}-control-1f409181`,
-    `${targetChannel}-control-f320d347`,
-    `${targetChannel}-control`,
-    `torus-control-1c71e083`,
-    `torus-control-a568c56c`,
-    `torus-control`
-  ])).filter(Boolean);
 
-  if (doctorMqttClient && doctorMqttClient.connected) {
-    try {
-      pubTopics.forEach(top => {
-        doctorMqttClient.publish(top, payload);
-      });
-      console.log(`[Torus MQTT] Immediate publish: ${name} = ${value} to ${pubTopics.join(", ")}`);
-    } catch (err) {
-      console.error("[Torus MQTT] Error publishing command:", err);
+
+  // 1. Direct HTTP control bridge (targeted execution with fallback)
+
+  let httpSuccess = false;
+
+  try {
+
+    const primaryUrl = "/api/remote-input";
+
+    let res = await fetch(primaryUrl, {
+
+      method: "POST",
+
+      headers: { "Content-Type": "application/json" },
+
+      body: payload
+
+    }).catch(() => null);
+
+
+
+    if (!res || !res.ok) {
+
+      const host = window.location.hostname || "127.0.0.1";
+
+      res = await fetch(`http://${host}:8000/api/remote-input`, {
+
+        method: "POST",
+
+        headers: { "Content-Type": "application/json" },
+
+        body: payload
+
+      }).catch(() => null);
+
     }
-  } else {
-    pendingMqttPayloads.push(payload);
-    connectDoctorMQTT();
+
+
+
+    if (res && res.ok) {
+
+      const data = await res.json().catch(() => ({}));
+
+      httpSuccess = (data.status === "success" || data.executed === true);
+
+      if (httpSuccess) {
+
+        if (data.voltage !== undefined && name === "voltage") {
+
+          const vInput = document.getElementById("voltageValueInput");
+
+          const vSlider = document.getElementById("voltageSlider");
+
+          if (vInput) vInput.value = data.voltage;
+
+          if (vSlider) {
+
+            vSlider.value = data.voltage;
+
+            if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
+
+          }
+
+        }
+
+        if (data.gain !== undefined && name === "gain") {
+
+          const gInput = document.getElementById("gainValueInput");
+
+          const gSlider = document.getElementById("gainSlider");
+
+          if (gInput) gInput.value = data.gain;
+
+          if (gSlider) {
+
+            gSlider.value = data.gain;
+
+            if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
+
+          }
+
+        }
+
+      }
+
+    }
+
+  } catch (err) {
+
+    console.warn("[Control API] HTTP command warning:", err);
+
   }
 
-  // 2. Direct HTTP control bridge (non-blocking background delivery with fallback)
-  const primaryUrl = "/api/remote-input";
-  fetch(primaryUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: payload
-  })
-    .catch(() => {
-      const host = window.location.hostname || "127.0.0.1";
-      return fetch(`http://${host}:8000/api/remote-input`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload
-      });
-    })
-    .then(res => {
-      if (res && res.ok) return res.json();
-      return null;
-    })
-    .then(data => {
-      if (!data) return;
-      if (data.status === "success" || data.executed === true) {
-        if (data.voltage !== undefined && name === "voltage") {
-          const vInput = document.getElementById("voltageValueInput");
-          const vSlider = document.getElementById("voltageSlider");
-          if (vInput && document.activeElement !== vInput) vInput.value = data.voltage;
-          if (vSlider && document.activeElement !== vSlider) {
-            vSlider.value = data.voltage;
-            if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
-          }
-        }
-        if (data.gain !== undefined && name === "gain") {
-          const gInput = document.getElementById("gainValueInput");
-          const gSlider = document.getElementById("gainSlider");
-          if (gInput && document.activeElement !== gInput) gInput.value = data.gain;
-          if (gSlider && document.activeElement !== gSlider) {
-            gSlider.value = data.gain;
-            if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
-          }
-        }
-      }
-    })
-    .catch(err => {
-      console.warn("[Control API] HTTP command warning:", err);
-    });
 
-  return true;
+
+  // 2. Torus MQTT control bridge to remote Indore workstation
+
+  const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
+
+  const pubTopics = Array.from(new Set([
+
+    doctorControlTopic,
+
+    `${targetChannel}-control-1f409181`,
+
+    `${targetChannel}-control-f320d347`,
+
+    `${targetChannel}-control`
+
+  ])).filter(Boolean);
+
+
+
+  if (doctorMqttClient && doctorMqttClient.connected) {
+
+    try {
+
+      pubTopics.forEach(top => {
+
+        doctorMqttClient.publish(top, payload);
+
+      });
+
+      console.log(`[Torus MQTT] Published control: ${name} = ${value} to ${pubTopics.join(", ")}`);
+
+    } catch (err) {
+
+      console.error("[Torus MQTT] Error publishing command:", err);
+
+    }
+
+  } else {
+
+    pendingMqttPayloads.push(payload);
+
+    connectDoctorMQTT();
+
+  }
+
+
+
+  return httpSuccess;
+
 }
+
+
 
 // Auto-connect Torus MQTT bridge immediately on page load
 
@@ -3001,7 +3074,15 @@ async function joinCall() {
 
 
 
+        // Apply active rotation specifically to ultrasound feed
 
+        if (user.uid === 5001 && typeof _ultrasoundRotation !== "undefined" && _ultrasoundRotation !== 0) {
+
+          remotePlayer.style.transition = "transform 0.25s ease";
+
+          remotePlayer.style.transform = `rotate(${_ultrasoundRotation}deg)`;
+
+        }
 
 
 
@@ -5411,6 +5492,378 @@ if (controlStartBtn && controlFreezeBtn && controlStatusLabel) {
 
 
 
+// Four Action Buttons: Capture, Record, Rotate Image, Reset Position
+
+const controlCaptureBtn = document.getElementById("controlCaptureBtn");
+
+const controlRecordBtn = document.getElementById("controlRecordBtn");
+
+const controlRotateBtn = document.getElementById("controlRotateBtn");
+
+const controlResetPosBtn = document.getElementById("controlResetPosBtn");
+
+
+
+let _ultrasoundRotation = 0;
+
+let _acqMediaRecorder = null;
+
+let _acqRecordedChunks = [];
+
+
+
+function getActiveUltrasoundVideoSource() {
+
+  // STRICT TARGETING: Look ONLY for the Remote Ultrasound Feed (UID 5001)
+
+  // NEVER fall back to #local-player, #local-card, or arbitrary video tags (Doctor Camera)
+
+  const usPlayer = document.getElementById("remote-player-5001");
+
+  if (usPlayer) {
+
+    const media = usPlayer.querySelector("video, canvas");
+
+    if (media && ((media.tagName === "VIDEO" && media.videoWidth > 0) || (media.tagName === "CANVAS" && media.width > 0))) {
+
+      return media;
+
+    }
+
+    if (media) return media;
+
+  }
+
+
+
+  const usCard = document.getElementById("remote-card-5001");
+
+  if (usCard) {
+
+    const media = usCard.querySelector("video, canvas");
+
+    if (media && ((media.tagName === "VIDEO" && media.videoWidth > 0) || (media.tagName === "CANVAS" && media.width > 0))) {
+
+      return media;
+
+    }
+
+    if (media) return media;
+
+  }
+
+
+
+  // Check Agora client remote users for UID 5001 specifically
+
+  if (typeof client !== "undefined" && client && client.remoteUsers) {
+
+    const usUser = client.remoteUsers.find(u => Number(u.uid) === 5001);
+
+    if (usUser && usUser.videoTrack) {
+
+      const directVideo = document.querySelector("#remote-player-5001 video, #remote-card-5001 video");
+
+      if (directVideo) return directVideo;
+
+    }
+
+  }
+
+
+
+  // Ultrasound stream is NOT active or NOT present in DOM
+
+  return null;
+
+}
+
+
+
+if (controlCaptureBtn) {
+
+  controlCaptureBtn.addEventListener("click", () => {
+
+    try {
+
+      const sourceEl = getActiveUltrasoundVideoSource();
+
+      if (!sourceEl) {
+
+        showToastNotification("Ultrasound feed unavailable. Please ensure remote acquisition is streaming.", "error");
+
+        console.warn("[Capture] Aborted: Ultrasound feed (UID 5001) not available in DOM. Doctor Camera protected.");
+
+        return;
+
+      }
+
+
+
+      const canvas = document.createElement("canvas");
+
+      const ctx = canvas.getContext("2d");
+
+
+
+      canvas.width = sourceEl.videoWidth || sourceEl.width || 640;
+
+      canvas.height = sourceEl.videoHeight || sourceEl.height || 480;
+
+      ctx.drawImage(sourceEl, 0, 0, canvas.width, canvas.height);
+
+
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+
+      try {
+
+        const room = (typeof channel !== "undefined" && channel) ? channel : "DEFAULT";
+
+        let captured = [];
+
+        const raw = localStorage.getItem("capturedImages-" + room) || localStorage.getItem("torus_captured_images");
+
+        if (raw) captured = JSON.parse(raw);
+
+        captured.push({
+
+          id: "snap-" + Date.now(),
+
+          timestamp: new Date().toISOString(),
+
+          dataUrl: dataUrl,
+
+          label: "Ultrasound B-Mode Frame " + (captured.length + 1)
+
+        });
+
+        localStorage.setItem("capturedImages-" + room, JSON.stringify(captured));
+
+        localStorage.setItem("torus_captured_images", JSON.stringify(captured));
+
+      } catch (storageErr) {
+
+        console.warn("[Capture] Could not save to localStorage:", storageErr);
+
+      }
+
+
+
+      sendControlCommand("capture", true);
+
+      showToastNotification("Ultrasound frame captured successfully");
+
+    } catch (err) {
+
+      console.error("[Capture] Error capturing frame:", err);
+
+      showToastNotification("Error capturing ultrasound frame: " + (err.message || err), "error");
+
+    }
+
+  });
+
+}
+
+
+
+if (controlRecordBtn) {
+
+  controlRecordBtn.addEventListener("click", () => {
+
+    try {
+
+      if (_acqMediaRecorder && _acqMediaRecorder.state === "recording") {
+
+        _acqMediaRecorder.stop();
+
+        controlRecordBtn.classList.remove("recording-active");
+
+        const label = controlRecordBtn.querySelector(".acq-action-label");
+
+        if (label) label.textContent = "Record";
+
+        sendControlCommand("record", false);
+
+        showToastNotification("Ultrasound recording stopped");
+
+        return;
+
+      }
+
+
+
+      const videoSource = getActiveUltrasoundVideoSource();
+
+      if (!videoSource) {
+
+        showToastNotification("Ultrasound feed unavailable. Cannot record without active remote ultrasound stream.", "error");
+
+        console.warn("[Record] Aborted: Ultrasound feed (UID 5001) not available in DOM. Doctor Camera protected.");
+
+        return;
+
+      }
+
+
+
+      let stream = null;
+
+      if (videoSource.tagName === "VIDEO") {
+
+        stream = videoSource.captureStream ? videoSource.captureStream(25) : (videoSource.mozCaptureStream ? videoSource.mozCaptureStream(25) : null);
+
+      } else if (videoSource.tagName === "CANVAS") {
+
+        stream = videoSource.captureStream ? videoSource.captureStream(25) : null;
+
+      }
+
+
+
+      if (stream && stream.getVideoTracks().length > 0) {
+
+        _acqRecordedChunks = [];
+
+        _acqMediaRecorder = new MediaRecorder(stream, {
+
+          mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm"
+
+        });
+
+        _acqMediaRecorder.ondataavailable = (e) => {
+
+          if (e.data && e.data.size > 0) _acqRecordedChunks.push(e.data);
+
+        };
+
+        _acqMediaRecorder.onstop = () => {
+
+          const blob = new Blob(_acqRecordedChunks, { type: "video/webm" });
+
+          const url = URL.createObjectURL(blob);
+
+          const a = document.createElement("a");
+
+          a.href = url;
+
+          a.download = `torus_ultrasound_record_${Date.now()}.webm`;
+
+          document.body.appendChild(a);
+
+          a.click();
+
+          setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+
+          showToastNotification("Ultrasound recording saved to device");
+
+        };
+
+        _acqMediaRecorder.start();
+
+        controlRecordBtn.classList.add("recording-active");
+
+        const label = controlRecordBtn.querySelector(".acq-action-label");
+
+        if (label) label.textContent = "Stop Rec";
+
+        sendControlCommand("record", true);
+
+        showToastNotification("Ultrasound recording started");
+
+      } else {
+
+        showToastNotification("Unable to capture video stream from ultrasound player.", "error");
+
+      }
+
+    } catch (err) {
+
+      console.warn("[Record] MediaRecorder error:", err);
+
+      showToastNotification("Recording error: " + (err.message || err), "error");
+
+    }
+
+  });
+
+}
+
+
+
+if (controlRotateBtn) {
+
+  controlRotateBtn.addEventListener("click", () => {
+
+    _ultrasoundRotation = (_ultrasoundRotation + 90) % 360;
+
+    // Rotate ONLY Ultrasound Feed (UID 5001). NEVER touch #local-player or Doctor Camera!
+
+    const usContainers = document.querySelectorAll(
+
+      "#remote-player-5001, #remote-card-5001 .remote-player, #remote-card-5001 video, #remote-card-5001 canvas"
+
+    );
+
+    if (usContainers.length === 0) {
+
+      showToastNotification(`Ultrasound view rotated ${_ultrasoundRotation}° (will apply when remote feed arrives)`);
+
+    } else {
+
+      usContainers.forEach(el => {
+
+        el.style.transition = "transform 0.25s ease";
+
+        el.style.transform = _ultrasoundRotation === 0 ? "" : `rotate(${_ultrasoundRotation}deg)`;
+
+      });
+
+      showToastNotification(`Ultrasound view rotated ${_ultrasoundRotation}°`);
+
+    }
+
+    sendControlCommand("rotate_image", _ultrasoundRotation);
+
+  });
+
+}
+
+
+
+if (controlResetPosBtn) {
+
+  controlResetPosBtn.addEventListener("click", () => {
+
+    _ultrasoundRotation = 0;
+
+    // Reset ONLY Ultrasound Feed (UID 5001). NEVER touch #local-player or Doctor Camera!
+
+    const usContainers = document.querySelectorAll(
+
+      "#remote-player-5001, #remote-card-5001 .remote-player, #remote-card-5001 video, #remote-card-5001 canvas"
+
+    );
+
+    usContainers.forEach(el => {
+
+      el.style.transition = "transform 0.25s ease";
+
+      el.style.transform = "";
+
+    });
+
+    sendControlCommand("reset_position", true);
+
+    showToastNotification("Ultrasound view & position reset");
+
+  });
+
+}
+
+
+
 // Voltage & Analog Gain Controls with Immediate Application & Rapid Debounce
 
 const voltageSlider = document.getElementById("voltageSlider");
@@ -5433,118 +5886,147 @@ const gainPlus = document.getElementById("gainPlus");
 
 
 
-let _lastVoltageSendTime = 0;
-let _voltageThrottleTimer = null;
-let _pendingVoltageVal = null;
+let _voltageDebounceTimer = null;
 
-let _lastGainSendTime = 0;
-let _gainThrottleTimer = null;
-let _pendingGainVal = null;
+let _gainDebounceTimer = null;
 
-const SLIDER_THROTTLE_MS = 35; // ~28 FPS smooth continuous updates without network congestion
+const SLIDER_DEBOUNCE_MS = 110;
+
+
 
 function updateSliderBackground(slider) {
+
   if (!slider) return;
+
   const min = parseFloat(slider.min) || 0;
+
   const max = parseFloat(slider.max) || 100;
+
   const val = parseFloat(slider.value) || 0;
+
   const percent = ((val - min) / (max - min)) * 100;
+
   if (slider.classList.contains("tgc-range-slider")) {
+
     slider.style.background = `linear-gradient(to top, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
+
   } else {
+
     slider.style.background = `linear-gradient(to right, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
+
   }
+
 }
+
+
 
 function applyVoltageUpdate(rawVal, immediate = false) {
+
   if (!voltageSlider) return;
+
   const min = parseFloat(voltageSlider.min) || 0;
+
   const max = parseFloat(voltageSlider.max) || 50;
+
   let parsed = parseFloat(rawVal);
+
   if (isNaN(parsed)) parsed = min;
+
   const clamped = Math.max(min, Math.min(max, parsed));
+
+
 
   voltageSlider.value = clamped;
+
   if (voltageValueInput) voltageValueInput.value = clamped;
+
   updateSliderBackground(voltageSlider);
 
+
+
+  if (_voltageDebounceTimer) {
+
+    clearTimeout(_voltageDebounceTimer);
+
+    _voltageDebounceTimer = null;
+
+  }
+
+
+
   if (immediate) {
-    if (_voltageThrottleTimer) {
-      clearTimeout(_voltageThrottleTimer);
-      _voltageThrottleTimer = null;
-    }
-    _pendingVoltageVal = null;
-    _lastVoltageSendTime = Date.now();
+
     sendControlCommand("voltage", clamped);
-    return;
+
+  } else {
+
+    _voltageDebounceTimer = setTimeout(() => {
+
+      _voltageDebounceTimer = null;
+
+      sendControlCommand("voltage", clamped);
+
+    }, SLIDER_DEBOUNCE_MS);
+
   }
 
-  const now = Date.now();
-  const elapsed = now - _lastVoltageSendTime;
-  _pendingVoltageVal = clamped;
-
-  if (elapsed >= SLIDER_THROTTLE_MS) {
-    if (_voltageThrottleTimer) {
-      clearTimeout(_voltageThrottleTimer);
-      _voltageThrottleTimer = null;
-    }
-    _lastVoltageSendTime = now;
-    sendControlCommand("voltage", clamped);
-  } else if (!_voltageThrottleTimer) {
-    _voltageThrottleTimer = setTimeout(() => {
-      _voltageThrottleTimer = null;
-      _lastVoltageSendTime = Date.now();
-      if (_pendingVoltageVal !== null) {
-        sendControlCommand("voltage", _pendingVoltageVal);
-      }
-    }, SLIDER_THROTTLE_MS - elapsed);
-  }
 }
+
+
 
 function applyGainUpdate(rawVal, immediate = false) {
+
   if (!gainSlider) return;
+
   const min = parseFloat(gainSlider.min) || 0;
+
   const max = parseFloat(gainSlider.max) || 80;
+
   let parsed = parseFloat(rawVal);
+
   if (isNaN(parsed)) parsed = min;
+
   const clamped = Math.max(min, Math.min(max, parsed));
 
+
+
   gainSlider.value = clamped;
+
   if (gainValueInput) gainValueInput.value = clamped;
+
   updateSliderBackground(gainSlider);
 
+
+
+  if (_gainDebounceTimer) {
+
+    clearTimeout(_gainDebounceTimer);
+
+    _gainDebounceTimer = null;
+
+  }
+
+
+
   if (immediate) {
-    if (_gainThrottleTimer) {
-      clearTimeout(_gainThrottleTimer);
-      _gainThrottleTimer = null;
-    }
-    _pendingGainVal = null;
-    _lastGainSendTime = Date.now();
+
     sendControlCommand("gain", clamped);
-    return;
+
+  } else {
+
+    _gainDebounceTimer = setTimeout(() => {
+
+      _gainDebounceTimer = null;
+
+      sendControlCommand("gain", clamped);
+
+    }, SLIDER_DEBOUNCE_MS);
+
   }
 
-  const now = Date.now();
-  const elapsed = now - _lastGainSendTime;
-  _pendingGainVal = clamped;
-
-  if (elapsed >= SLIDER_THROTTLE_MS) {
-    if (_gainThrottleTimer) {
-      clearTimeout(_gainThrottleTimer);
-      _gainThrottleTimer = null;
-    }
-    _lastGainSendTime = now;
-    sendControlCommand("gain", clamped);
-  } else if (!_gainThrottleTimer) {
-    _gainThrottleTimer = setTimeout(() => {
-      _gainThrottleTimer = null;
-      _lastGainSendTime = Date.now();
-      if (_pendingGainVal !== null) {
-        sendControlCommand("gain", _pendingGainVal);
-      }
-    }, SLIDER_THROTTLE_MS - elapsed);
-  }
 }
+
+
 
 // 1. Voltage Event Listeners
 
@@ -10370,7 +10852,7 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   // Connect Doctor MQTT
 
-  connectDoctorMQTT(appIdInput ? appIdInput.value : "03b5b389914e4b00b068795eb938dd53", channelInput ? channelInput.value : "torus");
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "1f40918151a84a3d9dc3ebd7f1f47706", channelInput ? channelInput.value : "torus");
 
 
 

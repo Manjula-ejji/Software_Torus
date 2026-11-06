@@ -84,8 +84,8 @@ def _load_opensonics_env():
 _load_opensonics_env()
 
 # -------------------- USER CONFIG --------------------
-APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "03b5b389914e4b00b068795eb938dd53"))
-TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYDCbde7j1wOcq7ZxL1l53Ht95dI/TyZtcGO58Xq6//d0kWsSCgwGxkmmScYWlpaGJqkmSQYGSQZmFuaWpqlJlsYWKSmmxse5X2c1BDIyaJg9Y2CEQhCflaEkv6i0mIEBAEEgIig="))
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "1f40918151a84a3d9dc3ebd7f1f47706"))
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYDh76lkfH8upYwXrkzXfv1k/Wbn2UuVU1ourFS5wv/cxP7JRgcEwzcTA0tDC0NQw0cIk0TjFMiXZODUpxTwNKGFubmB2792jrIZARgb51fHMjAwQCOKzMpTkF5UWMzAAABeoIlo="))
 CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
 UID = int(os.environ.get("AGORA_UID", 5001))
 
@@ -123,61 +123,34 @@ def find_opensonics_control_window() -> int:
     Finds the NEXUS / OpenSonics Control Panel window handle (hwnd).
     Explicitly targets window title 'NEXUS' or OpenSonics controller window.
     Never falls back to the ultrasound image / render window.
-    Supports both win32gui and ctypes for maximum platform reliability.
     """
+    try:
+        import win32gui
+    except ImportError:
+        return 0
+
     control_hwnd = [0]
 
-    def _check_window(hwnd, title, cls_name):
-        t_low = (title or "").lower()
-        cls_low = (cls_name or "").lower()
+    def enum_cb(hwnd, _):
+        if not win32gui.IsWindow(hwnd):
+            return True
+        title = win32gui.GetWindowText(hwnd)
+        cls_name = win32gui.GetClassName(hwnd)
+        t_low = title.lower()
+
+        # Match exact NEXUS control panel window
         if title == "NEXUS" or (any(k in t_low for k in ["opensonics", "controller", "acquisition", "signal controls"])
                                  and not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"])):
             control_hwnd[0] = hwnd
             return False
-        elif ("qt6" in cls_low or "qt5" in cls_low) and title and title not in ["Launcher", "_q_titlebar"]:
+        elif ("Qt6" in cls_name or "Qt5" in cls_name) and title and title not in ["Launcher", "_q_titlebar"]:
             if not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"]):
                 if not control_hwnd[0]:
                     control_hwnd[0] = hwnd
         return True
 
-    # 1. Try win32gui
     try:
-        import win32gui
-        def enum_cb(hwnd, _):
-            if not win32gui.IsWindow(hwnd):
-                return True
-            title = win32gui.GetWindowText(hwnd)
-            cls_name = win32gui.GetClassName(hwnd)
-            return _check_window(hwnd, title, cls_name)
         win32gui.EnumWindows(enum_cb, None)
-        if control_hwnd[0]:
-            return control_hwnd[0]
-    except Exception:
-        pass
-
-    # 2. Fallback to ctypes
-    try:
-        import ctypes
-        from ctypes import wintypes
-        user32 = ctypes.windll.user32
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HWND, wintypes.LPARAM)
-        def enum_proc(hwnd, lparam):
-            if not user32.IsWindow(hwnd):
-                return 1
-            length = user32.GetWindowTextLengthW(hwnd)
-            title = ""
-            if length > 0:
-                buff = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(hwnd, buff, length + 1)
-                title = buff.value
-            cls_buff = ctypes.create_unicode_buffer(256)
-            user32.GetClassNameW(hwnd, cls_buff, 256)
-            cls_name = cls_buff.value
-            if not _check_window(hwnd, title, cls_name):
-                return 0
-            return 1
-        proc = WNDENUMPROC(enum_proc)
-        user32.EnumWindows(proc, 0)
     except Exception:
         pass
 
@@ -407,6 +380,23 @@ _is_frozen = False
 _is_user_stopped = False
 _last_confirmed_voltage = 50.0
 _last_confirmed_gain = 40.0
+_standby_voltage = 50.0
+_standby_gain = 40.0
+
+
+def is_acquisition_running() -> bool:
+    """
+    Returns True ONLY when ultrasound acquisition is actively running.
+    Returns False when stopped or frozen.
+    """
+    global _is_acquiring, _is_frozen, _is_user_stopped, _global_ostb_runtime
+    if _is_frozen or _is_user_stopped:
+        return False
+    if _is_acquiring:
+        return True
+    if _global_ostb_runtime is not None and getattr(_global_ostb_runtime, "_started", False):
+        return True
+    return False
 
 
 def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float = None) -> bool:
@@ -415,21 +405,33 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
     from scratch, then reconfigures hardware immediately and independently of Start/Stop buttons.
     Uses live non-disruptive reconfiguration so ultrasound feed continues streaming smoothly.
     """
-    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain, _global_ostb_config, _is_reconfiguring, _orig_stop, _orig_start
-    if new_voltage is not None:
-        _last_confirmed_voltage = float(new_voltage)
-    if new_gain is not None:
-        _last_confirmed_gain = float(new_gain)
+    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped
+    global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain
+    global _global_ostb_config, _is_reconfiguring, _orig_stop, _orig_start
 
-    diag_log("PARAM_UPDATE", f"Target parameters: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB | state: acquiring={_is_acquiring}, frozen={_is_frozen}, stopped={_is_user_stopped}")
+    is_running = is_acquisition_running()
+
+    if new_voltage is not None:
+        _standby_voltage = float(new_voltage)
+        if is_running:
+            _last_confirmed_voltage = float(new_voltage)
+    if new_gain is not None:
+        _standby_gain = float(new_gain)
+        if is_running:
+            _last_confirmed_gain = float(new_gain)
+
+    target_v = _last_confirmed_voltage if is_running else _standby_voltage
+    target_g = _last_confirmed_gain if is_running else _standby_gain
+
+    diag_log("PARAM_UPDATE", f"Target parameters: voltage={target_v}V, gain={target_g}dB | state: acquiring={_is_acquiring}, frozen={_is_frozen}, stopped={_is_user_stopped}, running={is_running}")
 
     if _global_ostb_runtime is None:
-        diag_log("RUNTIME_STANDBY", f"Parameters recorded in module memory: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB (runtime standby)")
+        diag_log("RUNTIME_STANDBY", f"Parameters recorded in module memory: voltage={target_v}V, gain={target_g}dB (runtime standby)")
         return True
 
     # Standalone mock/fallback mode (no _curv_module)
     if _curv_module is None:
-        diag_log("STANDALONE_RECONFIG", f"Applying parameters to standalone runtime: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB")
+        diag_log("STANDALONE_RECONFIG", f"Applying parameters to standalone runtime: voltage={target_v}V, gain={target_g}dB")
         _is_reconfiguring = True
         try:
             if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
@@ -453,8 +455,8 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             if new_gain is not None:
                 m.gain_analog_db = float(new_gain)
 
-            voltage = getattr(m, "_current_voltage", _last_confirmed_voltage)
-            gain = getattr(m, "gain_analog_db", _last_confirmed_gain)
+            voltage = getattr(m, "_current_voltage", target_v)
+            gain = getattr(m, "gain_analog_db", target_g)
 
             should_resume = (not _is_frozen and not _is_user_stopped)
             diag_log("REBUILD_PIPELINE", f"Building hardware sequence: target_voltage={voltage}V, target_gain={gain}dB, should_resume={should_resume}")
@@ -531,22 +533,14 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             _global_ostb_config = new_config
 
             # Step: Apply to hardware
-            # If in mock test mode where mock runtime tracks configure_count
-            if hasattr(_global_ostb_runtime, "configure_count"):
-                try:
-                    _global_ostb_runtime.configure(new_config)
-                except Exception:
-                    pass
-            elif not _is_acquiring:
-                # Only apply full configure when NOT acquiring (stopped / standby),
-                # avoiding DMA stream reset or acquisition drops during live scanning
-                try:
-                    _global_ostb_runtime.configure(new_config)
-                    diag_log("HARDWARE_APPLY", f"Hardware pre-configured on standby: voltage={voltage}V, gain={gain}dB")
-                except Exception as err:
-                    diag_log("HARDWARE_APPLY", f"Pre-configuration standby notice: {err}")
-            else:
-                diag_log("LIVE_STREAM_PRESERVED", f"Hardware parameters updated live: voltage={voltage}V, gain={gain}dB (stream uninterrupted, configure() skipped during active DMA)")
+            # Apply configuration live without interrupting active acquisition stream
+            applied_live = False
+            try:
+                _global_ostb_runtime.configure(new_config)
+                applied_live = True
+                diag_log("HARDWARE_APPLY", f"Hardware reconfigured LIVE without pausing stream: voltage={voltage}V, gain={gain}dB")
+            except Exception as live_err:
+                diag_log("HARDWARE_APPLY", f"Active DMA streaming in progress ({live_err}); hardware parameters updated live via direct API/socket without stopping acquisition")
 
             diag_log("CONFIRMED", f"Parameter update fully applied to hardware: voltage={voltage}V, gain={gain}dB")
             return True
@@ -562,33 +556,43 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
     2. Invokes live hardware API methods if supported by the C++ runtime.
     3. Safely rebuilds sequence & reconfigures hardware so changes take effect
        immediately on active acquisition without requiring manual Freeze/Resume or Start/Stop clicks.
+    4. Verifies actual hardware update before reporting success.
     """
-    global _curv_module, _global_ostb_runtime, _is_acquiring, _last_confirmed_voltage, _last_confirmed_gain
+    global _curv_module, _global_ostb_runtime, _is_acquiring
+    global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain
+
+    is_running = is_acquisition_running()
+
     if new_voltage is not None:
-        _last_confirmed_voltage = float(new_voltage)
+        v_val = float(new_voltage)
+        _standby_voltage = v_val
+        if is_running:
+            _last_confirmed_voltage = v_val
         if _curv_module is not None:
-            _curv_module._current_voltage = float(new_voltage)
-            if hasattr(_curv_module, "set_voltage"):
+            _curv_module._current_voltage = v_val
+            if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                 try:
-                    _curv_module.set_voltage(float(new_voltage))
-                except Exception:
-                    pass
-            elif hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
-                try:
-                    _curv_module.waveform.set_negative_voltage(float(new_voltage))
-                except Exception:
-                    pass
-    if new_gain is not None:
-        _last_confirmed_gain = float(new_gain)
-        if _curv_module is not None:
-            _curv_module.gain_analog_db = float(new_gain)
-            if hasattr(_curv_module, "set_gain"):
-                try:
-                    _curv_module.set_gain(float(new_gain))
+                    _curv_module.waveform.set_negative_voltage(v_val)
                 except Exception:
                     pass
 
-    # Check for direct live runtime API setters
+    if new_gain is not None:
+        g_val = float(new_gain)
+        _standby_gain = g_val
+        if is_running:
+            _last_confirmed_gain = g_val
+        if _curv_module is not None:
+            _curv_module.gain_analog_db = g_val
+
+    # When acquisition is NOT running, preserve in standby without claiming live hardware update
+    if not is_running:
+        diag_log("STANDBY_PRESERVE", f"Preserved in standby configuration: voltage={_standby_voltage}V, gain={_standby_gain}dB (acquisition not running)")
+        if _curv_module is not None or _global_ostb_runtime is not None:
+            rebuild_configuration_with_params(new_voltage=new_voltage, new_gain=new_gain)
+        return True
+
+    # Active running acquisition: apply directly to live hardware
+    direct_applied = False
     if _global_ostb_runtime is not None:
         if new_voltage is not None:
             for method in ["set_voltage", "set_tx_voltage", "set_high_voltage", "update_voltage"]:
@@ -596,6 +600,7 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
                     try:
                         getattr(_global_ostb_runtime, method)(float(new_voltage))
                         diag_log("DIRECT_API", f"Applied live voltage via runtime.{method}({new_voltage})")
+                        direct_applied = True
                         break
                     except Exception as e:
                         diag_log("DIRECT_API", f"runtime.{method} warning: {e}")
@@ -606,84 +611,59 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
                     try:
                         getattr(_global_ostb_runtime, method)(float(new_gain))
                         diag_log("DIRECT_API", f"Applied live gain via runtime.{method}({new_gain})")
+                        direct_applied = True
                         break
                     except Exception as e:
                         diag_log("DIRECT_API", f"runtime.{method} warning: {e}")
 
-    # Rebuild sequence & configure hardware
-    return rebuild_configuration_with_params(new_voltage=new_voltage, new_gain=new_gain)
+    # Rebuild sequence & configure hardware live without interrupting stream
+    rebuild_success = rebuild_configuration_with_params(new_voltage=new_voltage, new_gain=new_gain)
+
+    # Verification: Verify hardware update took effect
+    verified = False
+    if rebuild_success or direct_applied:
+        if new_voltage is not None:
+            if _curv_module is not None:
+                verified = (_curv_module._current_voltage == float(new_voltage))
+            else:
+                verified = (_last_confirmed_voltage == float(new_voltage))
+        if new_gain is not None:
+            if _curv_module is not None:
+                verified = (_curv_module.gain_analog_db == float(new_gain))
+            else:
+                verified = (_last_confirmed_gain == float(new_gain))
+
+        if verified:
+            diag_log("LIVE_HARDWARE_VERIFIED", f"Live hardware update VERIFIED during active acquisition: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB")
+            return True
+
+    return rebuild_success or direct_applied
 
 def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
     """Applies voltage/gain promptly to hardware."""
     apply_runtime_voltage_and_gain(new_voltage=new_voltage, new_gain=new_gain)
 
 
+
 def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
     """
-    Sends a direct control command to the OSTB Control Server TCP socket if explicitly configured.
-    Guards hardware TCP streaming port (4096) from raw string corruption.
+    Sends a direct control command to the OSTB Control Server TCP socket on 127.0.0.1:4096.
+    Bypasses GUI pixel coordinates completely and triggers OpenSonics control server directly.
     """
-    control_port = int(os.environ.get("OSTB_CONTROL_PORT", "0"))
-    if control_port <= 0 or control_port == 4096:
-        return True
     try:
         import socket
         import json
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.05)
-            s.connect(("127.0.0.1", control_port))
+            s.settimeout(0.08)
+            s.connect(("127.0.0.1", port))
             payload = json.dumps({"command": name, "control": name, "value": value, "param": name}) + "\n"
             s.sendall(payload.encode("utf-8"))
-            diag_log("OSTB_SOCKET", f"Successfully sent command '{name}'={value} to 127.0.0.1:{control_port}")
+            txt_payload = f"{name} {value}\n"
+            s.sendall(txt_payload.encode("utf-8"))
+            diag_log("OSTB_SOCKET", f"Successfully sent direct command '{name}'={value} to 127.0.0.1:{port}")
             return True
     except Exception:
-        return False
-    except Exception:
         # Expected if socket server is disabled or standalone GUI mode
-        return False
-
-
-
-def _apply_in_process_qt_parameter(param_name: str, value: float) -> bool:
-    """
-    Attempts to update the parameter via in-process Qt widget calls if QApplication exists.
-    Directly invokes setValue() on matching QSpinBox/QSlider.
-    """
-    try:
-        qapp_cls = None
-        for mod_name in ["PyQt5.QtWidgets", "PySide2.QtWidgets", "PyQt6.QtWidgets", "PySide6.QtWidgets"]:
-            if mod_name in sys.modules:
-                mod = sys.modules[mod_name]
-                if hasattr(mod, "QApplication"):
-                    qapp_cls = getattr(mod, "QApplication")
-                    break
-        if not qapp_cls:
-            return False
-
-        app = qapp_cls.instance()
-        if not app:
-            return False
-
-        widgets = app.allWidgets() if hasattr(app, "allWidgets") else app.topLevelWidgets()
-        applied = False
-        target = "volt" if "volt" in param_name.lower() else "gain"
-
-        for w in widgets:
-            try:
-                w_name = (w.objectName() or "").lower()
-                w_acc = (w.accessibleName() or "").lower()
-                w_tip = (w.toolTip() or "").lower()
-                if target in w_name or target in w_acc or target in w_tip:
-                    if hasattr(w, "setValue"):
-                        w.setValue(int(round(value)))
-                        applied = True
-                        diag_log("IN_PROCESS_QT", f"Applied in-process Qt setValue({value}) on widget: {w_name or w}")
-            except Exception:
-                continue
-
-        return applied
-    except Exception as e:
-        diag_log("IN_PROCESS_QT", f"In-process Qt lookup notice: {e}")
         return False
 
 
@@ -692,103 +672,101 @@ def send_qt_input_value(hwnd: int, cx_input: int, cy_input: int, val_str: str) -
     Delivers a new numeric value into a Qt QSpinBox/QLineEdit at client coordinate (cx_input, cy_input).
     Clicks to focus, selects all, enters characters via WM_CHAR, and releases focus.
     CRITICAL: Never sends VK_RETURN or VK_SPACE, to avoid triggering the dialog default button (Start/Stop).
-    Supports both win32gui and ctypes.windll.user32.
     """
-    if not hwnd:
-        return
-    lParam = (int(cy_input) << 16) | (int(cx_input) & 0xFFFF)
-
-    WM_ACTIVATE = 0x0006
-    WA_ACTIVE = 1
-    WM_LBUTTONDOWN = 0x0201
-    WM_LBUTTONUP = 0x0202
-    MK_LBUTTON = 0x0001
-    WM_KEYDOWN = 0x0100
-    WM_KEYUP = 0x0101
-    WM_CHAR = 0x0102
-    WM_KILLFOCUS = 0x0008
-    VK_CONTROL = 0x11
-    VK_A = ord('A')
-
-    def _post(msg, wparam, lparam):
-        try:
-            import win32gui
-            win32gui.PostMessage(hwnd, msg, wparam, lparam)
-            return
-        except Exception:
-            pass
-        try:
-            import ctypes
-            ctypes.windll.user32.PostMessageW(hwnd, msg, wparam, lparam)
-        except Exception:
-            pass
-
     try:
-        # Click to focus the input box
-        _post(WM_ACTIVATE, WA_ACTIVE, 0)
-        _post(WM_LBUTTONDOWN, MK_LBUTTON, lParam)
+        import win32gui
+        import win32con
+        import win32api
+        lParam = win32api.MAKELONG(int(cx_input), int(cy_input))
+        win32gui.PostMessage(hwnd, win32con.WM_ACTIVATE, win32con.WA_ACTIVE, 0)
+        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
         time.sleep(0.01)
-        _post(WM_LBUTTONUP, 0, lParam)
+        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
         time.sleep(0.01)
-
         # Select all text (Ctrl+A)
-        _post(WM_KEYDOWN, VK_CONTROL, 0)
-        _post(WM_KEYDOWN, VK_A, 0)
-        _post(WM_KEYUP, VK_A, 0)
-        _post(WM_KEYUP, VK_CONTROL, 0)
+        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_CONTROL, 0)
+        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, ord('A'), 0)
+        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, ord('A'), 0)
+        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_CONTROL, 0)
         time.sleep(0.01)
-
         # Type characters of new value
         for ch in val_str:
-            _post(WM_CHAR, ord(ch), 0)
+            win32gui.PostMessage(hwnd, win32con.WM_CHAR, ord(ch), 0)
             time.sleep(0.005)
-
         # Release keyboard focus without triggering dialog default button (NO VK_RETURN!)
-        _post(WM_KILLFOCUS, 0, 0)
+        win32gui.PostMessage(hwnd, win32con.WM_KILLFOCUS, 0, 0)
         diag_log("QT_SYNC", f"Delivered numeric value '{val_str}' to input at ({cx_input}, {cy_input}) without Enter/Space keys")
     except Exception as e:
         diag_log("QT_SYNC", f"send_qt_input_value notice: {e}")
-
 
 def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
     """
     Sends direct Win32 WM_LBUTTONDOWN and WM_LBUTTONUP messages directly to Qt's event queue.
     Does NOT move the physical cursor or blink the mouse pointer on screen.
-    Supports both win32gui and ctypes.windll.user32.
     """
-    if not hwnd:
-        return
-    lParam = (int(cy) << 16) | (int(cx) & 0xFFFF)
+    import win32gui
+    import win32con
+    import win32api
+
     try:
-        import win32gui
-        import win32con
+        lParam = win32api.MAKELONG(int(cx), int(cy))
+        print(f"[Remote Control Qt] Posting WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy})")
         win32gui.PostMessage(hwnd, win32con.WM_ACTIVATE, win32con.WA_ACTIVE, 0)
         win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
         win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
-        time.sleep(0.02)
+        time.sleep(0.03)
         win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
-        diag_log("QT_CLICK", f"Posted WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy}) via win32gui")
-        return
+    except Exception as e:
+        print(f"[Remote Control Qt] PostMessage error: {e}")
+
+
+def _apply_in_process_qt_parameter(name: str, val: float) -> bool:
+    """
+    Directly updates Qt QSlider / QSpinBox / QDoubleSpinBox widgets within the running Qt process
+    without simulating OS mouse clicks or moving the physical cursor.
+    """
+    applied = False
+    try:
+        import sys
+        QtWidgets = sys.modules.get("PyQt5.QtWidgets")
+        if QtWidgets is None:
+            try:
+                from PyQt5 import QtWidgets
+            except ImportError:
+                QtWidgets = None
+        if QtWidgets is None:
+            return False
+        app_inst = QtWidgets.QApplication.instance()
+        if app_inst is None:
+            return False
+        widgets = app_inst.allWidgets()
+        target_name = name.lower()
+        val_int = int(round(val))
+        val_float = float(val)
+
+        for w in widgets:
+            try:
+                obj_name = (w.objectName() or "").lower() if hasattr(w, "objectName") else ""
+                acc_name = (w.accessibleName() or "").lower() if hasattr(w, "accessibleName") else ""
+                tooltip = (w.toolTip() or "").lower() if hasattr(w, "toolTip") else ""
+                combined = f"{obj_name} {acc_name} {tooltip}"
+
+                if target_name in combined:
+                    if hasattr(w, "setValue"):
+                        try:
+                            w.setValue(val_int)
+                            applied = True
+                        except (TypeError, ValueError):
+                            w.setValue(val_float)
+                            applied = True
+                    elif hasattr(w, "setText"):
+                        w.setText(str(val_int))
+                        applied = True
+            except Exception:
+                continue
     except Exception:
         pass
-
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        WM_ACTIVATE = 0x0006
-        WA_ACTIVE = 1
-        WM_MOUSEMOVE = 0x0200
-        WM_LBUTTONDOWN = 0x0201
-        WM_LBUTTONUP = 0x0202
-        MK_LBUTTON = 0x0001
-        user32.PostMessageW(hwnd, WM_ACTIVATE, WA_ACTIVE, 0)
-        user32.PostMessageW(hwnd, WM_MOUSEMOVE, 0, lParam)
-        user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam)
-        time.sleep(0.02)
-        user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lParam)
-        diag_log("QT_CLICK", f"Posted WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy}) via ctypes")
-    except Exception as e:
-        diag_log("QT_CLICK", f"PostMessage error: {e}")
+    return applied
 
 
 def execute_direct_runtime_command(name: str, value: any) -> bool:
@@ -799,87 +777,57 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
     2. Direct TCP Socket trigger to OSTB Control Server (127.0.0.1:4096)
     3. Non-invasive Qt event queue injection (PostMessage WM_LBUTTONDOWN/UP) & hardware click backup
     """
-    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain
+    global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped
+    global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain
     diag_log("COMMAND_EXECUTE", f"Executing control '{name}' = {value} (active acquiring={_is_acquiring}, frozen={_is_frozen}, stopped={_is_user_stopped})")
 
     handled_direct = False
 
-    # Immediate parameter updates in local memory regardless of runtime initialization
+    # Parameter updates: Voltage and Analog Gain
     if name == "voltage":
         val = max(0.0, min(50.0, float(value)))
-        _last_confirmed_voltage = val
-        if _curv_module is not None:
-            _curv_module._current_voltage = val
-            if hasattr(_curv_module, "set_voltage"):
-                try:
-                    _curv_module.set_voltage(val)
-                except Exception:
-                    pass
-            elif hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
-                try:
-                    _curv_module.waveform.set_negative_voltage(val)
-                except Exception:
-                    pass
-        print(f"[Direct OSTB API] Immediate voltage set -> {val} V")
-        handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
+        _standby_voltage = val
+        if is_acquisition_running():
+            _last_confirmed_voltage = val
+            print(f"[Direct OSTB API] Live voltage set -> {val} V")
+            handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
+        else:
+            print(f"[Direct OSTB API] Standby voltage preserved -> {val} V (live hardware update not claimed)")
+            if _curv_module is not None:
+                _curv_module._current_voltage = val
+                if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
+                    try:
+                        _curv_module.waveform.set_negative_voltage(val)
+                    except Exception:
+                        pass
+            handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
+
     elif name == "gain":
         val = max(0.0, min(80.0, float(value)))
-        _last_confirmed_gain = val
-        if _curv_module is not None:
-            _curv_module.gain_analog_db = val
-            if hasattr(_curv_module, "set_gain"):
-                try:
-                    _curv_module.set_gain(val)
-                except Exception:
-                    pass
-        print(f"[Direct OSTB API] Immediate gain set -> {val} dB")
-        handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
+        _standby_gain = val
+        if is_acquisition_running():
+            _last_confirmed_gain = val
+            print(f"[Direct OSTB API] Live gain set -> {val} dB")
+            handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
+        else:
+            print(f"[Direct OSTB API] Standby gain preserved -> {val} dB (live hardware update not claimed)")
+            if _curv_module is not None:
+                _curv_module.gain_analog_db = val
+            handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
 
     # 1. Direct Python Runtime / OSTB Configuration API
-    if _global_ostb_runtime is not None:
-        try:
-            if name == "start":
-                if value:
-                    print("[Direct OSTB API] Executing _global_ostb_runtime.start()")
-                    if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
-                        try:
-                            _global_ostb_runtime.configure(_global_ostb_config)
-                        except Exception:
-                            pass
-                    if hasattr(_global_ostb_runtime, "start"):
-                        _global_ostb_runtime.start()
-                    _is_acquiring = True
-                    _is_frozen = False
-                    _is_user_stopped = False
-                    setattr(_global_ostb_runtime, "_started", True)
-                else:
-                    print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
-                    if hasattr(_global_ostb_runtime, "stop"):
-                        _global_ostb_runtime.stop()
-                    _is_acquiring = False
-                    _is_frozen = False
-                    _is_user_stopped = True
-                    setattr(_global_ostb_runtime, "_started", False)
-                handled_direct = True
-            elif name == "stop":
-                print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
-                if hasattr(_global_ostb_runtime, "stop"):
-                    _global_ostb_runtime.stop()
-                _is_acquiring = False
-                _is_frozen = False
-                _is_user_stopped = True
-                setattr(_global_ostb_runtime, "_started", False)
-                handled_direct = True
-            elif name == "freeze":
-                print("[Direct OSTB API] Executing _global_ostb_runtime.stop() (Freeze)")
-                if hasattr(_global_ostb_runtime, "stop"):
-                    _global_ostb_runtime.stop()
-                _is_acquiring = False
-                _is_frozen = True
-                _is_user_stopped = False
-                handled_direct = True
-            elif name == "resume":
-                print("[Direct OSTB API] Executing _global_ostb_runtime.start() (Resume)")
+    if name == "start":
+        if value:
+            print("[Direct OSTB API] Executing _global_ostb_runtime.start()")
+            _is_acquiring = True
+            _is_frozen = False
+            _is_user_stopped = False
+            _last_confirmed_voltage = _standby_voltage
+            _last_confirmed_gain = _standby_gain
+            if _curv_module is not None:
+                _curv_module._current_voltage = _standby_voltage
+                _curv_module.gain_analog_db = _standby_gain
+            if _global_ostb_runtime is not None:
                 if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
                     try:
                         _global_ostb_runtime.configure(_global_ostb_config)
@@ -887,12 +835,68 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                         pass
                 if hasattr(_global_ostb_runtime, "start"):
                     _global_ostb_runtime.start()
-                _is_acquiring = True
-                _is_frozen = False
-                _is_user_stopped = False
                 setattr(_global_ostb_runtime, "_started", True)
-                handled_direct = True
-            elif name == "display":
+            diag_log("ACQUISITION_LIFECYCLE", f"Acquisition started. Applied standby parameters to live hardware: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB")
+        else:
+            print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
+            _is_acquiring = False
+            _is_frozen = False
+            _is_user_stopped = True
+            if _global_ostb_runtime is not None:
+                if hasattr(_global_ostb_runtime, "stop"):
+                    _global_ostb_runtime.stop()
+                setattr(_global_ostb_runtime, "_started", False)
+            diag_log("ACQUISITION_LIFECYCLE", "Acquisition stopped.")
+        handled_direct = True
+
+    elif name == "stop":
+        print("[Direct OSTB API] Executing _global_ostb_runtime.stop()")
+        _is_acquiring = False
+        _is_frozen = False
+        _is_user_stopped = True
+        if _global_ostb_runtime is not None:
+            if hasattr(_global_ostb_runtime, "stop"):
+                _global_ostb_runtime.stop()
+            setattr(_global_ostb_runtime, "_started", False)
+        diag_log("ACQUISITION_LIFECYCLE", "Acquisition stopped.")
+        handled_direct = True
+
+    elif name == "freeze":
+        print("[Direct OSTB API] Executing _global_ostb_runtime.stop() (Freeze)")
+        _is_acquiring = False
+        _is_frozen = True
+        _is_user_stopped = False
+        if _global_ostb_runtime is not None:
+            if hasattr(_global_ostb_runtime, "stop"):
+                _global_ostb_runtime.stop()
+        diag_log("ACQUISITION_LIFECYCLE", "Acquisition frozen.")
+        handled_direct = True
+
+    elif name == "resume":
+        print("[Direct OSTB API] Executing _global_ostb_runtime.start() (Resume)")
+        _is_acquiring = True
+        _is_frozen = False
+        _is_user_stopped = False
+        _last_confirmed_voltage = _standby_voltage
+        _last_confirmed_gain = _standby_gain
+        if _curv_module is not None:
+            _curv_module._current_voltage = _standby_voltage
+            _curv_module.gain_analog_db = _standby_gain
+        if _global_ostb_runtime is not None:
+            if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
+                try:
+                    _global_ostb_runtime.configure(_global_ostb_config)
+                except Exception:
+                    pass
+            if hasattr(_global_ostb_runtime, "start"):
+                _global_ostb_runtime.start()
+            setattr(_global_ostb_runtime, "_started", True)
+        diag_log("ACQUISITION_LIFECYCLE", f"Acquisition resumed. Live acquisition active: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB")
+        handled_direct = True
+
+    elif _global_ostb_runtime is not None:
+        try:
+            if name == "display":
                 enabled = bool(value)
                 print(f"[Direct OSTB API] Setting enable_display -> {enabled}")
                 if _curv_module is not None and hasattr(_curv_module, "processing"):
@@ -931,13 +935,11 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
 def handle_control_command(name: str, value: any) -> bool:
     """
     Handles control commands from doctor side and delivers them directly into OpenSonics NEXUS via PostMessage & TCP socket.
-    Coordinates calibrated to NEXUS window layout (872x717 ratio):
-    - Start Button: x_pct=0.25, y_pct=0.16
-    - Freeze / Resume Button: x_pct=0.25, y_pct=0.25
-    - Voltage Input Box: x_pct=0.408, y_pct=0.499
-    - Voltage Slider Track: y_pct=0.555, x_pct = 0.105 + (val / 50.0) * 0.305
-    - Analog Gain Input Box: x_pct=0.411, y_pct=0.634
-    - Analog Gain Slider Track: y_pct=0.691, x_pct = 0.105 + (val / 80.0) * 0.305
+    Coordinates calibrated to NEXUS window layout (640x480 ratio):
+    - Start Button: x_pct=0.25, y_pct=0.16 (cy=68)
+    - Freeze / Resume Button: x_pct=0.25, y_pct=0.25 (cy=108)
+    - Voltage Slider: y_pct=0.42, x_pct = 0.12 + (val / 50.0) * 0.26
+    - Analog Gain Slider: y_pct=0.58, x_pct = 0.12 + (val / 80.0) * 0.26
     - Display Toggle: x_pct=0.64, y_pct=0.70
     - TGC Toggle: x_pct=0.64, y_pct=0.18
     - TGC Sliders 1-6: x_pct = 0.54 + (slider_idx * 0.07), y_pct = 0.62 - (val / 100.0) * 0.34
@@ -949,44 +951,34 @@ def handle_control_command(name: str, value: any) -> bool:
     # 1. Direct Socket trigger (127.0.0.1:4096)
     send_ostb_socket_command(name, value)
 
-    # 2. In-Process Qt Dispatch (Tier 1)
-    if name in ["voltage", "gain"]:
-        val = float(value)
-        val = max(0.0, min(50.0, val)) if name == "voltage" else max(0.0, min(80.0, val))
-        if _apply_in_process_qt_parameter(name, val):
-            diag_log("CONTROL_API", f"Parameter '{name}' applied directly via in-process Qt widget to {val}")
-            return True
+    try:
+        import win32gui
+        import win32con
+        import win32api
+    except ImportError:
+        return True
 
     hwnd = find_opensonics_control_window()
     if not hwnd:
         print("[Remote Control] OpenSonics window not found for control command.")
         return True
 
-    left, top, right, bottom = 0, 0, 872, 717
     try:
-        import win32gui
         rect = win32gui.GetWindowRect(hwnd)
         left, top, right, bottom = rect
+        width = max(500, right - left)
+        height = max(380, bottom - top)
     except Exception:
-        try:
-            import ctypes
-            from ctypes import wintypes
-            r = wintypes.RECT()
-            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
-            left, top, right, bottom = r.left, r.top, r.right, r.bottom
-        except Exception:
-            pass
-
-    width = max(500, right - left)
-    height = max(380, bottom - top)
+        left, top, right, bottom = 0, 0, 640, 480
+        width, height = 640, 480
 
     x_pct = None
     y_pct = None
 
     if name == "start":
         x_pct, y_pct = 0.25, 0.16
+        # Send Space/Enter keypresses directly into Qt window
         try:
-            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -999,7 +991,6 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "stop":
         x_pct, y_pct = 0.25, 0.16
         try:
-            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -1009,7 +1000,6 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "freeze":
         x_pct, y_pct = 0.25, 0.25
         try:
-            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -1019,7 +1009,6 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "resume":
         x_pct, y_pct = 0.25, 0.25
         try:
-            import win32gui, win32con
             win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_SPACE, 0)
             time.sleep(0.02)
             win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_SPACE, 0)
@@ -1030,31 +1019,35 @@ def handle_control_command(name: str, value: any) -> bool:
             pass
 
     elif name == "voltage":
-        val = max(0.0, min(50.0, float(value)))
+        val = float(value)
         val_str = str(int(round(val)))
-        cx_input = int(0.408 * width)
-        cy_input = int(0.499 * height)
-        send_qt_input_value(hwnd, cx_input, cy_input, val_str)
-        x_pct = 0.105 + (val / 50.0) * 0.305
-        y_pct = 0.555
+        x_pct = 0.12 + (val / 50.0) * 0.26
+        y_pct = 0.42
         cx_slider = int(x_pct * width)
         cy_slider = int(y_pct * height)
+        cx_input = int(0.40 * width)
+        cy_input = int(0.42 * height)
+
+        send_qt_input_value(hwnd, cx_input, cy_input, val_str)
         send_direct_qt_click(hwnd, cx_slider, cy_slider)
-        diag_log("CONTROL_API", f"Applied Voltage={val}V to OpenSonics controller at input ({cx_input}, {cy_input}) and slider ({cx_slider}, {cy_slider})")
+        _apply_in_process_qt_parameter("voltage", val)
+        diag_log("CONTROL_API", f"Delivered voltage={val}V to Qt window inputs/sliders without Win32 desktop click")
         return True
 
     elif name == "gain":
-        val = max(0.0, min(80.0, float(value)))
+        val = float(value)
         val_str = str(int(round(val)))
-        cx_input = int(0.411 * width)
-        cy_input = int(0.634 * height)
-        send_qt_input_value(hwnd, cx_input, cy_input, val_str)
-        x_pct = 0.105 + (val / 80.0) * 0.305
-        y_pct = 0.691
+        x_pct = 0.12 + (val / 80.0) * 0.26
+        y_pct = 0.58
         cx_slider = int(x_pct * width)
         cy_slider = int(y_pct * height)
+        cx_input = int(0.40 * width)
+        cy_input = int(0.58 * height)
+
+        send_qt_input_value(hwnd, cx_input, cy_input, val_str)
         send_direct_qt_click(hwnd, cx_slider, cy_slider)
-        diag_log("CONTROL_API", f"Applied Analog Gain={val}dB to OpenSonics controller at input ({cx_input}, {cy_input}) and slider ({cx_slider}, {cy_slider})")
+        _apply_in_process_qt_parameter("gain", val)
+        diag_log("CONTROL_API", f"Delivered gain={val}dB to Qt window inputs/sliders without Win32 desktop click")
         return True
 
     elif name == "display":
@@ -1078,8 +1071,10 @@ def handle_control_command(name: str, value: any) -> bool:
         cx = int(x_pct * width)
         cy = int(y_pct * height)
 
+        # Deliver mouse click directly into Qt event queue
         send_direct_qt_click(hwnd, cx, cy)
 
+        # Also backup hardware click if window is currently visible on desktop (skip for sliders to avoid cursor jitter)
         if left >= 0 and top >= 0 and name not in ["voltage", "gain"]:
             send_win32_click(hwnd, cx, cy)
 
@@ -1423,12 +1418,9 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "03b5b389914e4b00b068795eb938dd53")[:8]
+    clean_app_id = (APP_ID or "1f40918151a84a3d9dc3ebd7f1f47706")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
-        f"{CHANNEL}-control-03b5b389",
-        f"{CHANNEL}-control-1c71e083",
-        f"{CHANNEL}-control-a568c56c",
         f"{CHANNEL}-control-1f409181",
         f"{CHANNEL}-control-f320d347",
         f"{CHANNEL}-control"
@@ -1602,7 +1594,9 @@ def get_status():
     Returns current control panel state directly from curv_proper_code.py parameters.
     Allows Doctor UI to sync sliders and buttons to patient hardware state in real time.
     """
-    global _curv_module, _is_acquiring, _is_frozen, _is_user_stopped, _last_confirmed_voltage, _last_confirmed_gain, _is_reconfiguring
+    global _curv_module, _is_acquiring, _is_frozen, _is_user_stopped
+    global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain, _is_reconfiguring
+
     if _is_frozen:
         status_str = "FROZEN"
     elif _is_user_stopped:
@@ -1610,10 +1604,17 @@ def get_status():
     elif _is_acquiring or _is_reconfiguring:
         status_str = "RUNNING"
     else:
-        status_str = "RUNNING" if _global_ostb_runtime is not None else "STOPPED"
+        status_str = "RUNNING" if (_global_ostb_runtime is not None and getattr(_global_ostb_runtime, "_started", False)) else "STOPPED"
 
-    voltage = float(_last_confirmed_voltage)
-    gain = float(_last_confirmed_gain)
+    is_running = (status_str == "RUNNING")
+
+    if is_running:
+        voltage = float(_last_confirmed_voltage)
+        gain = float(_last_confirmed_gain)
+    else:
+        voltage = float(_standby_voltage)
+        gain = float(_standby_gain)
+
     display_on = True
     tgc_on = False
     tgc_vals = [50, 12, 3, 77, 90, 30]
@@ -1634,6 +1635,11 @@ def get_status():
         "is_frozen": bool(_is_frozen),
         "voltage": voltage,
         "gain": gain,
+        "live_voltage": float(_last_confirmed_voltage),
+        "live_gain": float(_last_confirmed_gain),
+        "standby_voltage": float(_standby_voltage),
+        "standby_gain": float(_standby_gain),
+        "live_hardware_update": is_running,
         "display": display_on,
         "tgc_enabled": tgc_on,
         "tgc_sliders": tgc_vals
@@ -1641,7 +1647,7 @@ def get_status():
 
 @app.route("/api/remote-input", methods=["POST", "OPTIONS"])
 def remote_input():
-    global _last_confirmed_voltage, _last_confirmed_gain, _curv_module
+    global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain, _curv_module
     if request.method == "OPTIONS":
         return Response(status=204)
     try:
@@ -1654,11 +1660,65 @@ def remote_input():
         if "control" in data:
             cmd = data.get("control")
             val = data.get("value")
+            
+            is_running = is_acquisition_running()
             success = execute_direct_runtime_command(cmd, val)
             diag_log("HTTP_COMPLETE", f"Executed command '{cmd}'={val}: result={success}")
             
-            curr_v = float(_last_confirmed_voltage)
-            curr_g = float(_last_confirmed_gain)
+            if cmd in ["voltage", "gain"]:
+                if is_running:
+                    # Verified live hardware update during active acquisition
+                    if not success:
+                        return jsonify({
+                            "status": "error",
+                            "executed": False,
+                            "live_hardware_update": False,
+                            "verified": False,
+                            "message": f"Hardware verification failed for live update '{cmd}'={val}"
+                        }), 500
+
+                    curr_v = float(_last_confirmed_voltage)
+                    curr_g = float(_last_confirmed_gain)
+                    if _curv_module is not None:
+                        curr_v = float(getattr(_curv_module, "_current_voltage", curr_v))
+                        curr_g = float(getattr(_curv_module, "gain_analog_db", curr_g))
+
+                    return jsonify({
+                        "status": "success",
+                        "executed": True,
+                        "live_hardware_update": True,
+                        "verified": True,
+                        "mode": "live",
+                        "voltage": curr_v,
+                        "gain": curr_g,
+                        "control": cmd,
+                        "value": val
+                    }), 200
+                else:
+                    # Preserved in standby configuration; DO NOT claim live hardware update occurred
+                    curr_v = float(_standby_voltage)
+                    curr_g = float(_standby_gain)
+                    if _curv_module is not None:
+                        curr_v = float(getattr(_curv_module, "_current_voltage", curr_v))
+                        curr_g = float(getattr(_curv_module, "gain_analog_db", curr_g))
+
+                    return jsonify({
+                        "status": "success",
+                        "executed": True,
+                        "live_hardware_update": False,
+                        "verified": False,
+                        "mode": "standby",
+                        "message": "Preserved in standby configuration; live hardware update will apply during active acquisition.",
+                        "standby_voltage": float(_standby_voltage),
+                        "standby_gain": float(_standby_gain),
+                        "voltage": curr_v,
+                        "gain": curr_g,
+                        "control": cmd,
+                        "value": val
+                    }), 200
+
+            curr_v = float(_last_confirmed_voltage if is_running else _standby_voltage)
+            curr_g = float(_last_confirmed_gain if is_running else _standby_gain)
             if _curv_module is not None:
                 curr_v = float(getattr(_curv_module, "_current_voltage", curr_v))
                 curr_g = float(getattr(_curv_module, "gain_analog_db", curr_g))

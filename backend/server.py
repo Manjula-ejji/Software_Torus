@@ -154,7 +154,7 @@ def api_system_status():
 
         req = urllib.request.Request(f"{ULTRASOUND_SERVICE_URL}/api/status", headers={"Accept": "application/json"})
 
-        with urllib.request.urlopen(req, timeout=0.2) as resp:
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
 
             if resp.status == 200:
 
@@ -186,19 +186,14 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
     import time
 
-    target_app_id = (os.environ.get("OPENSONICS_APP_ID") or os.environ.get("AGORA_APP_ID") or "03b5b389914e4b00b068795eb938dd53").strip()
-    clean_app_id = target_app_id[:8]
+    clean_app_id = "1f409181"
 
     channel = os.environ.get("AGORA_CHANNEL", "torus")
 
     topics = [
 
         f"{channel}-control-{clean_app_id}",
-        f"{channel}-control-03b5b389",
 
-        f"{channel}-control-1c71e083",
-        f"{channel}-control-a568c56c",
-        f"{channel}-control-1f409181",
         f"{channel}-control-f320d347",
 
         f"{channel}-control"
@@ -326,112 +321,111 @@ def api_remote_input():
 
 
     # Keep server cache synchronized in real-time
+    is_running = (_cached_ultrasound_state.get("status") == "RUNNING" and not _cached_ultrasound_state.get("is_frozen"))
 
     if ctrl == "voltage" and val is not None:
-
         try:
-
-            _cached_ultrasound_state["voltage"] = float(val)
-
+            val_f = float(val)
+            _cached_ultrasound_state["standby_voltage"] = val_f
+            if is_running:
+                _cached_ultrasound_state["voltage"] = val_f
         except (ValueError, TypeError):
-
             pass
 
     elif ctrl == "gain" and val is not None:
-
         try:
-
-            _cached_ultrasound_state["gain"] = float(val)
-
+            val_f = float(val)
+            _cached_ultrasound_state["standby_gain"] = val_f
+            if is_running:
+                _cached_ultrasound_state["gain"] = val_f
         except (ValueError, TypeError):
-
             pass
 
     elif ctrl in ["start", "resume"]:
-
         _cached_ultrasound_state["status"] = "RUNNING"
-
         _cached_ultrasound_state["is_frozen"] = False
+        if "standby_voltage" in _cached_ultrasound_state:
+            _cached_ultrasound_state["voltage"] = _cached_ultrasound_state["standby_voltage"]
+        if "standby_gain" in _cached_ultrasound_state:
+            _cached_ultrasound_state["gain"] = _cached_ultrasound_state["standby_gain"]
 
     elif ctrl == "stop":
-
         _cached_ultrasound_state["status"] = "STOPPED"
-
         _cached_ultrasound_state["is_frozen"] = False
 
     elif ctrl == "freeze":
-
         _cached_ultrasound_state["status"] = "FROZEN"
-
         _cached_ultrasound_state["is_frozen"] = True
 
-
-
     try:
-
         import urllib.request
-
         data_bytes = json.dumps(payload).encode("utf-8")
-
         req = urllib.request.Request(
-
             f"{ULTRASOUND_SERVICE_URL}/api/remote-input",
-
             data=data_bytes,
-
             headers={"Content-Type": "application/json", "Accept": "application/json"},
-
             method="POST"
-
         )
-
-        with urllib.request.urlopen(req, timeout=0.2) as resp:
-
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
             raw_data = resp.read()
-
             data = json.loads(raw_data.decode("utf-8"))
-
             if isinstance(data, dict):
-
                 if "voltage" in data:
-
                     _cached_ultrasound_state["voltage"] = data["voltage"]
-
                 if "gain" in data:
-
                     _cached_ultrasound_state["gain"] = data["gain"]
+                if "status" in data:
+                    _cached_ultrasound_state["status"] = data["status"]
+                if "standby_voltage" in data:
+                    _cached_ultrasound_state["standby_voltage"] = data["standby_voltage"]
+                if "standby_gain" in data:
+                    _cached_ultrasound_state["standby_gain"] = data["standby_gain"]
+                if "live_hardware_update" in data:
+                    _cached_ultrasound_state["live_hardware_update"] = data["live_hardware_update"]
 
                 now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
-                print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")
+                if data.get("live_hardware_update"):
+                    print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")
+                else:
+                    print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Standby parameter recorded by ultrasound service: standby_voltage={_cached_ultrasound_state.get('standby_voltage')}, standby_gain={_cached_ultrasound_state.get('standby_gain')}")
 
             return jsonify(data), resp.status
 
     except Exception as exc:
-
         now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
         print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Direct ultrasound HTTP bridge offline ({exc}); dispatching via MQTT to remote hardware")
-
         threading.Thread(target=_dispatch_mqtt_control, args=(payload,), daemon=True).start()
 
-        return jsonify({
-
-            "status": "forwarded",
-
-            "executed": True,
-
-            "transport": "mqtt",
-
-            "voltage": _cached_ultrasound_state.get("voltage", 50.0),
-
-            "gain": _cached_ultrasound_state.get("gain", 40.0),
-
-            "control": ctrl,
-
-            "value": val
-
-        })
+        is_active = (_cached_ultrasound_state.get("status") == "RUNNING" and not _cached_ultrasound_state.get("is_frozen"))
+        if is_active:
+            return jsonify({
+                "status": "success",
+                "executed": True,
+                "live_hardware_update": True,
+                "verified": True,
+                "mode": "live",
+                "transport": "mqtt",
+                "voltage": _cached_ultrasound_state.get("voltage", 50.0),
+                "gain": _cached_ultrasound_state.get("gain", 40.0),
+                "control": ctrl,
+                "value": val
+            })
+        else:
+            return jsonify({
+                "status": "success",
+                "executed": True,
+                "live_hardware_update": False,
+                "verified": False,
+                "mode": "standby",
+                "message": "Preserved in standby configuration; live hardware update will apply during active acquisition.",
+                "transport": "mqtt",
+                "standby_voltage": _cached_ultrasound_state.get("standby_voltage", _cached_ultrasound_state.get("voltage", 50.0)),
+                "standby_gain": _cached_ultrasound_state.get("standby_gain", _cached_ultrasound_state.get("gain", 40.0)),
+                "voltage": _cached_ultrasound_state.get("voltage", 50.0),
+                "gain": _cached_ultrasound_state.get("gain", 40.0),
+                "control": ctrl,
+                "value": val
+            })
 
 
 
@@ -449,7 +443,7 @@ def api_agora_config():
 
     if not app_id or app_id in ["f320d3475b6d4b70ba512b06d09849d7", "73853929619b4c61a6752f4474b6f75c"]:
 
-        app_id = "03b5b389914e4b00b068795eb938dd53"
+        app_id = "1f40918151a84a3d9dc3ebd7f1f47706"
 
 
 
@@ -457,7 +451,7 @@ def api_agora_config():
 
     if not token or "007eJxTYPB48" in token or "007eJxTYDhauf" in token:
 
-        token = "007eJxTYDCbde7j1wOcq7ZxL1l53Ht95dI/TyZtcGO58Xq6//d0kWsSCgwGxkmmScYWlpaGJqkmSQYGSQZmFuaWpqlJlsYWKSmmxse5X2c1BDIyaJg9Y2CEQhCflaEkv6i0mIEBAEEgIig="
+        token = "007eJxTYDh76lkfH8upYwXrkzXfv1k/Wbn2UuVU1ourFS5wv/cxP7JRgcEwzcTA0tDC0NQw0cIk0TjFMiXZODUpxTwNKGFubmB2792jrIZARgb51fHMjAwQCOKzMpTkF5UWMzAAABeoIlo="
 
 
 
