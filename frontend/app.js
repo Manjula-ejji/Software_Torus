@@ -32,7 +32,7 @@ function connectDoctorMQTT(appId, channel) {
 
     || "91ce57cb23cb4b50915e8ff8a8d93a6d";
 
-  if (targetAppId.startsWith("f320") || targetAppId.startsWith("7385") || targetAppId.startsWith("1f40")) {
+  if (targetAppId.startsWith("f320") || targetAppId.startsWith("7385") || targetAppId.startsWith("1f40") || targetAppId.startsWith("03b5")) {
 
     targetAppId = "91ce57cb23cb4b50915e8ff8a8d93a6d";
 
@@ -57,8 +57,8 @@ function connectDoctorMQTT(appId, channel) {
   const allControlTopics = [
 
     doctorControlTopic,
-
     `${targetChannel}-control-91ce57cb`,
+    `torus-control-91ce57cb`,
 
     `${targetChannel}-control-1f409181`,
 
@@ -71,8 +71,6 @@ function connectDoctorMQTT(appId, channel) {
   const allStatusTopics = [
 
     doctorStatusTopic,
-
-    `${targetChannel}-status-91ce57cb`,
 
     `${targetChannel}-status-1f409181`,
 
@@ -158,7 +156,9 @@ function connectDoctorMQTT(appId, channel) {
 
           const payload = pendingMqttPayloads.shift();
 
-          const pubTops = Array.from(new Set([doctorControlTopic, `${targetChannel}-control-91ce57cb`, `${targetChannel}-control-1f409181`, `${targetChannel}-control`]));
+          const pubTops = Array.from(new Set([doctorControlTopic,
+            `${targetChannel}-control-91ce57cb`,
+            `torus-control-91ce57cb`, `${targetChannel}-control-1f409181`, `${targetChannel}-control`]));
 
           pubTops.forEach(t => doctorMqttClient.publish(t, payload));
 
@@ -278,7 +278,7 @@ function connectDoctorMQTT(appId, channel) {
 
             body: JSON.stringify({ control: ctrl, value: val, source: "mqtt-forwarded" })
 
-          }).catch(() => {});
+          }).catch(() => { });
 
         } else if (isStatus) {
 
@@ -454,173 +454,96 @@ function connectDoctorMQTT(appId, channel) {
 
 
 
-async function sendControlCommand(name, value) {
-
+function sendControlCommand(name, value) {
   const payloadObj = {
-
     control: name,
-
     value: value,
-
     timestamp: Date.now(),
-
     senderId: window._torusClientInstanceId,
-
     source: "torus-doctor-ui"
-
   };
-
   const payload = JSON.stringify(payloadObj);
 
-
-
-  // 1. Direct HTTP control bridge (targeted execution with fallback)
-
-  let httpSuccess = false;
-
-  try {
-
-    const primaryUrl = "/api/remote-input";
-
-    let res = await fetch(primaryUrl, {
-
-      method: "POST",
-
-      headers: { "Content-Type": "application/json" },
-
-      body: payload
-
-    }).catch(() => null);
-
-
-
-    if (!res || !res.ok) {
-
-      const host = window.location.hostname || "127.0.0.1";
-
-      res = await fetch(`http://${host}:8000/api/remote-input`, {
-
-        method: "POST",
-
-        headers: { "Content-Type": "application/json" },
-
-        body: payload
-
-      }).catch(() => null);
-
-    }
-
-
-
-    if (res && res.ok) {
-
-      const data = await res.json().catch(() => ({}));
-
-      httpSuccess = (data.status === "success" || data.executed === true);
-
-      if (httpSuccess) {
-
-        if (data.voltage !== undefined && name === "voltage") {
-
-          const vInput = document.getElementById("voltageValueInput");
-
-          const vSlider = document.getElementById("voltageSlider");
-
-          if (vInput) vInput.value = data.voltage;
-
-          if (vSlider) {
-
-            vSlider.value = data.voltage;
-
-            if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
-
-          }
-
-        }
-
-        if (data.gain !== undefined && name === "gain") {
-
-          const gInput = document.getElementById("gainValueInput");
-
-          const gSlider = document.getElementById("gainSlider");
-
-          if (gInput) gInput.value = data.gain;
-
-          if (gSlider) {
-
-            gSlider.value = data.gain;
-
-            if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
-
-          }
-
-        }
-
-      }
-
-    }
-
-  } catch (err) {
-
-    console.warn("[Control API] HTTP command warning:", err);
-
-  }
-
-
-
-  // 2. Torus MQTT control bridge to remote Indore workstation
-
+  // 1. Torus MQTT control bridge - immediate zero-latency publish to remote Indore workstation
   const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
-
   const pubTopics = Array.from(new Set([
-
     doctorControlTopic,
-
     `${targetChannel}-control-91ce57cb`,
-
+    `torus-control-91ce57cb`,
+    `${targetChannel}-control-1c71e083`,
+    `${targetChannel}-control-0c03131a`,
+    `torus-control-0c03131a`,
+    `${targetChannel}-control-a568c56c`,
     `${targetChannel}-control-1f409181`,
-
     `${targetChannel}-control-f320d347`,
-
-    `${targetChannel}-control`
-
+    `${targetChannel}-control`,
+    `torus-control-1c71e083`,
+    `torus-control-a568c56c`,
+    `torus-control`
   ])).filter(Boolean);
 
-
-
   if (doctorMqttClient && doctorMqttClient.connected) {
-
     try {
-
       pubTopics.forEach(top => {
-
         doctorMqttClient.publish(top, payload);
-
       });
-
-      console.log(`[Torus MQTT] Published control: ${name} = ${value} to ${pubTopics.join(", ")}`);
-
+      console.log(`[Torus MQTT] Immediate publish: ${name} = ${value} to ${pubTopics.join(", ")}`);
     } catch (err) {
-
       console.error("[Torus MQTT] Error publishing command:", err);
-
     }
-
   } else {
-
     pendingMqttPayloads.push(payload);
-
     connectDoctorMQTT();
-
   }
 
+  // 2. Direct HTTP control bridge (non-blocking background delivery with fallback)
+  const primaryUrl = "/api/remote-input";
+  fetch(primaryUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload
+  })
+    .catch(() => {
+      const host = window.location.hostname || "127.0.0.1";
+      return fetch(`http://${host}:8000/api/remote-input`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload
+      });
+    })
+    .then(res => {
+      if (res && res.ok) return res.json();
+      return null;
+    })
+    .then(data => {
+      if (!data) return;
+      if (data.status === "success" || data.executed === true) {
+        if (data.voltage !== undefined && name === "voltage") {
+          const vInput = document.getElementById("voltageValueInput");
+          const vSlider = document.getElementById("voltageSlider");
+          if (vInput && document.activeElement !== vInput) vInput.value = data.voltage;
+          if (vSlider && document.activeElement !== vSlider) {
+            vSlider.value = data.voltage;
+            if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
+          }
+        }
+        if (data.gain !== undefined && name === "gain") {
+          const gInput = document.getElementById("gainValueInput");
+          const gSlider = document.getElementById("gainSlider");
+          if (gInput && document.activeElement !== gInput) gInput.value = data.gain;
+          if (gSlider && document.activeElement !== gSlider) {
+            gSlider.value = data.gain;
+            if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
+          }
+        }
+      }
+    })
+    .catch(err => {
+      console.warn("[Control API] HTTP command warning:", err);
+    });
 
-
-  return httpSuccess;
-
+  return true;
 }
-
-
 
 // Auto-connect Torus MQTT bridge immediately on page load
 
@@ -814,7 +737,7 @@ roleInput.addEventListener("change", () => {
 
 
 
-let OFFICIAL_TOKEN_VALUE = "007eJxTYPDIkf23/6/GTVGPE/ZzvQtfCSV8+3yqtChbpyV5+YxkblEFBkvD5FRT8+QkI+PkJJMkUwNLQ9NUi7Q0i0SLFEvjRLMUy/3vshoCGRlapEuYGBkgEMRnZSjJLyotZmAAAITsIDs=";
+let OFFICIAL_TOKEN_VALUE = "";
 
 
 
@@ -868,7 +791,7 @@ async function fetchAgoraConfiguration() {
 
         if (data.appId && typeof appIdInput !== "undefined" && appIdInput) {
 
-          if (!appIdInput.value.trim() || appIdInput.value.trim() === "f320d3475b6d4b70ba512b06d09849d7" || appIdInput.value.trim() === "1f40918151a84a3d9dc3ebd7f1f47706") {
+          if (!appIdInput.value.trim() || appIdInput.value.trim() === "f320d3475b6d4b70ba512b06d09849d7") {
 
             appIdInput.value = data.appId;
 
@@ -3080,6 +3003,10 @@ async function joinCall() {
 
 
 
+
+
+
+
         const card = document.getElementById(`remote-card-${user.uid}`);
 
         if (card) {
@@ -3984,9 +3911,11 @@ window.isCurrentPatientRole = isCurrentPatientRole;
 
 
 
-// Controls visibility of examination actions (Generate Report) based on active call connection
+// Controls visibility of examination actions (Start Scan & Generate Report) based on active call connection
 
 function updateCallExaminationControls(isConnected) {
+
+  const startScanBtn = document.getElementById("startScanBtn");
 
   const generateReportBtn = document.getElementById("generateReportBtn");
 
@@ -4038,7 +3967,9 @@ function updateCallExaminationControls(isConnected) {
 
     if (isDoc) {
 
-      // Doctor: Generate Report is visible and functional
+      // Doctor: Both Start Scan and Generate Report are visible and functional
+
+      if (startScanBtn) startScanBtn.style.display = "inline-flex";
 
       if (generateReportBtn) generateReportBtn.style.display = "inline-flex";
 
@@ -4050,11 +3981,15 @@ function updateCallExaminationControls(isConnected) {
 
       if (generateReportBtn) generateReportBtn.style.display = "none";
 
-      if (controlsDivider) controlsDivider.style.display = "none";
+      if (startScanBtn) startScanBtn.style.display = isPat ? "inline-flex" : "none";
+
+      if (controlsDivider) controlsDivider.style.display = isPat ? "block" : "none";
 
     }
 
   } else {
+
+    if (startScanBtn) startScanBtn.style.display = "none";
 
     if (generateReportBtn) generateReportBtn.style.display = "none";
 
@@ -4754,7 +4689,43 @@ function updateUltrasoundScanUI(status) {
 
 
 
-  // Update Modal Acquisition Start/Stop button
+  // 1. Update Start Scan / Stop Scan button next to Join Call
+
+  const startScanBtn = document.getElementById("startScanBtn");
+
+  if (startScanBtn) {
+
+    if (isRunningState) {
+
+      startScanBtn.textContent = "Stop Scan";
+
+      startScanBtn.classList.add("scanning");
+
+      startScanBtn.title = "Stop Ultrasound Scanning";
+
+    } else if (isFrozenState) {
+
+      startScanBtn.textContent = "Resume Scan";
+
+      startScanBtn.classList.remove("scanning");
+
+      startScanBtn.title = "Resume Ultrasound Scanning";
+
+    } else {
+
+      startScanBtn.textContent = "Start Scan";
+
+      startScanBtn.classList.remove("scanning");
+
+      startScanBtn.title = "Start Ultrasound Scanning";
+
+    }
+
+  }
+
+
+
+  // 2. Update Modal Acquisition Start/Stop button
 
   if (controlStartBtn) {
 
@@ -4889,6 +4860,32 @@ function toggleUltrasoundScan(forceState = null) {
 }
 
 window.toggleUltrasoundScan = toggleUltrasoundScan;
+
+
+
+// Bind Start Scan button in the bottom floating controller bar next to Join Call
+
+const startScanBtn = document.getElementById("startScanBtn");
+
+if (startScanBtn) {
+
+  startScanBtn.addEventListener("click", () => {
+
+    if (isFrozenState) {
+
+      updateUltrasoundScanUI("RUNNING");
+
+      sendControlCommand("resume", true);
+
+    } else {
+
+      toggleUltrasoundScan();
+
+    }
+
+  });
+
+}
 
 
 
@@ -5252,8 +5249,6 @@ window.navigateToReportGeneration = navigateToReportGeneration;
 
 let isClosingReportOverlayInProgress = false;
 
-
-
 // Function called by Report Generation page Back button to seamlessly return to After-Join-Call page
 
 function closeReportGenerationOverlay(fromPopstate = false) {
@@ -5293,8 +5288,6 @@ function closeReportGenerationOverlay(fromPopstate = false) {
     }
 
   }
-
-
 
   // Restore and maintain the Live Consultation UI with all call controls active
 
@@ -5438,147 +5431,118 @@ const gainPlus = document.getElementById("gainPlus");
 
 
 
-let _voltageDebounceTimer = null;
+let _lastVoltageSendTime = 0;
+let _voltageThrottleTimer = null;
+let _pendingVoltageVal = null;
 
-let _gainDebounceTimer = null;
+let _lastGainSendTime = 0;
+let _gainThrottleTimer = null;
+let _pendingGainVal = null;
 
-const SLIDER_DEBOUNCE_MS = 110;
-
-
+const SLIDER_THROTTLE_MS = 35; // ~28 FPS smooth continuous updates without network congestion
 
 function updateSliderBackground(slider) {
-
   if (!slider) return;
-
   const min = parseFloat(slider.min) || 0;
-
   const max = parseFloat(slider.max) || 100;
-
   const val = parseFloat(slider.value) || 0;
-
   const percent = ((val - min) / (max - min)) * 100;
-
   if (slider.classList.contains("tgc-range-slider")) {
-
     slider.style.background = `linear-gradient(to top, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
-
   } else {
-
     slider.style.background = `linear-gradient(to right, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
-
   }
-
 }
-
-
 
 function applyVoltageUpdate(rawVal, immediate = false) {
-
   if (!voltageSlider) return;
-
   const min = parseFloat(voltageSlider.min) || 0;
-
   const max = parseFloat(voltageSlider.max) || 50;
-
   let parsed = parseFloat(rawVal);
-
   if (isNaN(parsed)) parsed = min;
-
   const clamped = Math.max(min, Math.min(max, parsed));
-
-
 
   voltageSlider.value = clamped;
-
   if (voltageValueInput) voltageValueInput.value = clamped;
-
   updateSliderBackground(voltageSlider);
 
-
-
-  if (_voltageDebounceTimer) {
-
-    clearTimeout(_voltageDebounceTimer);
-
-    _voltageDebounceTimer = null;
-
-  }
-
-
-
   if (immediate) {
-
+    if (_voltageThrottleTimer) {
+      clearTimeout(_voltageThrottleTimer);
+      _voltageThrottleTimer = null;
+    }
+    _pendingVoltageVal = null;
+    _lastVoltageSendTime = Date.now();
     sendControlCommand("voltage", clamped);
-
-  } else {
-
-    _voltageDebounceTimer = setTimeout(() => {
-
-      _voltageDebounceTimer = null;
-
-      sendControlCommand("voltage", clamped);
-
-    }, SLIDER_DEBOUNCE_MS);
-
+    return;
   }
 
+  const now = Date.now();
+  const elapsed = now - _lastVoltageSendTime;
+  _pendingVoltageVal = clamped;
+
+  if (elapsed >= SLIDER_THROTTLE_MS) {
+    if (_voltageThrottleTimer) {
+      clearTimeout(_voltageThrottleTimer);
+      _voltageThrottleTimer = null;
+    }
+    _lastVoltageSendTime = now;
+    sendControlCommand("voltage", clamped);
+  } else if (!_voltageThrottleTimer) {
+    _voltageThrottleTimer = setTimeout(() => {
+      _voltageThrottleTimer = null;
+      _lastVoltageSendTime = Date.now();
+      if (_pendingVoltageVal !== null) {
+        sendControlCommand("voltage", _pendingVoltageVal);
+      }
+    }, SLIDER_THROTTLE_MS - elapsed);
+  }
 }
-
-
 
 function applyGainUpdate(rawVal, immediate = false) {
-
   if (!gainSlider) return;
-
   const min = parseFloat(gainSlider.min) || 0;
-
   const max = parseFloat(gainSlider.max) || 80;
-
   let parsed = parseFloat(rawVal);
-
   if (isNaN(parsed)) parsed = min;
-
   const clamped = Math.max(min, Math.min(max, parsed));
 
-
-
   gainSlider.value = clamped;
-
   if (gainValueInput) gainValueInput.value = clamped;
-
   updateSliderBackground(gainSlider);
 
-
-
-  if (_gainDebounceTimer) {
-
-    clearTimeout(_gainDebounceTimer);
-
-    _gainDebounceTimer = null;
-
-  }
-
-
-
   if (immediate) {
-
+    if (_gainThrottleTimer) {
+      clearTimeout(_gainThrottleTimer);
+      _gainThrottleTimer = null;
+    }
+    _pendingGainVal = null;
+    _lastGainSendTime = Date.now();
     sendControlCommand("gain", clamped);
-
-  } else {
-
-    _gainDebounceTimer = setTimeout(() => {
-
-      _gainDebounceTimer = null;
-
-      sendControlCommand("gain", clamped);
-
-    }, SLIDER_DEBOUNCE_MS);
-
+    return;
   }
 
+  const now = Date.now();
+  const elapsed = now - _lastGainSendTime;
+  _pendingGainVal = clamped;
+
+  if (elapsed >= SLIDER_THROTTLE_MS) {
+    if (_gainThrottleTimer) {
+      clearTimeout(_gainThrottleTimer);
+      _gainThrottleTimer = null;
+    }
+    _lastGainSendTime = now;
+    sendControlCommand("gain", clamped);
+  } else if (!_gainThrottleTimer) {
+    _gainThrottleTimer = setTimeout(() => {
+      _gainThrottleTimer = null;
+      _lastGainSendTime = Date.now();
+      if (_pendingGainVal !== null) {
+        sendControlCommand("gain", _pendingGainVal);
+      }
+    }, SLIDER_THROTTLE_MS - elapsed);
+  }
 }
-
-
 
 // 1. Voltage Event Listeners
 
@@ -18980,25 +18944,25 @@ const HapticPadService = {
 
       ? [
 
-          "/api/haptic-pad/status",
+        "/api/haptic-pad/status",
 
-          "http://127.0.0.1:5000/api/haptic-pad/status",
+        "http://127.0.0.1:5000/api/haptic-pad/status",
 
-          "http://localhost:5000/api/haptic-pad/status"
+        "http://localhost:5000/api/haptic-pad/status"
 
-        ]
+      ]
 
       : [
 
-          "http://127.0.0.1:5000/api/haptic-pad/status",
+        "http://127.0.0.1:5000/api/haptic-pad/status",
 
-          "http://localhost:5000/api/haptic-pad/status",
+        "http://localhost:5000/api/haptic-pad/status",
 
-          `${origin}/api/haptic-pad/status`,
+        `${origin}/api/haptic-pad/status`,
 
-          "/api/haptic-pad/status"
+        "/api/haptic-pad/status"
 
-        ];
+      ];
 
 
 
@@ -24616,7 +24580,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           cachedBiometricBaseUrl = base;
           return `${base}${path}`;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     cachedBiometricBaseUrl = "";
     return path;
@@ -25275,7 +25239,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               });
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }, 300);
 
 

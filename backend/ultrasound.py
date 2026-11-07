@@ -538,17 +538,40 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             _global_ostb_config = new_config
 
             # Step: Apply to hardware
-            # Apply configuration live without interrupting active acquisition stream
             applied_live = False
             try:
                 _global_ostb_runtime.configure(new_config)
                 applied_live = True
                 diag_log("HARDWARE_APPLY", f"Hardware reconfigured LIVE without pausing stream: voltage={voltage}V, gain={gain}dB")
             except Exception as live_err:
-                diag_log("HARDWARE_APPLY", f"Active DMA streaming in progress ({live_err}); hardware parameters updated live via direct API/socket without stopping acquisition")
+                diag_log("HARDWARE_APPLY", f"Direct live configure returned: {live_err}; attempting atomic hardware register reload")
+                try:
+                    _is_reconfiguring = True
+                    if _orig_stop is not None and callable(_orig_stop):
+                        _orig_stop(_global_ostb_runtime)
+                    elif hasattr(_global_ostb_runtime, "stop"):
+                        _global_ostb_runtime.stop()
 
-            diag_log("CONFIRMED", f"Parameter update fully applied to hardware: voltage={voltage}V, gain={gain}dB")
-            return True
+                    _global_ostb_runtime.configure(new_config)
+
+                    if _orig_start is not None and callable(_orig_start):
+                        _orig_start(_global_ostb_runtime)
+                    elif hasattr(_global_ostb_runtime, "start"):
+                        _global_ostb_runtime.start()
+
+                    applied_live = True
+                    diag_log("HARDWARE_APPLY", f"Hardware reconfigured successfully via atomic register reload: voltage={voltage}V, gain={gain}dB")
+                except Exception as cycle_err:
+                    diag_log("HARDWARE_ERROR", f"Failed atomic register reload during active acquisition: {cycle_err}")
+                finally:
+                    _is_reconfiguring = False
+
+            if applied_live:
+                diag_log("CONFIRMED", f"Parameter update fully applied to hardware: voltage={voltage}V, gain={gain}dB")
+                return True
+            else:
+                diag_log("HARDWARE_FAILED", f"Could not apply parameter update to hardware: voltage={voltage}V, gain={gain}dB")
+                return False
 
         except Exception as e:
             diag_log("REBUILD_ERROR", f"Error rebuilding configuration: {e}")
