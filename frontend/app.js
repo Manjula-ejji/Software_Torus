@@ -281,55 +281,30 @@ function connectDoctorMQTT(appId, channel) {
           }).catch(() => { });
 
         } else if (isStatus) {
-
           try {
-
             console.log("[Torus MQTT] Received live hardware status from ultrasound device:", data);
-
             if (data.status) {
-
               if (typeof updateUltrasoundScanUI === "function") {
-
                 updateUltrasoundScanUI(data.status);
-
               }
-
             }
-
             if (data.voltage !== undefined) {
-
               const vSlider = document.getElementById("voltageSlider");
-
               const vInput = document.getElementById("voltageValueInput");
-
-              if (vSlider && document.activeElement !== vSlider && document.activeElement !== vInput) {
-
+              if (vSlider && document.activeElement !== vSlider && document.activeElement !== vInput && (Date.now() - (window._lastUserVoltageChangeTime || 0) >= 2500)) {
                 vSlider.value = data.voltage;
-
                 if (vInput) vInput.value = data.voltage;
-
                 if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
-
               }
-
             }
-
             if (data.gain !== undefined) {
-
               const gSlider = document.getElementById("gainSlider");
-
               const gInput = document.getElementById("gainValueInput");
-
-              if (gSlider && document.activeElement !== gSlider && document.activeElement !== gInput) {
-
+              if (gSlider && document.activeElement !== gSlider && document.activeElement !== gInput && (Date.now() - (window._lastUserGainChangeTime || 0) >= 2500)) {
                 gSlider.value = data.gain;
-
                 if (gInput) gInput.value = data.gain;
-
                 if (typeof updateSliderBackground === "function") updateSliderBackground(gSlider);
-
               }
-
             }
 
             if (data.display !== undefined) {
@@ -454,32 +429,38 @@ function connectDoctorMQTT(appId, channel) {
 
 
 
+let _torusCommandSeq = 0;
+let _lastUserVoltageChangeTime = 0;
+let _lastUserGainChangeTime = 0;
+window._lastUserVoltageChangeTime = 0;
+window._lastUserGainChangeTime = 0;
+
 function sendControlCommand(name, value) {
+  const now = Date.now();
+  if (name === "voltage") {
+    _lastUserVoltageChangeTime = now;
+    window._lastUserVoltageChangeTime = now;
+  } else if (name === "gain") {
+    _lastUserGainChangeTime = now;
+    window._lastUserGainChangeTime = now;
+  }
+
   const payloadObj = {
     control: name,
     value: value,
-    timestamp: Date.now(),
+    commandSeq: ++_torusCommandSeq,
+    timestamp: now,
     senderId: window._torusClientInstanceId,
     source: "torus-doctor-ui"
   };
   const payload = JSON.stringify(payloadObj);
 
-  // 1. Torus MQTT control bridge - immediate zero-latency publish to remote Indore workstation
+  // 1. Torus MQTT control bridge - publish to canonical topic without flooding
   const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
   const pubTopics = Array.from(new Set([
     doctorControlTopic,
     `${targetChannel}-control-91ce57cb`,
-    `torus-control-91ce57cb`,
-    `${targetChannel}-control-1c71e083`,
-    `${targetChannel}-control-0c03131a`,
-    `torus-control-0c03131a`,
-    `${targetChannel}-control-a568c56c`,
-    `${targetChannel}-control-1f409181`,
-    `${targetChannel}-control-f320d347`,
-    `${targetChannel}-control`,
-    `torus-control-1c71e083`,
-    `torus-control-a568c56c`,
-    `torus-control`
+    `${targetChannel}-control`
   ])).filter(Boolean);
 
   if (doctorMqttClient && doctorMqttClient.connected) {
@@ -487,7 +468,7 @@ function sendControlCommand(name, value) {
       pubTopics.forEach(top => {
         doctorMqttClient.publish(top, payload);
       });
-      console.log(`[Torus MQTT] Immediate publish: ${name} = ${value} to ${pubTopics.join(", ")}`);
+      console.log(`[Torus MQTT] Immediate publish: ${name} = ${value} (seq: ${_torusCommandSeq}) to ${pubTopics.join(", ")}`);
     } catch (err) {
       console.error("[Torus MQTT] Error publishing command:", err);
     }
@@ -518,7 +499,7 @@ function sendControlCommand(name, value) {
     .then(data => {
       if (!data) return;
       if (data.status === "success" || data.executed === true) {
-        if (data.voltage !== undefined && name === "voltage") {
+        if (data.voltage !== undefined && name === "voltage" && (Date.now() - _lastUserVoltageChangeTime > 2500)) {
           const vInput = document.getElementById("voltageValueInput");
           const vSlider = document.getElementById("voltageSlider");
           if (vInput && document.activeElement !== vInput) vInput.value = data.voltage;
@@ -527,7 +508,7 @@ function sendControlCommand(name, value) {
             if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
           }
         }
-        if (data.gain !== undefined && name === "gain") {
+        if (data.gain !== undefined && name === "gain" && (Date.now() - _lastUserGainChangeTime > 2500)) {
           const gInput = document.getElementById("gainValueInput");
           const gSlider = document.getElementById("gainSlider");
           if (gInput && document.activeElement !== gInput) gInput.value = data.gain;
@@ -4596,25 +4577,19 @@ async function syncDoctorControlsFromPatientState() {
 
 
     if (data.voltage !== undefined && voltageSlider && voltageValueInput) {
-
-      voltageSlider.value = data.voltage;
-
-      voltageValueInput.value = data.voltage;
-
-      updateSliderBackground(voltageSlider);
-
+      if (Date.now() - (window._lastUserVoltageChangeTime || 0) >= 2500 && document.activeElement !== voltageSlider && document.activeElement !== voltageValueInput) {
+        voltageSlider.value = data.voltage;
+        voltageValueInput.value = data.voltage;
+        updateSliderBackground(voltageSlider);
+      }
     }
 
-
-
     if (data.gain !== undefined && gainSlider && gainValueInput) {
-
-      gainSlider.value = data.gain;
-
-      gainValueInput.value = data.gain;
-
-      updateSliderBackground(gainSlider);
-
+      if (Date.now() - (window._lastUserGainChangeTime || 0) >= 2500 && document.activeElement !== gainSlider && document.activeElement !== gainValueInput) {
+        gainSlider.value = data.gain;
+        gainValueInput.value = data.gain;
+        updateSliderBackground(gainSlider);
+      }
     }
 
 
@@ -5567,33 +5542,23 @@ if (voltageSlider) {
 
 
 if (voltageValueInput) {
-
+  let _vSubmitting = false;
   voltageValueInput.addEventListener("change", () => {
-
     applyVoltageUpdate(voltageValueInput.value, true);
-
   });
-
   voltageValueInput.addEventListener("blur", () => {
-
+    if (_vSubmitting) { _vSubmitting = false; return; }
     applyVoltageUpdate(voltageValueInput.value, true);
-
   });
-
   voltageValueInput.addEventListener("keydown", (e) => {
-
     if (e.key === "Enter") {
-
       e.preventDefault();
-
+      _vSubmitting = true;
       applyVoltageUpdate(voltageValueInput.value, true);
-
       voltageValueInput.blur();
-
+      setTimeout(() => { _vSubmitting = false; }, 200);
     }
-
   });
-
 }
 
 
@@ -5649,33 +5614,23 @@ if (gainSlider) {
 
 
 if (gainValueInput) {
-
+  let _gSubmitting = false;
   gainValueInput.addEventListener("change", () => {
-
     applyGainUpdate(gainValueInput.value, true);
-
   });
-
   gainValueInput.addEventListener("blur", () => {
-
+    if (_gSubmitting) { _gSubmitting = false; return; }
     applyGainUpdate(gainValueInput.value, true);
-
   });
-
   gainValueInput.addEventListener("keydown", (e) => {
-
     if (e.key === "Enter") {
-
       e.preventDefault();
-
+      _gSubmitting = true;
       applyGainUpdate(gainValueInput.value, true);
-
       gainValueInput.blur();
-
+      setTimeout(() => { _gSubmitting = false; }, 200);
     }
-
   });
-
 }
 
 

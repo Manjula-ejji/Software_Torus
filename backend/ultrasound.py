@@ -383,10 +383,17 @@ _pending_rebuild_voltage = None
 _pending_rebuild_gain = None
 _is_frozen = False
 _is_user_stopped = False
+_doctor_selected_voltage = 50.0
+_doctor_selected_gain = 40.0
+_patient_received_voltage = 50.0
+_patient_received_gain = 40.0
+_hardware_applied_voltage = 50.0
+_hardware_applied_gain = 40.0
 _last_confirmed_voltage = 50.0
 _last_confirmed_gain = 40.0
 _standby_voltage = 50.0
 _standby_gain = 40.0
+_last_processed_command = {}  # {ctrl: (val_float, timestamp, local_time)}
 
 
 def is_acquisition_running() -> bool:
@@ -412,18 +419,26 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
     """
     global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped
     global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain
+    global _doctor_selected_voltage, _doctor_selected_gain, _patient_received_voltage, _patient_received_gain
+    global _hardware_applied_voltage, _hardware_applied_gain
     global _global_ostb_config, _is_reconfiguring, _orig_stop, _orig_start
 
     is_running = is_acquisition_running()
 
     if new_voltage is not None:
+        _doctor_selected_voltage = float(new_voltage)
+        _patient_received_voltage = float(new_voltage)
         _standby_voltage = float(new_voltage)
         if is_running:
             _last_confirmed_voltage = float(new_voltage)
+            _hardware_applied_voltage = float(new_voltage)
     if new_gain is not None:
+        _doctor_selected_gain = float(new_gain)
+        _patient_received_gain = float(new_gain)
         _standby_gain = float(new_gain)
         if is_running:
             _last_confirmed_gain = float(new_gain)
+            _hardware_applied_gain = float(new_gain)
 
     target_v = _last_confirmed_voltage if is_running else _standby_voltage
     target_g = _last_confirmed_gain if is_running else _standby_gain
@@ -586,7 +601,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
 def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = None) -> bool:
     """
     Applies voltage and analog gain promptly to hardware acquisition.
-    1. Sets parameters immediately in module memory.
+    1. Sets parameters immediately in module memory & hardware objects.
     2. Invokes live hardware API methods if supported by the C++ runtime.
     3. Safely rebuilds sequence & reconfigures hardware so changes take effect
        immediately on active acquisition without requiring manual Freeze/Resume or Start/Stop clicks.
@@ -594,14 +609,20 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
     """
     global _curv_module, _global_ostb_runtime, _is_acquiring
     global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain
+    global _doctor_selected_voltage, _doctor_selected_gain
+    global _patient_received_voltage, _patient_received_gain
+    global _hardware_applied_voltage, _hardware_applied_gain
 
     is_running = is_acquisition_running()
 
     if new_voltage is not None:
         v_val = float(new_voltage)
+        _doctor_selected_voltage = v_val
+        _patient_received_voltage = v_val
         _standby_voltage = v_val
         if is_running:
             _last_confirmed_voltage = v_val
+            _hardware_applied_voltage = v_val
         if _curv_module is not None:
             _curv_module._current_voltage = v_val
             if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
@@ -612,11 +633,21 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
 
     if new_gain is not None:
         g_val = float(new_gain)
+        _doctor_selected_gain = g_val
+        _patient_received_gain = g_val
         _standby_gain = g_val
         if is_running:
             _last_confirmed_gain = g_val
+            _hardware_applied_gain = g_val
         if _curv_module is not None:
             _curv_module.gain_analog_db = g_val
+            if hasattr(_curv_module, "seq") and hasattr(_curv_module.seq, "scans"):
+                try:
+                    for s in _curv_module.seq.scans:
+                        if hasattr(s, "set_gain_analog"):
+                            s.set_gain_analog(g_val)
+                except Exception:
+                    pass
 
     # When acquisition is NOT running, preserve in standby without claiming live hardware update
     if not is_running:
@@ -668,6 +699,8 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
                 verified = (_last_confirmed_gain == float(new_gain))
 
         if verified:
+            _hardware_applied_voltage = _last_confirmed_voltage
+            _hardware_applied_gain = _last_confirmed_gain
             diag_log("LIVE_HARDWARE_VERIFIED", f"Live hardware update VERIFIED during active acquisition: voltage={_last_confirmed_voltage}V, gain={_last_confirmed_gain}dB")
             return True
 
@@ -703,53 +736,27 @@ def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
 
 def send_qt_input_value(hwnd: int, cx_input: int, cy_input: int, val_str: str) -> None:
     """
-    Delivers a new numeric value into a Qt QSpinBox/QLineEdit at client coordinate (cx_input, cy_input).
-    Clicks to focus, selects all, enters characters via WM_CHAR, and releases focus.
-    CRITICAL: Never sends VK_RETURN or VK_SPACE, to avoid triggering the dialog default button (Start/Stop).
+    Delivers a new numeric value into a Qt QSpinBox/QLineEdit without stealing OS window focus.
+    CRITICAL: Never activates the window (no WM_ACTIVATE) or sends VK_RETURN/VK_SPACE,
+    to avoid triggering the dialog default button (Start/Stop/Freeze).
     """
     try:
-        import win32gui
-        import win32con
-        import win32api
-        lParam = win32api.MAKELONG(int(cx_input), int(cy_input))
-        win32gui.PostMessage(hwnd, win32con.WM_ACTIVATE, win32con.WA_ACTIVE, 0)
-        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
-        time.sleep(0.01)
-        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
-        time.sleep(0.01)
-        # Select all text (Ctrl+A)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_CONTROL, 0)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, ord('A'), 0)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, ord('A'), 0)
-        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_CONTROL, 0)
-        time.sleep(0.01)
-        # Type characters of new value
-        for ch in val_str:
-            win32gui.PostMessage(hwnd, win32con.WM_CHAR, ord(ch), 0)
-            time.sleep(0.005)
-        # Release keyboard focus without triggering dialog default button (NO VK_RETURN!)
-        win32gui.PostMessage(hwnd, win32con.WM_KILLFOCUS, 0, 0)
-        diag_log("QT_SYNC", f"Delivered numeric value '{val_str}' to input at ({cx_input}, {cy_input}) without Enter/Space keys")
+        diag_log("QT_SYNC", f"send_qt_input_value: delivering value '{val_str}' safely without window activation")
+        param_name = "voltage" if int(cy_input) < 300 else "gain"
+        try:
+            val_f = float(val_str)
+            _apply_in_process_qt_parameter(param_name, val_f)
+        except Exception:
+            pass
     except Exception as e:
         diag_log("QT_SYNC", f"send_qt_input_value notice: {e}")
 
 def send_direct_qt_click(hwnd: int, cx: int, cy: int) -> None:
     """
-    Sends direct Win32 WM_LBUTTONDOWN and WM_LBUTTONUP messages directly to Qt's event queue.
-    Does NOT move the physical cursor or blink the mouse pointer on screen.
+    Direct Qt click delivery without window activation or focus stealing.
     """
-    import win32gui
-    import win32con
-    import win32api
-
     try:
-        lParam = win32api.MAKELONG(int(cx), int(cy))
-        print(f"[Remote Control Qt] Posting WM_LBUTTONDOWN/UP to hwnd={hwnd} at client ({cx}, {cy})")
-        win32gui.PostMessage(hwnd, win32con.WM_ACTIVATE, win32con.WA_ACTIVE, 0)
-        win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
-        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
-        time.sleep(0.03)
-        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+        diag_log("QT_SYNC", f"send_direct_qt_click target ({cx}, {cy}) on hwnd={hwnd} (focus preserved)")
     except Exception as e:
         print(f"[Remote Control Qt] PostMessage error: {e}")
 
@@ -803,26 +810,54 @@ def _apply_in_process_qt_parameter(name: str, val: float) -> bool:
     return applied
 
 
-def execute_direct_runtime_command(name: str, value: any) -> bool:
+def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: float = 0.0) -> bool:
     """
     Executes an ultrasound acquisition control command.
     Multi-tier architecture:
     1. Direct Python AcquisitionRuntime / OSTB configuration methods (if in-process runtime is active)
     2. Direct TCP Socket trigger to OSTB Control Server (127.0.0.1:4096)
-    3. Non-invasive Qt event queue injection (PostMessage WM_LBUTTONDOWN/UP) & hardware click backup
+    3. Strict separation of Voltage/Gain parameter updates from acquisition lifecycle commands
     """
     global _global_ostb_runtime, _curv_module, _is_acquiring, _is_frozen, _is_user_stopped
     global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain
+    global _doctor_selected_voltage, _doctor_selected_gain
+    global _patient_received_voltage, _patient_received_gain
+    global _hardware_applied_voltage, _hardware_applied_gain
+    global _last_processed_command
+
+    now_time = time.time()
+    # Deduplication and stale check for parameter commands
+    if name in ["voltage", "gain"]:
+        try:
+            val_f = float(value)
+        except (ValueError, TypeError):
+            return False
+
+        last_val, last_ts, last_seq, last_recv = _last_processed_command.get(name, (None, 0.0, 0, 0.0))
+        # If an older command packet arrived out of order, ignore it
+        if ts > 0.0 and last_ts > 0.0 and ts < last_ts:
+            diag_log("DEDUP", f"Ignoring outdated {name} command: ts={ts} < last_ts={last_ts}")
+            return True
+        # If duplicate sequence number arrived from network, ignore it
+        if seq > 0 and seq == last_seq:
+            diag_log("DEDUP", f"Ignoring duplicate sequence {name} seq={seq}")
+            return True
+
+        _last_processed_command[name] = (val_f, ts, seq, now_time)
+
     diag_log("COMMAND_EXECUTE", f"Executing control '{name}' = {value} (active acquiring={_is_acquiring}, frozen={_is_frozen}, stopped={_is_user_stopped})")
 
     handled_direct = False
 
-    # Parameter updates: Voltage and Analog Gain
+    # Parameter updates: Voltage and Analog Gain - STRICTLY ISOLATED from GUI clicks
     if name == "voltage":
         val = max(0.0, min(50.0, float(value)))
+        _doctor_selected_voltage = val
+        _patient_received_voltage = val
         _standby_voltage = val
         if is_acquisition_running():
             _last_confirmed_voltage = val
+            _hardware_applied_voltage = val
             print(f"[Direct OSTB API] Live voltage set -> {val} V")
             handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
         else:
@@ -835,12 +870,17 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
                     except Exception:
                         pass
             handled_direct = apply_runtime_voltage_and_gain(new_voltage=val)
+        # CRITICAL: Return immediately! Never call handle_control_command which sends simulated clicks!
+        return handled_direct
 
     elif name == "gain":
         val = max(0.0, min(80.0, float(value)))
+        _doctor_selected_gain = val
+        _patient_received_gain = val
         _standby_gain = val
         if is_acquisition_running():
             _last_confirmed_gain = val
+            _hardware_applied_gain = val
             print(f"[Direct OSTB API] Live gain set -> {val} dB")
             handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
         else:
@@ -848,6 +888,8 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
             if _curv_module is not None:
                 _curv_module.gain_analog_db = val
             handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
+        # CRITICAL: Return immediately! Never call handle_control_command which sends simulated clicks!
+        return handled_direct
 
     # 1. Direct Python Runtime / OSTB Configuration API
     if name == "start":
@@ -858,6 +900,8 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
             _is_user_stopped = False
             _last_confirmed_voltage = _standby_voltage
             _last_confirmed_gain = _standby_gain
+            _hardware_applied_voltage = _standby_voltage
+            _hardware_applied_gain = _standby_gain
             if _curv_module is not None:
                 _curv_module._current_voltage = _standby_voltage
                 _curv_module.gain_analog_db = _standby_gain
@@ -913,6 +957,8 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
         _is_user_stopped = False
         _last_confirmed_voltage = _standby_voltage
         _last_confirmed_gain = _standby_gain
+        _hardware_applied_voltage = _standby_voltage
+        _hardware_applied_gain = _standby_gain
         if _curv_module is not None:
             _curv_module._current_voltage = _standby_voltage
             _curv_module.gain_analog_db = _standby_gain
@@ -1561,18 +1607,34 @@ def _start_native_mqtt_listener() -> None:
                                     payload_obj = json.loads(payload_str)
                                     ctrl = payload_obj.get("control")
                                     val = payload_obj.get("value")
-                                    diag_log("NATIVE_MQTT", f"Received command on topic '{topic}': control='{ctrl}', value={val}")
+                                    seq = int(payload_obj.get("commandSeq") or payload_obj.get("seq") or 0)
+                                    ts = float(payload_obj.get("timestamp") or payload_obj.get("ts") or 0.0)
+                                    diag_log("NATIVE_MQTT", f"Received command on topic '{topic}': control='{ctrl}', value={val}, seq={seq}")
                                     if ctrl:
-                                        execute_direct_runtime_command(ctrl, val)
-                                        curr_v = float(getattr(_curv_module, "_current_voltage", _last_confirmed_voltage) if _curv_module else _last_confirmed_voltage)
-                                        curr_g = float(getattr(_curv_module, "gain_analog_db", _last_confirmed_gain) if _curv_module else _last_confirmed_gain)
+                                        execute_direct_runtime_command(ctrl, val, seq=seq, ts=ts)
+                                        is_run = is_acquisition_running()
+                                        curr_v = float(getattr(_curv_module, "_current_voltage", _hardware_applied_voltage if is_run else _standby_voltage) if _curv_module else (_hardware_applied_voltage if is_run else _standby_voltage))
+                                        curr_g = float(getattr(_curv_module, "gain_analog_db", _hardware_applied_gain if is_run else _standby_gain) if _curv_module else (_hardware_applied_gain if is_run else _standby_gain))
                                         status_payload = json.dumps({
-                                            "status": "RUNNING" if _is_acquiring else ("FROZEN" if _is_frozen else "STOPPED"),
+                                            "status": "RUNNING" if is_run else ("FROZEN" if _is_frozen else "STOPPED"),
+                                            "is_frozen": bool(_is_frozen),
                                             "voltage": curr_v,
                                             "gain": curr_g,
+                                            "doctor_selected_voltage": float(_doctor_selected_voltage),
+                                            "doctor_selected_gain": float(_doctor_selected_gain),
+                                            "patient_received_voltage": float(_patient_received_voltage),
+                                            "patient_received_gain": float(_patient_received_gain),
+                                            "hardware_applied_voltage": float(_hardware_applied_voltage),
+                                            "hardware_applied_gain": float(_hardware_applied_gain),
+                                            "live_voltage": float(_hardware_applied_voltage if is_run else _last_confirmed_voltage),
+                                            "live_gain": float(_hardware_applied_gain if is_run else _last_confirmed_gain),
+                                            "standby_voltage": float(_standby_voltage),
+                                            "standby_gain": float(_standby_gain),
+                                            "live_hardware_update": is_run,
                                             "display": True,
                                             "control": ctrl,
                                             "value": val,
+                                            "commandSeq": seq,
                                             "source": "native-ultrasound-backend"
                                         }).encode("utf-8")
                                         stat_top_b = status_topic.encode("utf-8")
@@ -1626,6 +1688,8 @@ def get_status():
     """
     global _curv_module, _is_acquiring, _is_frozen, _is_user_stopped
     global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain, _is_reconfiguring
+    global _doctor_selected_voltage, _doctor_selected_gain, _patient_received_voltage, _patient_received_gain
+    global _hardware_applied_voltage, _hardware_applied_gain
 
     if _is_frozen:
         status_str = "FROZEN"
@@ -1639,8 +1703,8 @@ def get_status():
     is_running = (status_str == "RUNNING")
 
     if is_running:
-        voltage = float(_last_confirmed_voltage)
-        gain = float(_last_confirmed_gain)
+        voltage = float(_hardware_applied_voltage)
+        gain = float(_hardware_applied_gain)
     else:
         voltage = float(_standby_voltage)
         gain = float(_standby_gain)
@@ -1665,8 +1729,14 @@ def get_status():
         "is_frozen": bool(_is_frozen),
         "voltage": voltage,
         "gain": gain,
-        "live_voltage": float(_last_confirmed_voltage),
-        "live_gain": float(_last_confirmed_gain),
+        "doctor_selected_voltage": float(_doctor_selected_voltage),
+        "doctor_selected_gain": float(_doctor_selected_gain),
+        "patient_received_voltage": float(_patient_received_voltage),
+        "patient_received_gain": float(_patient_received_gain),
+        "hardware_applied_voltage": float(_hardware_applied_voltage if is_running else _standby_voltage),
+        "hardware_applied_gain": float(_hardware_applied_gain if is_running else _standby_gain),
+        "live_voltage": float(_hardware_applied_voltage if is_running else _last_confirmed_voltage),
+        "live_gain": float(_hardware_applied_gain if is_running else _last_confirmed_gain),
         "standby_voltage": float(_standby_voltage),
         "standby_gain": float(_standby_gain),
         "live_hardware_update": is_running,
@@ -1678,6 +1748,8 @@ def get_status():
 @app.route("/api/remote-input", methods=["POST", "OPTIONS"])
 def remote_input():
     global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain, _curv_module
+    global _doctor_selected_voltage, _doctor_selected_gain, _patient_received_voltage, _patient_received_gain
+    global _hardware_applied_voltage, _hardware_applied_gain
     if request.method == "OPTIONS":
         return Response(status=204)
     try:
@@ -1690,10 +1762,12 @@ def remote_input():
         if "control" in data:
             cmd = data.get("control")
             val = data.get("value")
+            seq = int(data.get("commandSeq") or data.get("seq") or 0)
+            ts = float(data.get("timestamp") or data.get("ts") or 0.0)
             
             is_running = is_acquisition_running()
-            success = execute_direct_runtime_command(cmd, val)
-            diag_log("HTTP_COMPLETE", f"Executed command '{cmd}'={val}: result={success}")
+            success = execute_direct_runtime_command(cmd, val, seq=seq, ts=ts)
+            diag_log("HTTP_COMPLETE", f"Executed command '{cmd}'={val} (seq={seq}): result={success}")
             
             if cmd in ["voltage", "gain"]:
                 if is_running:
@@ -1707,8 +1781,8 @@ def remote_input():
                             "message": f"Hardware verification failed for live update '{cmd}'={val}"
                         }), 500
 
-                    curr_v = float(_last_confirmed_voltage)
-                    curr_g = float(_last_confirmed_gain)
+                    curr_v = float(_hardware_applied_voltage)
+                    curr_g = float(_hardware_applied_gain)
                     if _curv_module is not None:
                         curr_v = float(getattr(_curv_module, "_current_voltage", curr_v))
                         curr_g = float(getattr(_curv_module, "gain_analog_db", curr_g))
@@ -1719,10 +1793,17 @@ def remote_input():
                         "live_hardware_update": True,
                         "verified": True,
                         "mode": "live",
+                        "doctor_selected_voltage": float(_doctor_selected_voltage),
+                        "doctor_selected_gain": float(_doctor_selected_gain),
+                        "patient_received_voltage": float(_patient_received_voltage),
+                        "patient_received_gain": float(_patient_received_gain),
+                        "hardware_applied_voltage": float(_hardware_applied_voltage),
+                        "hardware_applied_gain": float(_hardware_applied_gain),
                         "voltage": curr_v,
                         "gain": curr_g,
                         "control": cmd,
-                        "value": val
+                        "value": val,
+                        "commandSeq": seq
                     }), 200
                 else:
                     # Preserved in standby configuration; DO NOT claim live hardware update occurred
@@ -1741,14 +1822,21 @@ def remote_input():
                         "message": "Preserved in standby configuration; live hardware update will apply during active acquisition.",
                         "standby_voltage": float(_standby_voltage),
                         "standby_gain": float(_standby_gain),
+                        "doctor_selected_voltage": float(_doctor_selected_voltage),
+                        "doctor_selected_gain": float(_doctor_selected_gain),
+                        "patient_received_voltage": float(_patient_received_voltage),
+                        "patient_received_gain": float(_patient_received_gain),
+                        "hardware_applied_voltage": float(_hardware_applied_voltage),
+                        "hardware_applied_gain": float(_hardware_applied_gain),
                         "voltage": curr_v,
                         "gain": curr_g,
                         "control": cmd,
-                        "value": val
+                        "value": val,
+                        "commandSeq": seq
                     }), 200
 
-            curr_v = float(_last_confirmed_voltage if is_running else _standby_voltage)
-            curr_g = float(_last_confirmed_gain if is_running else _standby_gain)
+            curr_v = float(_hardware_applied_voltage if is_running else _standby_voltage)
+            curr_g = float(_hardware_applied_gain if is_running else _standby_gain)
             if _curv_module is not None:
                 curr_v = float(getattr(_curv_module, "_current_voltage", curr_v))
                 curr_g = float(getattr(_curv_module, "gain_analog_db", curr_g))
@@ -1756,10 +1844,17 @@ def remote_input():
             return jsonify({
                 "status": "success" if success else "error",
                 "executed": success,
+                "doctor_selected_voltage": float(_doctor_selected_voltage),
+                "doctor_selected_gain": float(_doctor_selected_gain),
+                "patient_received_voltage": float(_patient_received_voltage),
+                "patient_received_gain": float(_patient_received_gain),
+                "hardware_applied_voltage": float(_hardware_applied_voltage),
+                "hardware_applied_gain": float(_hardware_applied_gain),
                 "voltage": curr_v,
                 "gain": curr_g,
                 "control": cmd,
-                "value": val
+                "value": val,
+                "commandSeq": seq
             }), (200 if success else 500)
 
         event_type = data.get("type")

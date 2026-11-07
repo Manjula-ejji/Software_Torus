@@ -332,9 +332,16 @@ def set_voltage(val: float) -> bool:
 
 def set_gain(val: float) -> bool:
     """Sets analog gain and dispatches to control handler."""
-    global gain_analog_db
+    global gain_analog_db, seq
     val = float(val)
     gain_analog_db = val
+    if "seq" in globals() and hasattr(seq, "scans"):
+        try:
+            for s in seq.scans:
+                if hasattr(s, "set_gain_analog"):
+                    s.set_gain_analog(val)
+        except Exception:
+            pass
     try:
         import backend.ultrasound as us
         return us.handle_control_command("gain", val)

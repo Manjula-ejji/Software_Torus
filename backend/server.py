@@ -121,21 +121,21 @@ ULTRASOUND_SERVICE_URL = os.environ.get("ULTRASOUND_SERVICE_URL", "http://127.0.
 
 
 _cached_ultrasound_state = {
-
     "status": "STOPPED",
-
     "is_frozen": False,
-
     "voltage": 50.0,
-
     "gain": 40.0,
-
+    "doctor_selected_voltage": 50.0,
+    "doctor_selected_gain": 40.0,
+    "patient_received_voltage": 50.0,
+    "patient_received_gain": 40.0,
+    "hardware_applied_voltage": 50.0,
+    "hardware_applied_gain": 40.0,
+    "standby_voltage": 50.0,
+    "standby_gain": 40.0,
     "display": True,
-
     "tgc_enabled": False,
-
     "tgc_sliders": [50, 12, 3, 77, 90, 30]
-
 }
 
 
@@ -332,8 +332,11 @@ def api_remote_input():
     if ctrl == "voltage" and val is not None:
         try:
             val_f = float(val)
+            _cached_ultrasound_state["doctor_selected_voltage"] = val_f
+            _cached_ultrasound_state["patient_received_voltage"] = val_f
             _cached_ultrasound_state["standby_voltage"] = val_f
             if is_running:
+                _cached_ultrasound_state["hardware_applied_voltage"] = val_f
                 _cached_ultrasound_state["voltage"] = val_f
         except (ValueError, TypeError):
             pass
@@ -341,8 +344,11 @@ def api_remote_input():
     elif ctrl == "gain" and val is not None:
         try:
             val_f = float(val)
+            _cached_ultrasound_state["doctor_selected_gain"] = val_f
+            _cached_ultrasound_state["patient_received_gain"] = val_f
             _cached_ultrasound_state["standby_gain"] = val_f
             if is_running:
+                _cached_ultrasound_state["hardware_applied_gain"] = val_f
                 _cached_ultrasound_state["gain"] = val_f
         except (ValueError, TypeError):
             pass
@@ -352,8 +358,10 @@ def api_remote_input():
         _cached_ultrasound_state["is_frozen"] = False
         if "standby_voltage" in _cached_ultrasound_state:
             _cached_ultrasound_state["voltage"] = _cached_ultrasound_state["standby_voltage"]
+            _cached_ultrasound_state["hardware_applied_voltage"] = _cached_ultrasound_state["standby_voltage"]
         if "standby_gain" in _cached_ultrasound_state:
             _cached_ultrasound_state["gain"] = _cached_ultrasound_state["standby_gain"]
+            _cached_ultrasound_state["hardware_applied_gain"] = _cached_ultrasound_state["standby_gain"]
 
     elif ctrl == "stop":
         _cached_ultrasound_state["status"] = "STOPPED"
@@ -376,19 +384,7 @@ def api_remote_input():
             raw_data = resp.read()
             data = json.loads(raw_data.decode("utf-8"))
             if isinstance(data, dict):
-                if "voltage" in data:
-                    _cached_ultrasound_state["voltage"] = data["voltage"]
-                if "gain" in data:
-                    _cached_ultrasound_state["gain"] = data["gain"]
-                if "status" in data:
-                    _cached_ultrasound_state["status"] = data["status"]
-                if "standby_voltage" in data:
-                    _cached_ultrasound_state["standby_voltage"] = data["standby_voltage"]
-                if "standby_gain" in data:
-                    _cached_ultrasound_state["standby_gain"] = data["standby_gain"]
-                if "live_hardware_update" in data:
-                    _cached_ultrasound_state["live_hardware_update"] = data["live_hardware_update"]
-
+                _cached_ultrasound_state.update(data)
                 now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 if data.get("live_hardware_update"):
                     print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")
@@ -413,6 +409,12 @@ def api_remote_input():
                 "transport": "mqtt",
                 "voltage": _cached_ultrasound_state.get("voltage", 50.0),
                 "gain": _cached_ultrasound_state.get("gain", 40.0),
+                "doctor_selected_voltage": _cached_ultrasound_state.get("doctor_selected_voltage", 50.0),
+                "doctor_selected_gain": _cached_ultrasound_state.get("doctor_selected_gain", 40.0),
+                "patient_received_voltage": _cached_ultrasound_state.get("patient_received_voltage", 50.0),
+                "patient_received_gain": _cached_ultrasound_state.get("patient_received_gain", 40.0),
+                "hardware_applied_voltage": _cached_ultrasound_state.get("hardware_applied_voltage", 50.0),
+                "hardware_applied_gain": _cached_ultrasound_state.get("hardware_applied_gain", 40.0),
                 "control": ctrl,
                 "value": val
             })
@@ -427,6 +429,12 @@ def api_remote_input():
                 "transport": "mqtt",
                 "standby_voltage": _cached_ultrasound_state.get("standby_voltage", _cached_ultrasound_state.get("voltage", 50.0)),
                 "standby_gain": _cached_ultrasound_state.get("standby_gain", _cached_ultrasound_state.get("gain", 40.0)),
+                "doctor_selected_voltage": _cached_ultrasound_state.get("doctor_selected_voltage", 50.0),
+                "doctor_selected_gain": _cached_ultrasound_state.get("doctor_selected_gain", 40.0),
+                "patient_received_voltage": _cached_ultrasound_state.get("patient_received_voltage", 50.0),
+                "patient_received_gain": _cached_ultrasound_state.get("patient_received_gain", 40.0),
+                "hardware_applied_voltage": _cached_ultrasound_state.get("hardware_applied_voltage", 50.0),
+                "hardware_applied_gain": _cached_ultrasound_state.get("hardware_applied_gain", 40.0),
                 "voltage": _cached_ultrasound_state.get("voltage", 50.0),
                 "gain": _cached_ultrasound_state.get("gain", 40.0),
                 "control": ctrl,
