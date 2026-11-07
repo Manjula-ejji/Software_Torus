@@ -928,11 +928,6 @@ def execute_direct_runtime_command(name: str, value: any) -> bool:
         except Exception as exc:
             print(f"[Direct OSTB API] Error during direct invocation: {exc}")
 
-    # Client-side operations that are acknowledged by the backend
-    if name in ["capture", "record", "rotate_image", "reset_position"]:
-        print(f"[Control Command Pipeline] Acknowledged stream operation: '{name}'={value}")
-        return True
-
     # 2. Also dispatch to Socket and GUI (PostMessage) so OpenSonics UI widgets update
     gui_result = handle_control_command(name, value)
     return handled_direct or gui_result

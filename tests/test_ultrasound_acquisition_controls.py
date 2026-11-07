@@ -40,11 +40,6 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
             ("tgc_slider_6", 30),
             ("save_setup", True),
             ("advanced", True),
-            ("capture", True),
-            ("record", True),
-            ("record", False),
-            ("rotate_image", 90),
-            ("reset_position", True),
         ]
 
         for cmd, val in test_commands:
@@ -67,10 +62,6 @@ class TestUltrasoundAcquisitionControls(unittest.TestCase):
             {"control": "tgc_slider_6", "value": 40},
             {"control": "save_setup", "value": True},
             {"control": "advanced", "value": True},
-            {"control": "capture", "value": True},
-            {"control": "record", "value": True},
-            {"control": "rotate_image", "value": 90},
-            {"control": "reset_position", "value": True},
         ]
 
         for payload in test_payloads:
