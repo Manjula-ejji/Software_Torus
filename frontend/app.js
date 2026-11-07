@@ -3984,11 +3984,9 @@ window.isCurrentPatientRole = isCurrentPatientRole;
 
 
 
-// Controls visibility of examination actions (Start Scan & Generate Report) based on active call connection
+// Controls visibility of examination actions (Generate Report) based on active call connection
 
 function updateCallExaminationControls(isConnected) {
-
-  const startScanBtn = document.getElementById("startScanBtn");
 
   const generateReportBtn = document.getElementById("generateReportBtn");
 
@@ -4040,9 +4038,7 @@ function updateCallExaminationControls(isConnected) {
 
     if (isDoc) {
 
-      // Doctor: Both Start Scan and Generate Report are visible and functional
-
-      if (startScanBtn) startScanBtn.style.display = "inline-flex";
+      // Doctor: Generate Report is visible and functional
 
       if (generateReportBtn) generateReportBtn.style.display = "inline-flex";
 
@@ -4054,15 +4050,11 @@ function updateCallExaminationControls(isConnected) {
 
       if (generateReportBtn) generateReportBtn.style.display = "none";
 
-      if (startScanBtn) startScanBtn.style.display = isPat ? "inline-flex" : "none";
-
-      if (controlsDivider) controlsDivider.style.display = isPat ? "block" : "none";
+      if (controlsDivider) controlsDivider.style.display = "none";
 
     }
 
   } else {
-
-    if (startScanBtn) startScanBtn.style.display = "none";
 
     if (generateReportBtn) generateReportBtn.style.display = "none";
 
@@ -4762,43 +4754,7 @@ function updateUltrasoundScanUI(status) {
 
 
 
-  // 1. Update Start Scan / Stop Scan button next to Join Call
-
-  const startScanBtn = document.getElementById("startScanBtn");
-
-  if (startScanBtn) {
-
-    if (isRunningState) {
-
-      startScanBtn.textContent = "Stop Scan";
-
-      startScanBtn.classList.add("scanning");
-
-      startScanBtn.title = "Stop Ultrasound Scanning";
-
-    } else if (isFrozenState) {
-
-      startScanBtn.textContent = "Resume Scan";
-
-      startScanBtn.classList.remove("scanning");
-
-      startScanBtn.title = "Resume Ultrasound Scanning";
-
-    } else {
-
-      startScanBtn.textContent = "Start Scan";
-
-      startScanBtn.classList.remove("scanning");
-
-      startScanBtn.title = "Start Ultrasound Scanning";
-
-    }
-
-  }
-
-
-
-  // 2. Update Modal Acquisition Start/Stop button
+  // Update Modal Acquisition Start/Stop button
 
   if (controlStartBtn) {
 
@@ -4933,32 +4889,6 @@ function toggleUltrasoundScan(forceState = null) {
 }
 
 window.toggleUltrasoundScan = toggleUltrasoundScan;
-
-
-
-// Bind Start Scan button in the bottom floating controller bar next to Join Call
-
-const startScanBtn = document.getElementById("startScanBtn");
-
-if (startScanBtn) {
-
-  startScanBtn.addEventListener("click", () => {
-
-    if (isFrozenState) {
-
-      updateUltrasoundScanUI("RUNNING");
-
-      sendControlCommand("resume", true);
-
-    } else {
-
-      toggleUltrasoundScan();
-
-    }
-
-  });
-
-}
 
 
 
