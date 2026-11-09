@@ -506,8 +506,13 @@ function sendControlCommand(name, value) {
     })
     .then(data => {
       if (!data) return;
+      // Stale response guard: discard responses for older sequence numbers
+      if (data.commandSeq !== undefined && data.commandSeq < _torusCommandSeq) {
+        console.log(`[Doctor UI] Discarding stale response for seq ${data.commandSeq} < latest ${_torusCommandSeq}`);
+        return;
+      }
       if (data.status === "success" || data.executed === true) {
-        if (data.voltage !== undefined && name === "voltage" && (Date.now() - _lastUserVoltageChangeTime > 2500)) {
+        if (data.voltage !== undefined && name === "voltage" && (Date.now() - _lastUserVoltageChangeTime > 3000)) {
           const vInput = document.getElementById("voltageValueInput");
           const vSlider = document.getElementById("voltageSlider");
           if (vInput && document.activeElement !== vInput) vInput.value = data.voltage;
@@ -516,7 +521,7 @@ function sendControlCommand(name, value) {
             if (typeof updateSliderBackground === "function") updateSliderBackground(vSlider);
           }
         }
-        if (data.gain !== undefined && name === "gain" && (Date.now() - _lastUserGainChangeTime > 2500)) {
+        if (data.gain !== undefined && name === "gain" && (Date.now() - _lastUserGainChangeTime > 3000)) {
           const gInput = document.getElementById("gainValueInput");
           const gSlider = document.getElementById("gainSlider");
           if (gInput && document.activeElement !== gInput) gInput.value = data.gain;
@@ -5552,19 +5557,25 @@ if (voltageSlider) {
 if (voltageValueInput) {
   let _vSubmitting = false;
   voltageValueInput.addEventListener("change", () => {
+    if (_vSubmitting) return;
+    _vSubmitting = true;
     applyVoltageUpdate(voltageValueInput.value, true);
+    setTimeout(() => { _vSubmitting = false; }, 300);
   });
   voltageValueInput.addEventListener("blur", () => {
-    if (_vSubmitting) { _vSubmitting = false; return; }
+    if (_vSubmitting) return;
+    _vSubmitting = true;
     applyVoltageUpdate(voltageValueInput.value, true);
+    setTimeout(() => { _vSubmitting = false; }, 300);
   });
   voltageValueInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
+      if (_vSubmitting) return;
       _vSubmitting = true;
       applyVoltageUpdate(voltageValueInput.value, true);
       voltageValueInput.blur();
-      setTimeout(() => { _vSubmitting = false; }, 200);
+      setTimeout(() => { _vSubmitting = false; }, 300);
     }
   });
 }
@@ -5624,19 +5635,25 @@ if (gainSlider) {
 if (gainValueInput) {
   let _gSubmitting = false;
   gainValueInput.addEventListener("change", () => {
+    if (_gSubmitting) return;
+    _gSubmitting = true;
     applyGainUpdate(gainValueInput.value, true);
+    setTimeout(() => { _gSubmitting = false; }, 300);
   });
   gainValueInput.addEventListener("blur", () => {
-    if (_gSubmitting) { _gSubmitting = false; return; }
+    if (_gSubmitting) return;
+    _gSubmitting = true;
     applyGainUpdate(gainValueInput.value, true);
+    setTimeout(() => { _gSubmitting = false; }, 300);
   });
   gainValueInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
+      if (_gSubmitting) return;
       _gSubmitting = true;
       applyGainUpdate(gainValueInput.value, true);
       gainValueInput.blur();
-      setTimeout(() => { _gSubmitting = false; }, 200);
+      setTimeout(() => { _gSubmitting = false; }, 300);
     }
   });
 }

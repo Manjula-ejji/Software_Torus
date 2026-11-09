@@ -386,7 +386,12 @@ def api_remote_input():
             raw_data = resp.read()
             data = json.loads(raw_data.decode("utf-8"))
             if isinstance(data, dict):
-                _cached_ultrasound_state.update(data)
+                if ctrl in ["voltage", "gain"]:
+                    # Never allow parameter updates to alter acquisition status
+                    data_clean = {k: v for k, v in data.items() if k not in ["status", "is_frozen"]}
+                    _cached_ultrasound_state.update(data_clean)
+                else:
+                    _cached_ultrasound_state.update(data)
                 now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 if data.get("live_hardware_update"):
                     print(f"[DIAGNOSTIC {now_iso}] [SERVER_API] Confirmed live by ultrasound service: voltage={_cached_ultrasound_state.get('voltage')}V, gain={_cached_ultrasound_state.get('gain')}dB")

@@ -303,10 +303,19 @@ print("Done.")
 
 def get_current_status():
     """Returns current hardware configuration state for remote control/UI synchronization."""
+    try:
+        import backend.ultrasound as us
+        is_running = us.is_acquisition_running()
+    except Exception:
+        is_running = True
+
+    v = float(_current_voltage if "_current_voltage" in globals() else (getattr(waveform, "_voltage", 50.0) if "waveform" in globals() and hasattr(waveform, "_voltage") else 50.0))
+    g = float(gain_analog_db if "gain_analog_db" in globals() else 40.0)
+
     return {
-        "status": "RUNNING",
-        "voltage": float(getattr(waveform, "_voltage", 50.0) if hasattr(waveform, "_voltage") else 50.0),
-        "gain": float(gain_analog_db),
+        "status": "RUNNING" if is_running else "STOPPED",
+        "voltage": v,
+        "gain": g,
         "display": True,
         "tgc_enabled": False,
         "tgc_sliders": [50, 12, 3, 77, 90, 30]
@@ -314,38 +323,38 @@ def get_current_status():
 
 
 def set_voltage(val: float) -> bool:
-    """Sets ultrasound excitation voltage and dispatches to control handler."""
+    """Sets ultrasound excitation voltage directly without triggering lifecycle restarts."""
     global waveform, _current_voltage
-    val = float(val)
-    _current_voltage = val
-    if "waveform" in globals() and hasattr(waveform, "set_negative_voltage"):
-        try:
-            waveform.set_negative_voltage(val)
-        except Exception:
-            pass
     try:
-        import backend.ultrasound as us
-        return us.handle_control_command("voltage", val)
-    except Exception:
-        return True
+        val = max(0.0, min(50.0, float(val)))
+        _current_voltage = val
+        if "waveform" in globals() and hasattr(waveform, "set_negative_voltage"):
+            try:
+                waveform.set_negative_voltage(val)
+            except Exception:
+                pass
+        try:
+            import backend.ultrasound as us
+            return us.apply_runtime_voltage_and_gain(new_voltage=val)
+        except Exception:
+            return True
+    except Exception as e:
+        print(f"[curv_proper_code] set_voltage error: {e}")
+        return False
 
 
 def set_gain(val: float) -> bool:
-    """Sets analog gain and dispatches to control handler."""
+    """Sets analog gain directly without triggering lifecycle restarts."""
     global gain_analog_db
-    global gain_analog_db, seq
-    val = float(val)
-    gain_analog_db = val
-    if "seq" in globals() and hasattr(seq, "scans"):
-        try:
-            for s in seq.scans:
-                if hasattr(s, "set_gain_analog"):
-                    s.set_gain_analog(val)
-        except Exception:
-            pass
     try:
-        import backend.ultrasound as us
-        return us.handle_control_command("gain", val)
-    except Exception:
-        return True
+        val = max(0.0, min(80.0, float(val)))
+        gain_analog_db = val
+        try:
+            import backend.ultrasound as us
+            return us.apply_runtime_voltage_and_gain(new_gain=val)
+        except Exception:
+            return True
+    except Exception as e:
+        print(f"[curv_proper_code] set_gain error: {e}")
+        return False
 
