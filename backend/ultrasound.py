@@ -84,13 +84,13 @@ def _load_opensonics_env():
 _load_opensonics_env()
 
 # -------------------- USER CONFIG --------------------
-APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "91ce57cb23cb4b50915e8ff8a8d93a6d"))
-if not APP_ID or APP_ID in ["1f40918151a84a3d9dc3ebd7f1f47706", "f320d3475b6d4b70ba512b06d09849d7", "73853929619b4c61a6752f4474b6f75c"]:
-    APP_ID = "91ce57cb23cb4b50915e8ff8a8d93a6d"
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "de0bd51a752b4605a2f18365e0b1ff0f"))
+if not APP_ID or APP_ID in ["1f40918151a84a3d9dc3ebd7f1f47706", "f320d3475b6d4b70ba512b06d09849d7", "73853929619b4c61a6752f4474b6f75c", "91ce57cb23cb4b50915e8ff8a8d93a6d"]:
+    APP_ID = "de0bd51a752b4605a2f18365e0b1ff0f"
 
-TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYPDIkf23/6/GTVGPE/ZzvQtfCSV8+3yqtChbpyV5+YxkblEFBkvD5FRT8+QkI+PkJJMkUwNLQ9NUi7Q0i0SLFEvjRLMUy/3vshoCGRlapEuYGBkgEMRnZSjJLyotZmAAAITsIDs="))
-if not TOKEN or "007eJxTYDh76lk" in TOKEN or "007eJxTYPB48" in TOKEN or "007eJxTYDhauf" in TOKEN:
-    TOKEN = "007eJxTYPDIkf23/6/GTVGPE/ZzvQtfCSV8+3yqtChbpyV5+YxkblEFBkvD5FRT8+QkI+PkJJMkUwNLQ9NUi7Q0i0SLFEvjRLMUy/3vshoCGRlapEuYGBkgEMRnZSjJLyotZmAAAITsIDs="
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYLDMfdnFmmY7791yQZOVjdmbvT6bb9ynn5xlqq/WLMgSPFmBISXVICnF1DDR3NQoycTMwDTRKM3QwtjMFChsmJZmkCZh+TGrIZCR4UCJDCsjAwSC+KwMJflFpcUMDADADh1z"))
+if not TOKEN or "007eJxTYDh76lk" in TOKEN or "007eJxTYPB48" in TOKEN or "007eJxTYDhauf" in TOKEN or "007eJxTYPDIkf23" in TOKEN:
+    TOKEN = "007eJxTYLDMfdnFmmY7791yQZOVjdmbvT6bb9ynn5xlqq/WLMgSPFmBISXVICnF1DDR3NQoycTMwDTRKM3QwtjMFChsmJZmkCZh+TGrIZCR4UCJDCsjAwSC+KwMJflFpcUMDADADh1z"
 CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
 UID = int(os.environ.get("AGORA_UID", 5001))
 
@@ -1493,9 +1493,10 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "91ce57cb23cb4b50915e8ff8a8d93a6d")[:8]
+    clean_app_id = (APP_ID or "de0bd51a752b4605a2f18365e0b1ff0f")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
+        f"{CHANNEL}-control-de0bd51a",
         f"{CHANNEL}-control-91ce57cb",
         f"{CHANNEL}-control-1f409181",
         f"{CHANNEL}-control-f320d347",

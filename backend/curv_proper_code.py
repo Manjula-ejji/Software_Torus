@@ -332,6 +332,7 @@ def set_voltage(val: float) -> bool:
 
 def set_gain(val: float) -> bool:
     """Sets analog gain and dispatches to control handler."""
+    global gain_analog_db
     global gain_analog_db, seq
     val = float(val)
     gain_analog_db = val
@@ -347,4 +348,4 @@ def set_gain(val: float) -> bool:
         return us.handle_control_command("gain", val)
     except Exception:
         return True
-
+
