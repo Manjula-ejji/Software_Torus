@@ -2696,20 +2696,48 @@ body[data-role="viewer"] #settings-uid-wrapper {
 .tgc-range-slider {
   -webkit-appearance: slider-vertical;
   appearance: slider-vertical;
-  width: 12px;
+  width: 10px;
   height: 175px;
   padding: 0;
   background: #e2e8f0;
   border: none;
   box-shadow: none;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 5px;
   outline: none;
+  transform: rotate(180deg);
 }
 
 .tgc-range-slider::-webkit-slider-runnable-track {
-  width: 12px;
-  border-radius: 6px;
+  width: 10px;
+  border-radius: 5px;
+}
+
+.tgc-range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.tgc-range-slider::-moz-range-track {
+  width: 10px;
+  border-radius: 5px;
+}
+
+.tgc-range-slider::-moz-range-thumb {
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
 }
 
 .display-toggle-row {
