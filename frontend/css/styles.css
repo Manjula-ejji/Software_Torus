@@ -2695,12 +2695,12 @@ body[data-role="viewer"] #settings-uid-wrapper {
   align-items: center;
 }
 
-/* CSS vertical slider input (0 at bottom, 100 at top) */
+/* CSS vertical slider input (Top-to-Bottom: 0 at top, 100 at bottom) */
 .tgc-range-slider {
   -webkit-appearance: none;
   appearance: none;
   writing-mode: vertical-lr;
-  direction: rtl;
+  direction: ltr;
   width: 5px;
   height: 175px;
   padding: 0;

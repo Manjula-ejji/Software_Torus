@@ -393,6 +393,8 @@ _last_confirmed_voltage = 50.0
 _last_confirmed_gain = 40.0
 _standby_voltage = 50.0
 _standby_gain = 40.0
+_tgc_enabled = False
+_tgc_sliders = [50, 12, 3, 77, 90, 30]
 _last_processed_command = {}  # {ctrl: (val_float, timestamp, local_time)}
 
 
@@ -905,11 +907,12 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
     global _doctor_selected_voltage, _doctor_selected_gain
     global _patient_received_voltage, _patient_received_gain
     global _hardware_applied_voltage, _hardware_applied_gain
+    global _tgc_enabled, _tgc_sliders
     global _last_processed_command
 
     now_time = time.time()
     # Deduplication and stale check for parameter commands
-    if name in ["voltage", "gain"]:
+    if name in ["voltage", "gain"] or (isinstance(name, str) and name.startswith("tgc_slider_")):
         try:
             val_f = float(value)
         except (ValueError, TypeError):
@@ -972,6 +975,45 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
             handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
         # CRITICAL: Return immediately! Never call handle_control_command which sends simulated clicks!
         return handled_direct
+
+    elif name == "tgc_toggle":
+        _tgc_enabled = bool(value)
+        print(f"[Direct OSTB API] TGC enabled -> {_tgc_enabled}")
+        if _global_ostb_runtime is not None:
+            for method in ["set_tgc_enabled", "enable_tgc"]:
+                if hasattr(_global_ostb_runtime, method):
+                    try:
+                        getattr(_global_ostb_runtime, method)(_tgc_enabled)
+                        handled_direct = True
+                        break
+                    except Exception:
+                        pass
+        _apply_in_process_qt_parameter("tgc_toggle", 1.0 if _tgc_enabled else 0.0)
+        return handle_control_command("tgc_toggle", _tgc_enabled) or handled_direct
+
+    elif isinstance(name, str) and name.startswith("tgc_slider_"):
+        try:
+            slider_idx = int(name.split("_")[-1]) - 1
+            if not (0 <= slider_idx < 6):
+                return False
+            val_int = int(round(max(0.0, min(100.0, float(value)))))
+        except (ValueError, TypeError):
+            return False
+
+        # Preserve depth-zone array order (index 0 = Zone 1 shallow .. index 5 = Zone 6 deep)
+        _tgc_sliders[slider_idx] = val_int
+        print(f"[Direct OSTB API] TGC zone {slider_idx + 1} set -> {val_int} (zones={_tgc_sliders})")
+        if _global_ostb_runtime is not None:
+            for method in ["set_tgc", "set_tgc_curve", "update_tgc"]:
+                if hasattr(_global_ostb_runtime, method):
+                    try:
+                        getattr(_global_ostb_runtime, method)(list(_tgc_sliders))
+                        handled_direct = True
+                        break
+                    except Exception:
+                        pass
+        _apply_in_process_qt_parameter(name, float(val_int))
+        return handle_control_command(name, val_int) or handled_direct
 
     # 1. Direct Python Runtime / OSTB Configuration API
     if name == "start":
@@ -1099,7 +1141,7 @@ def handle_control_command(name: str, value: any) -> bool:
     - Analog Gain Slider: y_pct=0.58, x_pct = 0.12 + (val / 80.0) * 0.26
     - Display Toggle: x_pct=0.64, y_pct=0.70
     - TGC Toggle: x_pct=0.64, y_pct=0.18
-    - TGC Sliders 1-6: x_pct = 0.54 + (slider_idx * 0.07), y_pct = 0.62 - (val / 100.0) * 0.34
+    - TGC Sliders 1-6 (Top-to-Bottom 0->100): x_pct = 0.54 + (slider_idx * 0.07), y_pct = 0.28 + (val / 100.0) * 0.34
     - Save Setup Button: x_pct=0.62, y_pct=0.83
     - Advanced Button: x_pct=0.84, y_pct=0.83
     """
@@ -1210,13 +1252,18 @@ def handle_control_command(name: str, value: any) -> bool:
     elif name == "display":
         x_pct, y_pct = 0.64, 0.70
     elif name == "tgc_toggle":
+        globals()["_tgc_enabled"] = bool(value)
         x_pct, y_pct = 0.64, 0.18
     elif name.startswith("tgc_slider_"):
         try:
             slider_idx = int(name.split("_")[-1]) - 1
+            if not (0 <= slider_idx < 6):
+                return False
             val = max(0.0, min(100.0, float(value)))
+            globals()["_tgc_sliders"][slider_idx] = int(round(val))
             x_pct = 0.54 + (slider_idx * 0.07)
-            y_pct = 0.62 - (val / 100.0) * 0.34
+            # Top-to-Bottom Qt TGC slider orientation: 0 at top (0.28), 100 at bottom (0.62)
+            y_pct = 0.28 + (val / 100.0) * 0.34
         except ValueError:
             return False
     elif name == "save_setup":
@@ -1770,6 +1817,7 @@ def get_status():
     global _last_confirmed_voltage, _last_confirmed_gain, _standby_voltage, _standby_gain, _is_reconfiguring
     global _doctor_selected_voltage, _doctor_selected_gain, _patient_received_voltage, _patient_received_gain
     global _hardware_applied_voltage, _hardware_applied_gain
+    global _tgc_enabled, _tgc_sliders
 
     if _is_frozen:
         status_str = "FROZEN"
@@ -1790,8 +1838,8 @@ def get_status():
         gain = float(_standby_gain)
 
     display_on = True
-    tgc_on = False
-    tgc_vals = [50, 12, 3, 77, 90, 30]
+    tgc_on = bool(_tgc_enabled)
+    tgc_vals = [int(round(v)) for v in _tgc_sliders]
 
     if _curv_module is not None:
         try:
@@ -1932,6 +1980,8 @@ def remote_input():
                 "hardware_applied_gain": float(_hardware_applied_gain),
                 "voltage": curr_v,
                 "gain": curr_g,
+                "tgc_enabled": bool(_tgc_enabled),
+                "tgc_sliders": [int(round(v)) for v in _tgc_sliders],
                 "control": cmd,
                 "value": val,
                 "commandSeq": seq

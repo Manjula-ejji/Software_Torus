@@ -24,6 +24,8 @@ from pathlib import Path
 
 import datetime
 
+import threading
+
 from flask import Flask, request, jsonify, Response, send_from_directory
 
 
@@ -119,6 +121,9 @@ def api_health():
 ULTRASOUND_SERVICE_URL = os.environ.get("ULTRASOUND_SERVICE_URL", "http://127.0.0.1:8000")
 
 
+
+_cached_ultrasound_state_lock = threading.Lock()
+_last_control_seq_by_sender = {}
 
 _cached_ultrasound_state = {
     "status": "STOPPED",
@@ -314,6 +319,10 @@ def api_remote_input():
 
     val = payload.get("value")
 
+    sender_id = payload.get("senderId")
+
+    raw_seq = payload.get("commandSeq")
+
 
 
     now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -322,50 +331,94 @@ def api_remote_input():
 
 
 
-    # Keep server cache synchronized in real-time
-    is_running = (_cached_ultrasound_state.get("status") == "RUNNING" and not _cached_ultrasound_state.get("is_frozen"))
+    # Ignore stale out-of-order HTTP bursts from the same sender and serialize state mutation
+    is_stale_request = False
+    with _cached_ultrasound_state_lock:
+        if sender_id and raw_seq is not None and isinstance(ctrl, str):
+            try:
+                seq_int = int(raw_seq)
+                seq_key = (str(sender_id), ctrl)
+                prev_seq = _last_control_seq_by_sender.get(seq_key, -1)
+                if seq_int <= prev_seq:
+                    is_stale_request = True
+                else:
+                    _last_control_seq_by_sender[seq_key] = seq_int
+            except (ValueError, TypeError):
+                pass
 
-    if ctrl == "voltage" and val is not None:
-        try:
-            val_f = float(val)
-            _cached_ultrasound_state["doctor_selected_voltage"] = val_f
-            _cached_ultrasound_state["patient_received_voltage"] = val_f
-            _cached_ultrasound_state["standby_voltage"] = val_f
-            if is_running:
-                _cached_ultrasound_state["hardware_applied_voltage"] = val_f
-                _cached_ultrasound_state["voltage"] = val_f
-        except (ValueError, TypeError):
-            pass
+        if not is_stale_request:
+            # Keep server cache synchronized in real-time
+            is_running = (_cached_ultrasound_state.get("status") == "RUNNING" and not _cached_ultrasound_state.get("is_frozen"))
 
-    elif ctrl == "gain" and val is not None:
-        try:
-            val_f = float(val)
-            _cached_ultrasound_state["doctor_selected_gain"] = val_f
-            _cached_ultrasound_state["patient_received_gain"] = val_f
-            _cached_ultrasound_state["standby_gain"] = val_f
-            if is_running:
-                _cached_ultrasound_state["hardware_applied_gain"] = val_f
-                _cached_ultrasound_state["gain"] = val_f
-        except (ValueError, TypeError):
-            pass
+            if ctrl == "voltage" and val is not None:
+                try:
+                    val_f = float(val)
+                    _cached_ultrasound_state["doctor_selected_voltage"] = val_f
+                    _cached_ultrasound_state["patient_received_voltage"] = val_f
+                    _cached_ultrasound_state["standby_voltage"] = val_f
+                    if is_running:
+                        _cached_ultrasound_state["hardware_applied_voltage"] = val_f
+                        _cached_ultrasound_state["voltage"] = val_f
+                except (ValueError, TypeError):
+                    pass
 
-    elif ctrl in ["start", "resume"]:
-        _cached_ultrasound_state["status"] = "RUNNING"
-        _cached_ultrasound_state["is_frozen"] = False
-        if "standby_voltage" in _cached_ultrasound_state:
-            _cached_ultrasound_state["voltage"] = _cached_ultrasound_state["standby_voltage"]
-            _cached_ultrasound_state["hardware_applied_voltage"] = _cached_ultrasound_state["standby_voltage"]
-        if "standby_gain" in _cached_ultrasound_state:
-            _cached_ultrasound_state["gain"] = _cached_ultrasound_state["standby_gain"]
-            _cached_ultrasound_state["hardware_applied_gain"] = _cached_ultrasound_state["standby_gain"]
+            elif ctrl == "gain" and val is not None:
+                try:
+                    val_f = float(val)
+                    _cached_ultrasound_state["doctor_selected_gain"] = val_f
+                    _cached_ultrasound_state["patient_received_gain"] = val_f
+                    _cached_ultrasound_state["standby_gain"] = val_f
+                    if is_running:
+                        _cached_ultrasound_state["hardware_applied_gain"] = val_f
+                        _cached_ultrasound_state["gain"] = val_f
+                except (ValueError, TypeError):
+                    pass
 
-    elif ctrl == "stop":
-        _cached_ultrasound_state["status"] = "STOPPED"
-        _cached_ultrasound_state["is_frozen"] = False
+            elif ctrl in ["start", "resume"]:
+                _cached_ultrasound_state["status"] = "RUNNING"
+                _cached_ultrasound_state["is_frozen"] = False
+                if "standby_voltage" in _cached_ultrasound_state:
+                    _cached_ultrasound_state["voltage"] = _cached_ultrasound_state["standby_voltage"]
+                    _cached_ultrasound_state["hardware_applied_voltage"] = _cached_ultrasound_state["standby_voltage"]
+                if "standby_gain" in _cached_ultrasound_state:
+                    _cached_ultrasound_state["gain"] = _cached_ultrasound_state["standby_gain"]
+                    _cached_ultrasound_state["hardware_applied_gain"] = _cached_ultrasound_state["standby_gain"]
 
-    elif ctrl == "freeze":
-        _cached_ultrasound_state["status"] = "FROZEN"
-        _cached_ultrasound_state["is_frozen"] = True
+            elif ctrl == "stop":
+                _cached_ultrasound_state["status"] = "STOPPED"
+                _cached_ultrasound_state["is_frozen"] = False
+
+            elif ctrl == "freeze":
+                _cached_ultrasound_state["status"] = "FROZEN"
+                _cached_ultrasound_state["is_frozen"] = True
+
+            elif ctrl == "tgc_toggle" and val is not None:
+                _cached_ultrasound_state["tgc_enabled"] = bool(val)
+
+            elif isinstance(ctrl, str) and ctrl.startswith("tgc_slider_") and val is not None:
+                try:
+                    idx = int(ctrl.split("_")[-1]) - 1
+                    if 0 <= idx < 6:
+                        clamped_tgc = int(round(max(0.0, min(100.0, float(val)))))
+                        sliders = list(_cached_ultrasound_state.get("tgc_sliders") or [50, 12, 3, 77, 90, 30])
+                        while len(sliders) < 6:
+                            sliders.append(0)
+                        sliders[idx] = clamped_tgc
+                        _cached_ultrasound_state["tgc_sliders"] = sliders
+                except (ValueError, TypeError):
+                    pass
+
+    if is_stale_request:
+        with _cached_ultrasound_state_lock:
+            snapshot = dict(_cached_ultrasound_state)
+        return jsonify({
+            "status": "ignored_stale",
+            "executed": False,
+            "control": ctrl,
+            "value": val,
+            "tgc_enabled": bool(snapshot.get("tgc_enabled", False)),
+            "tgc_sliders": list(snapshot.get("tgc_sliders", [50, 12, 3, 77, 90, 30])),
+        }), 200
 
     try:
         import urllib.request
@@ -416,6 +469,8 @@ def api_remote_input():
                 "patient_received_gain": _cached_ultrasound_state.get("patient_received_gain", 40.0),
                 "hardware_applied_voltage": _cached_ultrasound_state.get("hardware_applied_voltage", 50.0),
                 "hardware_applied_gain": _cached_ultrasound_state.get("hardware_applied_gain", 40.0),
+                "tgc_enabled": bool(_cached_ultrasound_state.get("tgc_enabled", False)),
+                "tgc_sliders": list(_cached_ultrasound_state.get("tgc_sliders", [50, 12, 3, 77, 90, 30])),
                 "control": ctrl,
                 "value": val
             })
@@ -438,6 +493,8 @@ def api_remote_input():
                 "hardware_applied_gain": _cached_ultrasound_state.get("hardware_applied_gain", 40.0),
                 "voltage": _cached_ultrasound_state.get("voltage", 50.0),
                 "gain": _cached_ultrasound_state.get("gain", 40.0),
+                "tgc_enabled": bool(_cached_ultrasound_state.get("tgc_enabled", False)),
+                "tgc_sliders": list(_cached_ultrasound_state.get("tgc_sliders", [50, 12, 3, 77, 90, 30])),
                 "control": ctrl,
                 "value": val
             })

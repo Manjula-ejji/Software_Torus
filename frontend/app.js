@@ -256,6 +256,60 @@ function connectDoctorMQTT(appId, channel) {
 
             if (dToggle) dToggle.checked = Boolean(val);
 
+          } else if (ctrl === "tgc_toggle" && val !== undefined) {
+
+            const tToggle = document.getElementById("tgcToggle");
+
+            const tContainer = document.getElementById("tgcSlidersContainer");
+
+            if (tToggle && (Date.now() - (window._lastUserTgcChangeTime || 0) >= 2500)) {
+
+              tToggle.checked = Boolean(val);
+
+              if (tContainer) {
+
+                const sliders = tContainer.querySelectorAll(".tgc-range-slider");
+
+                if (tToggle.checked) {
+
+                  tContainer.classList.remove("disabled");
+
+                  sliders.forEach(s => s.disabled = false);
+
+                } else {
+
+                  tContainer.classList.add("disabled");
+
+                  sliders.forEach(s => s.disabled = true);
+
+                }
+
+              }
+
+            }
+
+          } else if (ctrl && ctrl.startsWith("tgc_slider_") && val !== undefined) {
+
+            const idx = parseInt(ctrl.split("_").pop(), 10);
+
+            if (idx >= 1 && idx <= 6 && (Date.now() - (window._lastUserTgcChangeTime || 0) >= 2500)) {
+
+              const slider = document.getElementById(`tgcSlider${idx}`);
+
+              const label = document.getElementById(`tgcVal${idx}`);
+
+              if (slider && document.activeElement !== slider) {
+
+                slider.value = val;
+
+                if (label) label.textContent = val;
+
+                if (typeof updateSliderBackground === "function") updateSliderBackground(slider);
+
+              }
+
+            }
+
           }
 
 
@@ -317,7 +371,7 @@ function connectDoctorMQTT(appId, channel) {
 
               const tContainer = document.getElementById("tgcSlidersContainer");
 
-              if (tToggle && document.activeElement !== tToggle) {
+              if (tToggle && document.activeElement !== tToggle && (Date.now() - (window._lastUserTgcChangeTime || 0) >= 2500)) {
 
                 tToggle.checked = Boolean(data.tgc_enabled);
 
@@ -353,7 +407,7 @@ function connectDoctorMQTT(appId, channel) {
 
                 const label = document.getElementById(`tgcVal${idx + 1}`);
 
-                if (slider && document.activeElement !== slider) {
+                if (slider && document.activeElement !== slider && (Date.now() - (window._lastUserTgcChangeTime || 0) >= 2500)) {
 
                   slider.value = val;
 
@@ -5434,7 +5488,7 @@ function updateSliderBackground(slider) {
   const val = parseFloat(slider.value) || 0;
   const percent = ((val - min) / (max - min)) * 100;
   if (slider.classList.contains("tgc-range-slider")) {
-    slider.style.background = `linear-gradient(to top, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
+    slider.style.background = `linear-gradient(to bottom, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
   } else {
     slider.style.background = `linear-gradient(to right, #2563eb ${percent}%, #e2e8f0 ${percent}%)`;
   }
@@ -5854,6 +5908,8 @@ if (tgcToggle && tgcSlidersContainer) {
 
   tgcToggle.addEventListener("change", () => {
 
+    window._lastUserTgcChangeTime = Date.now();
+
     const sliders = tgcSlidersContainer.querySelectorAll(".tgc-range-slider");
 
     if (tgcToggle.checked) {
@@ -5878,7 +5934,11 @@ if (tgcToggle && tgcSlidersContainer) {
 
 
 
-// Initialize TGC sliders behavior
+// Initialize TGC sliders behavior (Top-to-Bottom: 0 at top -> 100 at bottom)
+
+const _tgcThrottleTimers = {};
+const _tgcLastSendTimes = {};
+const _tgcPendingValues = {};
 
 for (let i = 1; i <= 6; i++) {
 
@@ -5888,17 +5948,64 @@ for (let i = 1; i <= 6; i++) {
 
   if (slider && label) {
 
+    const sendTgcValue = (val, immediate = false) => {
+      const clamped = Math.max(0, Math.min(100, Math.round(Number(val) || 0)));
+      const now = Date.now();
+      window._lastUserTgcChangeTime = now;
+
+      if (immediate) {
+        if (_tgcThrottleTimers[i]) {
+          clearTimeout(_tgcThrottleTimers[i]);
+          _tgcThrottleTimers[i] = null;
+        }
+        delete _tgcPendingValues[i];
+        _tgcLastSendTimes[i] = now;
+        sendControlCommand(`tgc_slider_${i}`, clamped);
+        return;
+      }
+
+      const elapsed = now - (_tgcLastSendTimes[i] || 0);
+      _tgcPendingValues[i] = clamped;
+
+      if (elapsed >= SLIDER_THROTTLE_MS) {
+        if (_tgcThrottleTimers[i]) {
+          clearTimeout(_tgcThrottleTimers[i]);
+          _tgcThrottleTimers[i] = null;
+        }
+        _tgcLastSendTimes[i] = now;
+        sendControlCommand(`tgc_slider_${i}`, clamped);
+      } else if (!_tgcThrottleTimers[i]) {
+        _tgcThrottleTimers[i] = setTimeout(() => {
+          _tgcThrottleTimers[i] = null;
+          _tgcLastSendTimes[i] = Date.now();
+          if (_tgcPendingValues[i] !== undefined) {
+            const pendingVal = _tgcPendingValues[i];
+            delete _tgcPendingValues[i];
+            sendControlCommand(`tgc_slider_${i}`, pendingVal);
+          }
+        }, SLIDER_THROTTLE_MS - elapsed);
+      }
+    };
+
     slider.addEventListener("input", () => {
+
+      window._lastUserTgcChangeTime = Date.now();
 
       label.textContent = slider.value;
 
       updateSliderBackground(slider);
 
+      sendTgcValue(slider.value, false);
+
     });
 
     slider.addEventListener("change", () => {
 
-      sendControlCommand(`tgc_slider_${i}`, slider.value);
+      label.textContent = slider.value;
+
+      updateSliderBackground(slider);
+
+      sendTgcValue(slider.value, true);
 
     });
 
