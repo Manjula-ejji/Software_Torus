@@ -12,113 +12,65 @@ if BACKEND_DIR not in sys.path:
 import server as srv  # noqa: E402
 
 
-class TestDeviceNameHeader(unittest.TestCase):
+class TestTorusSelectedDeviceHeader(unittest.TestCase):
     def setUp(self):
         self.client = srv.app.test_client()
+        self.client.post("/api/haptic-pad/session/unbind", data=json.dumps({}), content_type="application/json")
 
-    def test_live_system_device_info_returns_actual_hostname(self):
-        resp = self.client.get("/api/device-info")
-        self.assertEqual(resp.status_code, 200)
-        data = json.loads(resp.data)
-        self.assertEqual(data["status"], "ok")
-        self.assertTrue(data["device_name"])
-        self.assertNotIn(data["device_name"], ("--", "TORUS-A12", "Unknown", "Unavailable"))
-        self.assertEqual(data["device_name"], data["hostname"])
-        self.assertEqual(data["host_role"], "backend")
-        self.assertTrue(data["is_local_access"])
+    def tearDown(self):
+        self.client.post("/api/haptic-pad/session/unbind", data=json.dumps({}), content_type="application/json")
 
-    def test_dynamic_device_names_multiple_machines(self):
-        for simulated_name in ("TORUS-E18", "TORUS-E19", "LAB-IMAGING-04"):
-            with self.subTest(device=simulated_name):
-                with patch("socket.gethostname", return_value=simulated_name), \
-                     patch("socket.getfqdn", return_value=simulated_name):
-                    resp = self.client.get("/api/device-info")
-                    self.assertEqual(resp.status_code, 200)
-                    data = json.loads(resp.data)
-                    self.assertEqual(data["device_name"], simulated_name)
-                    self.assertEqual(data["hostname"], simulated_name)
-                    self.assertEqual(data["source"], "socket.gethostname")
-
-    def test_mdns_local_suffix_normalized_and_fallback_sources(self):
-        with patch("socket.gethostname", return_value="TORUS-E19.local"), \
-             patch("socket.getfqdn", return_value="TORUS-E19.local"):
-            resp = self.client.get("/api/device-info")
-            self.assertEqual(resp.status_code, 200)
-            self.assertEqual(json.loads(resp.data)["device_name"], "TORUS-E19")
-
-        # Fallback from generic socket.gethostname to platform.node
-        with patch("socket.gethostname", return_value="localhost"), \
-             patch("platform.node", return_value="TORUS-E18"), \
-             patch("socket.getfqdn", return_value="TORUS-E18"):
+    def test_unbound_device_info_returns_none_never_os_hostname(self):
+        with patch("socket.gethostname", return_value="Manjula"):
             resp = self.client.get("/api/device-info")
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
-            self.assertEqual(data["device_name"], "TORUS-E18")
-            self.assertEqual(data["source"], "platform.node")
-
-        # Fallback to environment COMPUTERNAME
-        with patch("socket.gethostname", side_effect=OSError("no host")), \
-             patch("platform.node", return_value=""), \
-             patch.dict(os.environ, {"COMPUTERNAME": "TORUS-ENV-22"}, clear=False):
-            resp = self.client.get("/api/device-info")
-            self.assertEqual(resp.status_code, 200)
-            data = json.loads(resp.data)
-            self.assertEqual(data["device_name"], "TORUS-ENV-22")
-            self.assertEqual(data["source"], "env.COMPUTERNAME")
-
-    def test_all_hostname_sources_unavailable_returns_503(self):
-        with patch("socket.gethostname", return_value=""), \
-             patch("platform.node", return_value=""), \
-             patch.dict(os.environ, {"COMPUTERNAME": "", "HOSTNAME": ""}, clear=False):
-            resp = self.client.get("/api/device-info")
-            self.assertEqual(resp.status_code, 503)
-            data = json.loads(resp.data)
-            self.assertEqual(data["status"], "error")
+            self.assertFalse(data["connected"])
+            self.assertIsNone(data["device_id"])
             self.assertIsNone(data["device_name"])
+            self.assertNotEqual(data["device_id"], "Manjula")
 
-    def test_remote_client_vs_local_access_distinction(self):
-        with patch("socket.gethostname", return_value="TORUS-E18"), \
-             patch("socket.gethostbyname_ex", return_value=("TORUS-E18", [], ["10.0.0.18"])):
-            local_resp = self.client.get("/api/device-info", environ_base={"REMOTE_ADDR": "127.0.0.1"})
-            self.assertTrue(json.loads(local_resp.data)["is_local_access"])
+            health = json.loads(self.client.get("/api/health").data)
+            self.assertNotIn("Manjula", json.dumps(health))
 
-            remote_resp = self.client.get("/api/device-info", environ_base={"REMOTE_ADDR": "192.168.1.99"})
-            remote_data = json.loads(remote_resp.data)
-            self.assertEqual(remote_data["device_name"], "TORUS-E18")
-            self.assertFalse(remote_data["is_local_access"])
-            self.assertEqual(remote_data["client_ip"], "192.168.1.99")
-            self.assertEqual(remote_data["host_role"], "backend")
+    def test_bound_session_returns_exact_torus_device_id(self):
+        for dev_id in ("TORUS-B08", "TORUS-E18", "TORUS-A12"):
+            with self.subTest(device=dev_id):
+                bind_resp = self.client.post(
+                    "/api/haptic-pad/session/bind",
+                    data=json.dumps({
+                        "session_id": f"S-{dev_id}",
+                        "doctor_id": "3001",
+                        "doctor_name": "Dr. Manjula Test",
+                        "patient_id": "P-100",
+                        "patient_name": "John Doe",
+                        "device_id": dev_id,
+                    }),
+                    content_type="application/json",
+                )
+                self.assertEqual(bind_resp.status_code, 200)
+                info = json.loads(self.client.get("/api/device-info").data)
+                self.assertTrue(info["connected"])
+                self.assertEqual(info["device_id"], dev_id)
+                self.assertEqual(info["device_name"], dev_id)
 
-            proxied_resp = self.client.get(
-                "/api/device-info",
-                environ_base={"REMOTE_ADDR": "127.0.0.1"},
-                headers={"X-Forwarded-For": "203.0.113.10"},
-            )
-            self.assertFalse(json.loads(proxied_resp.data)["is_local_access"])
-
-    def test_health_endpoint_includes_dynamic_device_name(self):
-        with patch("socket.gethostname", return_value="TORUS-E19"):
-            resp = self.client.get("/api/health")
-            self.assertEqual(resp.status_code, 200)
-            data = json.loads(resp.data)
-            self.assertEqual(data["device_name"], "TORUS-E19")
-            self.assertEqual(data["hostname"], "TORUS-E19")
-
-    def test_frontend_has_no_static_header_placeholder_or_user_agent_detection(self):
+    def test_frontend_header_defaults_to_dash_and_tracks_selected_device(self):
         with open(os.path.join(ROOT_DIR, "frontend", "index.html"), "r", encoding="utf-8") as f:
             index_html = f.read()
         with open(os.path.join(ROOT_DIR, "frontend", "app.js"), "r", encoding="utf-8") as f:
             app_js = f.read()
 
-        self.assertIn('<span id="header-device-text">Loading...</span>', index_html)
+        self.assertIn('<span id="header-device-text">--</span>', index_html)
         self.assertNotIn('<span id="header-device-text">TORUS-A12</span>', index_html)
-        self.assertNotIn('<span id="header-device-text">--</span>', index_html)
-        self.assertNotIn('<span id="header-device-text">TORUS-A12</span>', app_js)
-        self.assertNotIn('deviceId: "--"', app_js)
-        self.assertIn("/api/device-info", app_js)
-        self.assertIn("fetchTorusDeviceInfo", app_js)
-        self.assertIn("Unavailable", app_js)
-        self.assertNotIn("navigator.userAgent", app_js)
+        self.assertNotIn('<span id="header-device-text">TORUS-E18</span>', index_html)
+        self.assertNotIn('<span id="header-device-text">Loading...</span>', index_html)
+
+        self.assertIn("isValidTorusDeviceId", app_js)
+        self.assertIn("persistConnectedTorusDeviceId", app_js)
+        self.assertIn("resolveConnectedTorusDeviceId", app_js)
+        self.assertIn("renderHeaderDeviceBadge", app_js)
+        self.assertNotIn("fetchTorusDeviceInfo", app_js)
+        self.assertNotIn("get_system_device_info", open(os.path.join(BACKEND_DIR, "server.py"), encoding="utf-8").read())
 
 
 if __name__ == "__main__":

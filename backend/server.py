@@ -26,10 +26,6 @@ import datetime
 
 import threading
 
-import platform
-
-import socket
-
 from flask import Flask, request, jsonify, Response, send_from_directory
 
 
@@ -114,113 +110,38 @@ def add_cors_headers(response):
 
 # -------------------- HEALTH & STATUS CHECKS --------------------
 
-_GENERIC_HOSTNAMES = {"", "localhost", "localhost.localdomain", "127.0.0.1", "::1", "unknown", "none", "--"}
-
-
-def _extract_client_ip(req) -> tuple[str, bool]:
-    """Return (client_ip, has_forwarded_header) from Flask request."""
-    forwarded = (req.headers.get("X-Forwarded-For") or "").strip()
-    if forwarded:
-        first_ip = forwarded.split(",")[0].strip()
-        if first_ip:
-            return first_ip, True
-    return (req.remote_addr or "").strip(), False
-
-
-def get_system_device_info(client_ip: str = "", has_forwarded_header: bool = False) -> dict:
-    """Detect the actual OS hostname of the machine running the TORUS backend."""
-    candidates = [
-        ("socket.gethostname", socket.gethostname),
-        ("platform.node", platform.node),
-        ("env.COMPUTERNAME", lambda: os.environ.get("COMPUTERNAME", "")),
-        ("env.HOSTNAME", lambda: os.environ.get("HOSTNAME", "")),
-    ]
-
-    detected_name = None
-    source_used = None
-    for source_label, getter in candidates:
-        try:
-            raw_val = (getter() or "").strip()
-        except Exception:
-            raw_val = ""
-        if raw_val.lower().endswith(".local") and len(raw_val) > 6:
-            raw_val = raw_val[:-6].strip()
-        if raw_val and raw_val.lower() not in _GENERIC_HOSTNAMES:
-            detected_name = raw_val
-            source_used = source_label
-            break
-
-    try:
-        fqdn = (socket.getfqdn() or "").strip() or detected_name
-    except Exception:
-        fqdn = detected_name
-
-    is_local_access = None
-    if client_ip:
-        if client_ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1") and not has_forwarded_header:
-            is_local_access = True
-        elif not has_forwarded_header and detected_name:
-            try:
-                _, _, local_ips = socket.gethostbyname_ex(detected_name)
-                is_local_access = client_ip in local_ips
-            except Exception:
-                is_local_access = False
-        else:
-            is_local_access = False
-
-    return {
-        "device_name": detected_name,
-        "hostname": detected_name,
-        "fqdn": fqdn,
-        "source": source_used,
-        "host_role": "backend",
-        "platform": platform.system(),
-        "is_local_access": is_local_access,
-        "client_ip": client_ip or None,
-    }
-
-
 @app.route("/api/health", methods=["GET"])
 
 def api_health():
 
-    info = get_system_device_info()
-
-    return jsonify({
-        "status": "healthy",
-        "service": "TORUS Healthcare Authentication Engine",
-        "device_name": info.get("device_name"),
-        "hostname": info.get("hostname"),
-    })
+    return jsonify({"status": "healthy", "service": "TORUS Healthcare Authentication Engine"})
 
 
 @app.route("/api/device-info", methods=["GET", "OPTIONS"])
 
 def api_device_info():
 
+    """Return the currently bound TORUS device ID from active session routing (never OS host/username)."""
+
     if request.method == "OPTIONS":
 
         return Response(status=204)
 
-    client_ip, has_forwarded = _extract_client_ip(request)
+    with haptic_routing_lock:
 
-    info = get_system_device_info(client_ip=client_ip, has_forwarded_header=has_forwarded)
+        routing = dict(active_haptic_routing)
 
-    if not info.get("device_name"):
+    bound_device = str(routing.get("device_id") or "").strip() or None
 
-        return jsonify({
-            "status": "error",
-            "error": "Unable to determine backend system hostname",
-            "device_name": None,
-            "hostname": None,
-            "host_role": "backend",
-            "is_local_access": info.get("is_local_access"),
-            "client_ip": info.get("client_ip"),
-        }), 503
+    is_active = routing.get("status") == "ACTIVE" and bool(bound_device)
 
     return jsonify({
         "status": "ok",
-        **info,
+        "connected": is_active,
+        "device_id": bound_device if is_active else None,
+        "device_name": bound_device if is_active else None,
+        "session_id": routing.get("session_id") if is_active else None,
+        "source": "active_session_routing" if is_active else "none",
     })
 
 
