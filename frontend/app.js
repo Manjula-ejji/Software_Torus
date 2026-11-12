@@ -28,13 +28,13 @@ function connectDoctorMQTT(appId, channel) {
 
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
 
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "99aab120d82f444da2be022769d49d9d" : "")
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "7fdf07a2b99140589bd0881b3ef8c380" : "")
 
-    || "99aab120d82f444da2be022769d49d9d";
+    || "7fdf07a2b99140589bd0881b3ef8c380";
 
-  if (targetAppId.startsWith("f320") || targetAppId.startsWith("7385") || targetAppId.startsWith("1f40") || targetAppId.startsWith("03b5") || targetAppId.startsWith("91ce") || targetAppId.startsWith("de0b")) {
+  if (!targetAppId || targetAppId !== "7fdf07a2b99140589bd0881b3ef8c380") {
 
-    targetAppId = "99aab120d82f444da2be022769d49d9d";
+    targetAppId = "7fdf07a2b99140589bd0881b3ef8c380";
 
   }
 
@@ -57,8 +57,8 @@ function connectDoctorMQTT(appId, channel) {
   const allControlTopics = [
 
     doctorControlTopic,
-    `${targetChannel}-control-99aab120`,
-    `torus-control-99aab120`,
+    `${targetChannel}-control-7fdf07a2`,
+    `torus-control-7fdf07a2`,
     `${targetChannel}-control`
 
   ];
@@ -66,7 +66,7 @@ function connectDoctorMQTT(appId, channel) {
   const allStatusTopics = [
 
     doctorStatusTopic,
-    `${targetChannel}-status-99aab120`,
+    `${targetChannel}-status-7fdf07a2`,
     `${targetChannel}-status`
 
   ];
@@ -148,8 +148,8 @@ function connectDoctorMQTT(appId, channel) {
           const payload = pendingMqttPayloads.shift();
 
           const pubTops = Array.from(new Set([doctorControlTopic,
-            `${targetChannel}-control-99aab120`,
-            `torus-control-99aab120`,
+            `${targetChannel}-control-7fdf07a2`,
+            `torus-control-7fdf07a2`,
             `${targetChannel}-control`]));
 
           pubTops.forEach(t => doctorMqttClient.publish(t, payload));
@@ -451,7 +451,7 @@ function sendControlCommand(name, value) {
   const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
   const pubTopics = Array.from(new Set([
     doctorControlTopic,
-    `${targetChannel}-control-99aab120`,
+    `${targetChannel}-control-7fdf07a2`,
     `${targetChannel}-control`
   ])).filter(Boolean);
 
@@ -727,6 +727,8 @@ async function fetchAgoraConfiguration() {
 
   const endpoints = [
 
+    "/api/agora/config",
+
     "http://127.0.0.1:5000/api/agora/config",
 
     "http://localhost:5000/api/agora/config",
@@ -735,9 +737,7 @@ async function fetchAgoraConfiguration() {
 
     "http://127.0.0.1:3000/api/agora/config",
 
-    "http://localhost:3000/api/agora/config",
-
-    "/api/agora/config"
+    "http://localhost:3000/api/agora/config"
 
   ];
 
@@ -2813,9 +2813,9 @@ async function joinCall() {
 
 
 
-  if (!appId || appId !== "99aab120d82f444da2be022769d49d9d") {
+  if (!appId || appId !== "7fdf07a2b99140589bd0881b3ef8c380") {
 
-    appId = "99aab120d82f444da2be022769d49d9d";
+    appId = "7fdf07a2b99140589bd0881b3ef8c380";
 
     if (appIdInput) appIdInput.value = appId;
 
@@ -10346,7 +10346,7 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   // Connect Doctor MQTT
 
-  connectDoctorMQTT(appIdInput ? appIdInput.value : "99aab120d82f444da2be022769d49d9d", channelInput ? channelInput.value : "torus");
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "7fdf07a2b99140589bd0881b3ef8c380", channelInput ? channelInput.value : "torus");
 
 
 
