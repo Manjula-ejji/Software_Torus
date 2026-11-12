@@ -5045,9 +5045,9 @@ function navigateToReportGeneration() {
 
   let rawDevName = activeSession?.deviceId || sessionStorage.getItem("connectedDeviceId") || localStorage.getItem("connectedDeviceId") || "";
 
-  if (rawDevName === "TORUS-A12") rawDevName = "";
+  if (rawDevName === "TORUS-A12" || rawDevName === "--") rawDevName = "";
 
-  const deviceName = rawDevName || "--";
+  const deviceName = rawDevName || (window._torusDeviceInfo?.deviceName) || "--";
 
 
 
@@ -6398,6 +6398,18 @@ function showTorusScreen(targetId, recordHistory = true) {
     if (typeof updateLiveConsultationHapticBadge === "function") {
 
       updateLiveConsultationHapticBadge();
+
+    }
+
+    if (typeof renderHeaderDeviceBadge === "function") {
+
+      renderHeaderDeviceBadge();
+
+    }
+
+    if (typeof fetchTorusDeviceInfo === "function" && (!window._torusDeviceInfo || window._torusDeviceInfo.status === "error")) {
+
+      fetchTorusDeviceInfo();
 
     }
 
@@ -10593,7 +10605,7 @@ window.torusSessions = {
 
       patientName: "--",
 
-      deviceId: "--",
+      deviceId: "",
 
       scanType: "Abdominal",
 
@@ -20533,11 +20545,11 @@ function ensureDeviceModalInDOM() {
 
       headerBadge.className = "header-btn header-device-btn";
 
-      headerBadge.title = "Connected TORUS Device";
+      headerBadge.title = "TORUS Host Device";
 
       headerBadge.type = "button";
 
-      headerBadge.style.display = "none";
+      headerBadge.style.display = "inline-flex";
 
       headerBadge.innerHTML = `
 
@@ -20551,7 +20563,7 @@ function ensureDeviceModalInDOM() {
 
         </svg>
 
-        <span id="header-device-text">TORUS-A12</span>
+        <span id="header-device-text">Loading...</span>
 
       `;
 
@@ -21381,29 +21393,137 @@ function handleConnectSelectedDevice() {
 
 
 
+// System-detected TORUS device name state (fetched dynamically from backend /api/device-info)
+window._torusDeviceInfo = window._torusDeviceInfo || {
+  status: "loading",
+  deviceName: "",
+  hostname: "",
+  fqdn: "",
+  isLocalAccess: null,
+  clientIp: null,
+  source: null
+};
+
+function isValidTorusDeviceName(name) {
+  if (typeof name !== "string") return false;
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower === "--" || lower === "unknown" || lower === "none" || lower === "null" || lower === "undefined") {
+    return false;
+  }
+  return true;
+}
+
+function renderHeaderDeviceBadge(infoState = window._torusDeviceInfo) {
+  ensureDeviceModalInDOM();
+
+  const headerDevBadge = document.getElementById("header-device-badge");
+  const headerDevText = document.getElementById("header-device-text");
+  if (!headerDevBadge || !headerDevText) return;
+
+  headerDevBadge.style.display = "inline-flex";
+
+  if (!infoState || infoState.status === "loading") {
+    headerDevText.textContent = "Loading...";
+    headerDevBadge.title = "Detecting TORUS host device name...";
+    headerDevBadge.dataset.deviceState = "loading";
+    return;
+  }
+
+  if (infoState.status === "ready" && isValidTorusDeviceName(infoState.deviceName)) {
+    const hostName = infoState.deviceName.trim();
+    if (infoState.isLocalAccess === false) {
+      headerDevText.textContent = `Host: ${hostName}`;
+      headerDevBadge.title = `TORUS Backend Host: ${hostName} (accessed remotely from ${infoState.clientIp || "another client"}; client device hostname is not exposed)`;
+      headerDevBadge.dataset.hostRole = "backend";
+    } else {
+      headerDevText.textContent = hostName;
+      headerDevBadge.title = `TORUS Host Device: ${hostName}`;
+      headerDevBadge.dataset.hostRole = "local";
+    }
+    headerDevBadge.dataset.deviceState = "ready";
+    return;
+  }
+
+  headerDevText.textContent = "Unavailable";
+  headerDevBadge.title = "Unable to retrieve device name from backend";
+  headerDevBadge.dataset.deviceState = "error";
+  delete headerDevBadge.dataset.hostRole;
+}
+
+async function fetchTorusDeviceInfo() {
+  window._torusDeviceInfo = {
+    ...(window._torusDeviceInfo || {}),
+    status: "loading",
+    deviceName: ""
+  };
+  renderHeaderDeviceBadge(window._torusDeviceInfo);
+
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
+
+  try {
+    const resp = await fetch("/api/device-info", {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+      cache: "no-store",
+      signal: controller ? controller.signal : undefined
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const resolvedName = (data && (data.device_name || data.hostname)) ? String(data.device_name || data.hostname).trim() : "";
+    if (!isValidTorusDeviceName(resolvedName)) {
+      throw new Error("Invalid device_name payload from /api/device-info");
+    }
+
+    window._torusDeviceInfo = {
+      status: "ready",
+      deviceName: resolvedName,
+      hostname: resolvedName,
+      fqdn: data.fqdn || resolvedName,
+      isLocalAccess: typeof data.is_local_access === "boolean" ? data.is_local_access : null,
+      clientIp: data.client_ip || null,
+      source: data.source || null
+    };
+
+    if (window.torusSessions?.active?.[0]) {
+      const curDev = window.torusSessions.active[0].deviceId;
+      if (!curDev || curDev === "--" || curDev === "TORUS-A12") {
+        window.torusSessions.active[0].deviceId = resolvedName;
+      }
+    }
+
+    renderHeaderDeviceBadge(window._torusDeviceInfo);
+    return window._torusDeviceInfo;
+  } catch (err) {
+    console.warn("[TORUS Device Info] Failed to detect backend device name:", err);
+    window._torusDeviceInfo = {
+      status: "error",
+      deviceName: "",
+      hostname: "",
+      fqdn: "",
+      isLocalAccess: null,
+      clientIp: null,
+      source: null
+    };
+    renderHeaderDeviceBadge(window._torusDeviceInfo);
+    return window._torusDeviceInfo;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+window.renderHeaderDeviceBadge = renderHeaderDeviceBadge;
+window.fetchTorusDeviceInfo = fetchTorusDeviceInfo;
+
 // Update device display on the Live Consultation page (#app-dashboard)
 
 function updateLiveConsultationDeviceDisplay(deviceId) {
 
-  if (!deviceId) deviceId = selectedTorUSDeviceId || "TORUS-A12";
-
-  ensureDeviceModalInDOM();
-
-
-
-  // Header badge on Live Consultation page (Image 1 top header)
-
-  const headerDevBadge = document.getElementById("header-device-badge");
-
-  const headerDevText = document.getElementById("header-device-text");
-
-  if (headerDevBadge && headerDevText) {
-
-    headerDevText.textContent = deviceId;
-
-    headerDevBadge.style.display = "inline-flex";
-
-  }
+  renderHeaderDeviceBadge();
 
 
 
@@ -22679,9 +22799,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (hBadge) hBadge.style.display = "none";
 
-    const hDev = document.getElementById("header-device-badge");
-
-    if (hDev) hDev.style.display = "none";
+    if (typeof renderHeaderDeviceBadge === "function") renderHeaderDeviceBadge();
 
 
 
@@ -22867,11 +22985,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
 
-  // Initialize Live Consultation header device indicator with current active device
-
-  const initDevId = (window.torusSessions?.active?.[0]?.deviceId) || sessionStorage.getItem("connectedDeviceId") || "TORUS-A12";
-
-  updateLiveConsultationDeviceDisplay(initDevId);
+  // Initialize Live Consultation header device badge from live backend host detection
+  if (typeof renderHeaderDeviceBadge === "function") {
+    renderHeaderDeviceBadge();
+  }
+  if (typeof fetchTorusDeviceInfo === "function") {
+    fetchTorusDeviceInfo();
+  }
 
 
 
