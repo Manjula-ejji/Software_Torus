@@ -219,9 +219,9 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
     import time
 
-    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "26da1ebca94b427b80177eff6d44ddfa")).strip()
+    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "af7e44fcb2fd40258594cb87ab4d8e86")).strip()
 
-    clean_app_id = (app_id or "26da1ebc")[:8]
+    clean_app_id = (app_id or "af7e44fc")[:8]
 
     channel = os.environ.get("AGORA_CHANNEL", "torus")
 
@@ -229,7 +229,7 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
         f"{channel}-control-{clean_app_id}",
 
-        f"{channel}-control-26da1ebc",
+        f"{channel}-control-af7e44fc",
 
         f"{channel}-control"
 
@@ -541,17 +541,17 @@ def api_agora_config():
 
     app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "")).strip()
 
-    if not app_id or app_id != "26da1ebca94b427b80177eff6d44ddfa":
+    if not app_id or app_id != "af7e44fcb2fd40258594cb87ab4d8e86":
 
-        app_id = "26da1ebca94b427b80177eff6d44ddfa"
+        app_id = "af7e44fcb2fd40258594cb87ab4d8e86"
 
 
 
     token = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "")).strip()
 
-    if not token or not token.startswith("007eJxTYGj7m"):
+    if not token or not token.startswith("007eJxTYCh"):
 
-        token = "007eJxTYGj7mPtYXMyS142n+PTR/Wkbt/Itrft/Z59n46T1Yff9FhUoMBiZpSQapiYlJ1qaJJkYmSdZGBiam6empZmlmJikpKQlLpj3NashkJHhnpIJMyMDBIL4rAwl+UWlxQwMANo7IgM="
+        token = "007eJxTYCh6F+xsnhe+b63AYwmfOHFJH6HKiK6Unh9qOjtNCgtsqhUYEtPMU01M0pKTjNJSTAyMTC1MLU2SkyzME5NMUixSLcz+/fqd1RDIyKBxfioDIxSC+KwMJflFpcUMDADI0R7/"
 
 
 
