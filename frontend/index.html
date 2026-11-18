@@ -5,6 +5,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PlebC TORUS - Tele Operated Robotic Ultrasound System</title>
+  <script>
+    if (window.location.protocol === "file:") {
+      window.location.href = "http://127.0.0.1:5000/";
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -209,7 +214,136 @@
       "app-dashboard"
     ];
 
-    window.showTorusScreen = function (targetId) {
+    window.TORUS_PATH_MAP = {
+      // Doctor Portal & subviews
+      "/doctor-dashboard": { screen: "doctor-portal-dashboard", role: "doctor", view: "dashboard" },
+      "/doctor-portal-dashboard": { screen: "doctor-portal-dashboard", role: "doctor", view: "dashboard" },
+      "/doctor-profile": { screen: "doctor-portal-dashboard", role: "doctor", view: "doctor-profile" },
+      "/doctor-activity-log": { screen: "doctor-portal-dashboard", role: "doctor", view: "activity-log" },
+      "/doctor-insights": { screen: "doctor-portal-dashboard", role: "doctor", view: "insights" },
+      "/doctor-reports": { screen: "doctor-portal-dashboard", role: "doctor", view: "patient-reports" },
+      "/doctor-history": { screen: "doctor-portal-dashboard", role: "doctor", view: "history" },
+
+      // Patient Portal & subviews
+      "/patient-dashboard": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-dashboard" },
+      "/patient-portal-dashboard": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-dashboard" },
+      "/patient-profile": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-profile" },
+      "/patient-appointments": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-appointments" },
+      "/patient-diagnostic-reports": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-diagnostic-reports" },
+      "/patient-history": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-history" },
+
+      // Video Consultation & Acquisition & Reports
+      "/video-consultation": { screen: "app-dashboard", role: null, modal: null },
+      "/app-dashboard": { screen: "app-dashboard", role: null, modal: null },
+      "/ultrasound-acquisition": { screen: "app-dashboard", role: "doctor", modal: "controls" },
+      "/generate-report": { screen: "app-dashboard", role: "doctor", modal: "report" },
+      "/settings": { modal: "settings" },
+      "/user-profile": { screen: "doctor-portal-dashboard", view: "doctor-profile" },
+
+      // Auth & Registration Screens
+      "/role-selection": { screen: "role-selection-screen" },
+      "/doctor-login": { screen: "doctor-login-screen", role: "doctor" },
+      "/doctor-register": { screen: "doctor-register-screen", role: "doctor" },
+      "/doctor-forgot": { screen: "doctor-forgot-screen", role: "doctor" },
+      "/doctor-biometrics": { screen: "doctor-biometric-screen", role: "doctor" },
+      "/doctor-biometric": { screen: "doctor-biometric-screen", role: "doctor" },
+      "/doctor-bio-register": { screen: "doctor-bio-register-screen", role: "doctor" },
+
+      "/patient-login": { screen: "patient-login-screen", role: "patient" },
+      "/patient-register": { screen: "patient-register-screen", role: "patient" },
+      "/patient-forgot": { screen: "patient-forgot-screen", role: "patient" },
+      "/patient-clinical-registration": { screen: "patient-clinical-registration-screen", role: "patient" },
+
+      "/viewer-login": { screen: "viewer-login-screen", role: "viewer" },
+      "/viewer-register": { screen: "viewer-register-screen", role: "viewer" },
+      "/viewer-forgot": { screen: "viewer-forgot-screen", role: "viewer" },
+      "/viewer-dashboard": { screen: "join-session-screen", role: "viewer" },
+      "/join-session": { screen: "join-session-screen", role: "viewer" }
+    };
+
+    window.resolveTorusCurrentRoute = function () {
+      var urlParams = new URLSearchParams(window.location.search);
+      var screenParam = urlParams.get("screen");
+      var viewParam = urlParams.get("view");
+      var modalParam = urlParams.get("modal");
+      var roleParam = urlParams.get("role");
+
+      var rawPath = (window.location.pathname || "").toLowerCase().replace(/\/+$/, "") || "/";
+      var matchedRoute = window.TORUS_PATH_MAP[rawPath] || null;
+
+      var storedScreen = null;
+      var storedView = null;
+      var storedModal = null;
+      var storedRole = null;
+      try {
+        storedScreen = sessionStorage.getItem("torus_current_screen");
+        storedView = sessionStorage.getItem("torus_portal_view");
+        storedModal = sessionStorage.getItem("torus_active_modal");
+        storedRole = sessionStorage.getItem("torus_active_role");
+      } catch (_) {}
+
+      var screen = screenParam || (matchedRoute ? matchedRoute.screen : null) || storedScreen || null;
+      var view = viewParam || (matchedRoute ? matchedRoute.view : null) || storedView || null;
+      var modal = modalParam || (matchedRoute ? matchedRoute.modal : null) || storedModal || null;
+      var role = roleParam || (matchedRoute ? matchedRoute.role : null) || storedRole || null;
+
+      if (rawPath === "/settings" || modalParam === "settings") {
+        modal = "settings";
+        if (!screen) screen = storedScreen || "doctor-portal-dashboard";
+        if (!role) {
+          role = storedRole || (sessionStorage.getItem("authenticated_patient") ? "patient" : "doctor");
+        }
+      }
+
+      if (rawPath === "/video-consultation" || rawPath === "/app-dashboard") {
+        screen = "app-dashboard";
+        if (!role) {
+          role = storedRole || (sessionStorage.getItem("authenticated_patient") ? "patient" : (sessionStorage.getItem("authenticated_doctor") ? "doctor" : "doctor"));
+        }
+      }
+
+      if (rawPath === "/user-profile") {
+        screen = "doctor-portal-dashboard";
+        var effectiveRole = role || storedRole || (sessionStorage.getItem("authenticated_patient") ? "patient" : "doctor");
+        if (effectiveRole === "patient") {
+          role = "patient";
+          view = "patient-profile";
+        } else {
+          role = "doctor";
+          view = "doctor-profile";
+        }
+      }
+
+      if (rawPath === "/doctor-dashboard" || rawPath === "/doctor-portal-dashboard") {
+        screen = "doctor-portal-dashboard";
+        role = "doctor";
+        if (!view) view = "dashboard";
+      } else if (rawPath === "/patient-dashboard" || rawPath === "/patient-portal-dashboard") {
+        screen = "doctor-portal-dashboard";
+        role = "patient";
+        if (!view) view = "patient-dashboard";
+      }
+
+      if (!screen && (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html")) {
+        if (storedScreen && storedScreen !== "role-selection-screen") {
+          screen = storedScreen;
+          view = storedView;
+          modal = storedModal;
+          role = storedRole;
+        } else {
+          screen = "role-selection-screen";
+        }
+      }
+
+      return {
+        screen: screen || "role-selection-screen",
+        view: view,
+        modal: modal,
+        role: role
+      };
+    };
+
+    window.showTorusScreen = function (targetId, recordHistory) {
       window.TORUS_ALL_SCREENS.forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.style.display = "none";
@@ -219,12 +353,31 @@
         target.style.display = "flex";
         try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) { }
       }
+      try {
+        sessionStorage.setItem("torus_current_screen", targetId);
+      } catch (_) {}
+
+      if (recordHistory !== false && window.history && window.history.pushState) {
+        try {
+          var targetPath = null;
+          for (var p in window.TORUS_PATH_MAP) {
+            if (window.TORUS_PATH_MAP[p].screen === targetId) {
+              targetPath = p;
+              break;
+            }
+          }
+          if (targetPath && window.location.pathname !== targetPath) {
+            window.history.pushState({ torusScreen: targetId }, "", targetPath);
+          }
+        } catch (_) {}
+      }
     };
 
     window.selectTorusRole = function (role, uid) {
       var r = (role || "").toLowerCase().trim();
       var roleInput = document.getElementById("role");
       var uidInput = document.getElementById("uid");
+      try { sessionStorage.setItem("torus_active_role", r); } catch (_) {}
 
       if (r === "doctor") {
         if (roleInput) roleInput.value = "doctor";
@@ -234,6 +387,9 @@
         var docEmail = document.getElementById("doctor-email-input");
         if (docEmail && !docEmail.value) docEmail.value = "admin@gmail.com";
         window.showTorusScreen("doctor-login-screen");
+        if (window.history && window.history.pushState && window.location.pathname !== "/doctor-login") {
+          try { window.history.pushState({ torusScreen: "doctor-login-screen", role: "doctor" }, "", "/doctor-login"); } catch (_) {}
+        }
         return;
       }
 
@@ -245,6 +401,9 @@
         var patEmail = document.getElementById("patient-email-input");
         if (patEmail && !patEmail.value) patEmail.value = "patient@gmail.com";
         window.showTorusScreen("patient-login-screen");
+        if (window.history && window.history.pushState && window.location.pathname !== "/patient-login") {
+          try { window.history.pushState({ torusScreen: "patient-login-screen", role: "patient" }, "", "/patient-login"); } catch (_) {}
+        }
         return;
       }
 
@@ -256,6 +415,9 @@
         var viewerEmailInput = document.getElementById("viewer-email-input");
         if (viewerEmailInput && !viewerEmailInput.value) viewerEmailInput.value = "user@gmail.com";
         window.showTorusScreen("viewer-login-screen");
+        if (window.history && window.history.pushState && window.location.pathname !== "/viewer-login") {
+          try { window.history.pushState({ torusScreen: "viewer-login-screen", role: "viewer" }, "", "/viewer-login"); } catch (_) {}
+        }
         return;
       }
 
@@ -266,61 +428,16 @@
       window.showTorusScreen("role-selection-screen");
     };
 
-    document.addEventListener("DOMContentLoaded", function () {
-      var urlParams = new URLSearchParams(window.location.search);
-      var screenParam = urlParams.get('screen');
-      var returnFromReport = sessionStorage.getItem('torus_return_from_report');
-      var activeScreen = sessionStorage.getItem('torus_active_screen_on_load');
-
-      if (screenParam === 'app-dashboard' || activeScreen === 'app-dashboard' || returnFromReport === 'true') {
-        if (returnFromReport === 'true' || urlParams.get('rejoin') === 'true') {
-          window.torusReturningFromReport = true;
-        }
-        sessionStorage.removeItem('torus_return_from_report');
-        sessionStorage.removeItem('torus_active_screen_on_load');
-
-        var roleInput = document.getElementById('role');
-        if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
-        var channelInput = document.getElementById('channel');
-        if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
-
-        try {
-          var raw = sessionStorage.getItem("torus_nav_history_stack");
-          var st = raw ? JSON.parse(raw) : [];
-          if (!Array.isArray(st) || st.length <= 1) {
-            sessionStorage.setItem("torus_nav_history_stack", JSON.stringify(["role-selection-screen", "doctor-login-screen", "doctor-portal-dashboard"]));
-          }
-        } catch (_) { }
-
-        window.showTorusScreen('app-dashboard');
-
-        if (returnFromReport === 'true' || urlParams.get('rejoin') === 'true') {
-          setTimeout(function () {
-            var joinBtnEl = document.getElementById('joinBtn');
-            if (joinBtnEl && !joinBtnEl.disabled && joinBtnEl.style.display !== 'none') {
-              joinBtnEl.click();
-            }
-          }, 350);
-        }
-      } else if (screenParam === 'doctor-portal-dashboard' || activeScreen === 'doctor-portal-dashboard') {
-        sessionStorage.removeItem('torus_active_screen_on_load');
-
-        var roleInput = document.getElementById('role');
-        if (roleInput) roleInput.value = urlParams.get('role') || 'doctor';
-        var channelInput = document.getElementById('channel');
-        if (channelInput && urlParams.get('room')) channelInput.value = urlParams.get('room');
-
-        try {
-          var raw = sessionStorage.getItem("torus_nav_history_stack");
-          var st = raw ? JSON.parse(raw) : [];
-          if (!Array.isArray(st) || st.length <= 1) {
-            sessionStorage.setItem("torus_nav_history_stack", JSON.stringify(["role-selection-screen", "doctor-login-screen"]));
-          }
-        } catch (_) { }
-
-        window.showTorusScreen('doctor-portal-dashboard');
+    // Early route resolution & immediate anti-flash guard before body parsing
+    (function () {
+      var r = window.resolveTorusCurrentRoute();
+      if (r && r.screen && r.screen !== "role-selection-screen") {
+        document.write('<style id="torus-anti-flash">#role-selection-screen{display:none !important;}#' + r.screen + '{display:flex !important;}</style>');
+        document.addEventListener("DOMContentLoaded", function () {
+          window.showTorusScreen(r.screen, false);
+        });
       }
-    });
+    })();
   </script>
 </head>
 
@@ -4335,7 +4452,7 @@
             <!-- Row 1: App ID (Full width) -->
             <label class="full-width">
               <span>App ID</span>
-              <input id="appId" type="text" placeholder="Enter Agora App ID" value="af7e44fcb2fd40258594cb87ab4d8e86"
+              <input id="appId" type="text" placeholder="Enter Agora App ID" value="9f3eb0c721cf4d5e86fe506ccf085fa1"
                 spellcheck="false" />
             </label>
 
@@ -4349,7 +4466,7 @@
               <span>Role</span>
               <select id="role">
                 <option value="doctor">Doctor (Consultant)</option>
-                <option value="patient" selected>Patient/Clinic (Ultrasound Source)</option>
+                <option value="patient">Patient/Clinic (Ultrasound Source)</option>
                 <option value="viewer">Viewer (Consultant/Observer)</option>
               </select>
             </label>
@@ -4639,7 +4756,7 @@
       <section id="videos-grid" class="videos-grid">
         <div class="video-card" id="local-card">
           <div class="video-header">
-            <h2>📹 Local Feed</h2>
+            <h2>🩺 Doctor Camera</h2>
             <div class="video-controls">
               <button class="control-btn toggle-btn camera-btn active" id="local-camera-btn" type="button"
                 title="Toggle Camera" disabled>

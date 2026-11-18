@@ -82,6 +82,8 @@ def handle_preflight():
 
         res.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, X-Haptic-Agent-Secret"
 
+        res.headers["Access-Control-Allow-Private-Network"] = "true"
+
         return res
 
 
@@ -95,6 +97,8 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
 
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, X-Haptic-Agent-Secret"
+
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
 
     if request.path.startswith("/api/") or request.path.endswith((".html", ".js", ".css")) or request.path in ["/", "/index.html"]:
 
@@ -219,9 +223,9 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
     import time
 
-    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "af7e44fcb2fd40258594cb87ab4d8e86")).strip()
+    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "9f3eb0c721cf4d5e86fe506ccf085fa1")).strip()
 
-    clean_app_id = (app_id or "af7e44fc")[:8]
+    clean_app_id = (app_id or "9f3eb0c7")[:8]
 
     channel = os.environ.get("AGORA_CHANNEL", "torus")
 
@@ -229,7 +233,7 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
         f"{channel}-control-{clean_app_id}",
 
-        f"{channel}-control-af7e44fc",
+        f"{channel}-control-9f3eb0c7",
 
         f"{channel}-control"
 
@@ -541,17 +545,17 @@ def api_agora_config():
 
     app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "")).strip()
 
-    if not app_id or app_id != "af7e44fcb2fd40258594cb87ab4d8e86":
+    if not app_id or app_id != "9f3eb0c721cf4d5e86fe506ccf085fa1":
 
-        app_id = "af7e44fcb2fd40258594cb87ab4d8e86"
+        app_id = "9f3eb0c721cf4d5e86fe506ccf085fa1"
 
 
 
     token = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "")).strip()
 
-    if not token or not token.startswith("007eJxTYCh"):
+    if not token or not token.startswith("007eJxTYHi"):
 
-        token = "007eJxTYCh6F+xsnhe+b63AYwmfOHFJH6HKiK6Unh9qOjtNCgtsqhUYEtPMU01M0pKTjNJSTAyMTC1MLU2SkyzME5NMUixSLcz+/fqd1RDIyKBxfioDIxSC+KwMJflFpcUMDADI0R7/"
+        token = "007eJxTYHiVsU9y/vRch6WhumfWdwd/PNx6usd1i53e3LX/V9m2LDRXYLBMM05NMkg2NzJMTjNJMU21MEtLNTUwS05OM7AwTUs0/FH3N6shkJGBx5mJiZEBAkF8VoaS/KLSYgYGAAYoIb4="
 
 
 
@@ -4817,40 +4821,76 @@ def mock_socketio_handler(path=""):
 
 
 
-# -------------------- STATIC FILE SERVING --------------------
+# -------------------- STATIC FILE SERVING & SPA ROUTING --------------------
+
+SPA_CLIENT_ROUTES = [
+    "/doctor-dashboard",
+    "/patient-dashboard",
+    "/viewer-dashboard",
+    "/video-consultation",
+    "/ultrasound-acquisition",
+    "/generate-report",
+    "/doctor-login",
+    "/doctor-register",
+    "/doctor-forgot",
+    "/doctor-biometrics",
+    "/doctor-bio-register",
+    "/patient-login",
+    "/patient-register",
+    "/patient-forgot",
+    "/patient-clinical-registration",
+    "/viewer-login",
+    "/viewer-register",
+    "/viewer-forgot",
+    "/join-session",
+    "/app-dashboard",
+    "/doctor-portal-dashboard",
+    "/patient-portal-dashboard",
+    "/doctor-profile",
+    "/doctor-activity-log",
+    "/doctor-insights",
+    "/doctor-reports",
+    "/doctor-history",
+    "/patient-profile",
+    "/patient-appointments",
+    "/patient-diagnostic-reports",
+    "/patient-history",
+    "/settings",
+    "/user-profile",
+    "/doctor-biometric",
+    "/role-selection"
+]
 
 @app.route("/")
-
 def serve_root():
-
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
-
+for _route_path in SPA_CLIENT_ROUTES:
+    _ep = f"spa_route_{_route_path.strip('/').replace('-', '_')}"
+    app.add_url_rule(_route_path, endpoint=_ep, view_func=serve_root, strict_slashes=False)
 
 @app.route("/frontend/<path:path>")
-
 def serve_frontend_prefix(path):
-
     file_path = FRONTEND_DIR / path
-
     if file_path.is_file():
-
         return send_from_directory(str(FRONTEND_DIR), path)
-
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
-
-
 @app.route("/<path:path>")
-
 def serve_static_files(path):
-
     file_path = FRONTEND_DIR / path
-
     if file_path.is_file():
-
         return send_from_directory(str(FRONTEND_DIR), path)
+    return send_from_directory(str(FRONTEND_DIR), "index.html")
 
+@app.errorhandler(404)
+def handle_spa_fallback_404(e):
+    req_path = request.path or ""
+    if req_path.startswith("/api/") or req_path.startswith("/socket.io/"):
+        return jsonify({"error": "Endpoint not found", "path": req_path}), 404
+    ext = os.path.splitext(req_path)[1].lower()
+    if ext and ext not in [".html", ".htm"]:
+        return jsonify({"error": f"Asset not found: {req_path}"}), 404
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
 

@@ -2,13 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0; url=frontend/index.html">
   <title>TORUS Clinical Robotics Platform</title>
   <script>
-    window.location.replace("frontend/index.html");
+    if (window.location.protocol === "file:") {
+      window.location.href = "http://127.0.0.1:5000/";
+    } else {
+      window.location.replace("frontend/index.html");
+    }
   </script>
 </head>
-<body>
-  <p>Redirecting to <a href="frontend/index.html">TORUS Doctor Dashboard</a>...</p>
+<body style="font-family: sans-serif; padding: 40px; text-align: center; background: #0f172a; color: #f8fafc;">
+  <h2>TORUS Clinical Robotics Platform</h2>
+  <p>Serving at: <a href="http://127.0.0.1:5000/" style="color: #38bdf8; font-size: 1.2rem; font-weight: bold;">http://127.0.0.1:5000/</a></p>
+  <p>If you are not redirected automatically, please click the link above.</p>
 </body>
 </html>
