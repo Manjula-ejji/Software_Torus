@@ -1829,7 +1829,6 @@ def get_status():
         status_str = "RUNNING" if (_global_ostb_runtime is not None and getattr(_global_ostb_runtime, "_started", False)) else "STOPPED"
 
     is_running = (status_str == "RUNNING")
-
     if is_running:
         voltage = float(_hardware_applied_voltage)
         gain = float(_hardware_applied_gain)
