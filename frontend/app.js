@@ -3959,24 +3959,35 @@ function getResolvedActiveRole(roleHint) {
   if (typeof currentAuthenticatedRole !== "undefined" && currentAuthenticatedRole) {
     return currentAuthenticatedRole;
   }
+
+  // 1. Check URL pathname for explicit role indication
+  try {
+    const path = (window.location.pathname || "").toLowerCase();
+    if (path.includes("patient-") || path.includes("/patient")) return "patient";
+    if (path.includes("doctor-") || path.includes("/doctor")) return "doctor";
+    if (path.includes("viewer-") || path.includes("/viewer") || path === "/join-session") return "viewer";
+  } catch (_) {}
+
+  // 2. Check active role explicitly stored in sessionStorage
   try {
     const sRole = sessionStorage.getItem("torus_active_role") || sessionStorage.getItem("userRole");
     if (sRole && (sRole === "doctor" || sRole === "patient" || sRole === "viewer")) return sRole;
 
-    const hasDoc = !!sessionStorage.getItem("authenticated_doctor");
-    const hasPat = !!sessionStorage.getItem("authenticated_patient");
-    const hasView = !!sessionStorage.getItem("authenticated_viewer");
-    if (hasDoc && !hasPat) return "doctor";
-    if (hasPat && !hasDoc) return "patient";
-    if (hasView) return "viewer";
+    if (sessionStorage.getItem("authenticated_patient")) return "patient";
+    if (sessionStorage.getItem("authenticated_doctor")) return "doctor";
+    if (sessionStorage.getItem("authenticated_viewer")) return "viewer";
+  } catch (_) {}
 
+  // 3. Check localStorage
+  try {
     const lRole = localStorage.getItem("torus_active_role") || localStorage.getItem("userRole");
     if (lRole && (lRole === "doctor" || lRole === "patient" || lRole === "viewer")) return lRole;
 
-    const lDoc = !!localStorage.getItem("authenticated_doctor");
-    const lPat = !!localStorage.getItem("authenticated_patient");
-    if (lDoc && !lPat) return "doctor";
-    if (lPat && !lDoc) return "patient";
+    const hasLPat = !!localStorage.getItem("authenticated_patient");
+    const hasLDoc = !!localStorage.getItem("authenticated_doctor");
+    if (hasLPat && !hasLDoc) return "patient";
+    if (hasLDoc && !hasLPat) return "doctor";
+    if (localStorage.getItem("authenticated_viewer")) return "viewer";
   } catch (_) {}
 
   return null;
@@ -4022,7 +4033,7 @@ function updateLocalFeedTitle(customRole = null) {
   const h2 = localCardEl.querySelector(".video-header h2");
   if (!h2) return;
 
-  const role = customRole || (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : (typeof isCurrentDoctorRole === "function" && isCurrentDoctorRole() ? "doctor" : "doctor")) || "doctor";
+  const role = customRole || (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : (typeof isCurrentPatientRole === "function" && isCurrentPatientRole() ? "patient" : "doctor")) || "doctor";
   const uid = typeof getActiveLocalUid === "function" ? getActiveLocalUid() : (role === "patient" ? 4001 : (role === "viewer" ? 6001 : 3001));
 
   if (uid === 5001) {
@@ -4048,10 +4059,11 @@ function updateCallExaminationControls(isConnected) {
   const controlsDivider = document.getElementById("controlsDivider") || document.querySelector(".controls-divider");
   const joinBtn = document.getElementById("joinBtn");
 
-  const isDoc = isCurrentDoctorRole();
-  const isPat = isCurrentPatientRole();
+  const activeRole = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : null) || (isCurrentPatientRole() ? "patient" : "doctor");
+  const isDoc = (activeRole === "doctor");
+  const isPat = (activeRole === "patient");
 
-  updateLocalFeedTitle();
+  updateLocalFeedTitle(activeRole);
 
 
 
@@ -6466,66 +6478,89 @@ function resolveTorusCurrentRoute() {
 
   let storedScreen = null;
   let storedView = null;
-  let storedModal = null;
   let storedRole = null;
   try {
     storedScreen = sessionStorage.getItem("torus_current_screen");
     storedView = sessionStorage.getItem("torus_portal_view");
-    storedModal = sessionStorage.getItem("torus_active_modal");
     storedRole = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : null) || sessionStorage.getItem("torus_active_role");
   } catch (_) {}
 
-  let screen = screenParam || (matchedRoute ? matchedRoute.screen : null) || storedScreen || null;
-  let view = viewParam || (matchedRoute ? matchedRoute.view : null) || storedView || null;
-  let modal = modalParam || (matchedRoute ? matchedRoute.modal : null) || storedModal || null;
-  let role = roleParam || (matchedRoute ? matchedRoute.role : null) || storedRole || null;
-
-  if (rawPath === "/settings" || modalParam === "settings") {
-    modal = "settings";
-    if (!screen) screen = storedScreen || "doctor-portal-dashboard";
-    if (!role) {
-      role = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : null) || storedRole || (sessionStorage.getItem("authenticated_patient") ? "patient" : "doctor");
-    }
-  }
-
-  if (rawPath === "/video-consultation" || rawPath === "/app-dashboard") {
-    screen = "app-dashboard";
-    if (!role) {
-      role = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : null) || storedRole || (sessionStorage.getItem("authenticated_patient") ? "patient" : (sessionStorage.getItem("authenticated_doctor") ? "doctor" : "doctor"));
-    }
-  }
-
-  if (rawPath === "/user-profile") {
-    screen = "doctor-portal-dashboard";
-    const effectiveRole = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole(role) : role) || storedRole || (sessionStorage.getItem("authenticated_patient") ? "patient" : "doctor");
-    if (effectiveRole === "patient") {
+  // Resolve Role with strict precedence:
+  // 1. Explicit query param (?role=...)
+  // 2. Matched route role (e.g. /doctor-dashboard -> doctor, /patient-dashboard -> patient)
+  // 3. Stored role in sessionStorage (if valid)
+  // 4. Stored user objects in sessionStorage / localStorage
+  let role = roleParam || (matchedRoute ? matchedRoute.role : null);
+  if (!role) {
+    if (storedRole === "doctor" || storedRole === "patient" || storedRole === "viewer") {
+      role = storedRole;
+    } else if (sessionStorage.getItem("authenticated_patient")) {
       role = "patient";
-      view = "patient-profile";
+    } else if (sessionStorage.getItem("authenticated_doctor")) {
+      role = "doctor";
+    } else if (sessionStorage.getItem("authenticated_viewer")) {
+      role = "viewer";
+    } else if (localStorage.getItem("authenticated_patient") && !localStorage.getItem("authenticated_doctor")) {
+      role = "patient";
+    } else if (localStorage.getItem("authenticated_doctor") && !localStorage.getItem("authenticated_patient")) {
+      role = "doctor";
+    } else if (localStorage.getItem("torus_active_role")) {
+      role = localStorage.getItem("torus_active_role");
     } else {
       role = "doctor";
-      view = "doctor-profile";
     }
   }
 
-  if (rawPath === "/doctor-dashboard" || rawPath === "/doctor-portal-dashboard") {
+  // Resolve Screen with strict precedence
+  let screen = screenParam || (matchedRoute ? matchedRoute.screen : null);
+  if (!screen) {
+    if (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html") {
+      if (storedScreen && storedScreen !== "role-selection-screen" && (sessionStorage.getItem("authenticated_doctor") || sessionStorage.getItem("authenticated_patient"))) {
+        screen = storedScreen;
+      } else {
+        screen = "role-selection-screen";
+      }
+    } else {
+      screen = storedScreen || "role-selection-screen";
+    }
+  }
+
+  // Resolve View
+  let view = viewParam || (matchedRoute ? matchedRoute.view : null);
+  if (!view && screen === "doctor-portal-dashboard") {
+    if (storedView) {
+      view = storedView;
+    } else {
+      view = (role === "patient") ? "patient-dashboard" : "dashboard";
+    }
+  }
+
+  // Resolve Modal:
+  // Modals should only be opened if explicitly requested in URL or defined in route
+  let modal = modalParam || (matchedRoute ? matchedRoute.modal : null);
+  if (!modal) {
+    if (rawPath === "/settings" || modalParam === "settings") {
+      modal = "settings";
+    } else {
+      modal = null;
+    }
+  }
+
+  // Special route overrides
+  if (rawPath === "/video-consultation" || rawPath === "/app-dashboard") {
+    screen = "app-dashboard";
+    modal = null;
+  } else if (rawPath === "/user-profile") {
+    screen = "doctor-portal-dashboard";
+    view = (role === "patient") ? "patient-profile" : "doctor-profile";
+  } else if (rawPath === "/doctor-dashboard" || rawPath === "/doctor-portal-dashboard") {
     screen = "doctor-portal-dashboard";
     role = "doctor";
-    if (!view) view = "dashboard";
+    if (!view || view === "patient-dashboard") view = "dashboard";
   } else if (rawPath === "/patient-dashboard" || rawPath === "/patient-portal-dashboard") {
     screen = "doctor-portal-dashboard";
     role = "patient";
-    if (!view) view = "patient-dashboard";
-  }
-
-  if (!screen && (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html")) {
-    if (storedScreen && storedScreen !== "role-selection-screen") {
-      screen = storedScreen;
-      view = storedView;
-      modal = storedModal;
-      role = storedRole;
-    } else {
-      screen = "role-selection-screen";
-    }
+    if (!view || view === "dashboard") view = "patient-dashboard";
   }
 
   return {
@@ -6800,13 +6835,12 @@ function switchToPortalSubView(view, recordHistory = true) {
 }
 window.switchToPortalSubView = switchToPortalSubView;
 
-function showTorusScreen(targetId, recordHistory = true) {
+function showTorusScreen(targetId, recordHistory = true, options = {}) {
 
   const currentId = getCurrentVisibleScreenId();
+  const force = (options && options.force === true);
 
-
-
-  if (currentId === targetId && document.getElementById(targetId)?.style.display === "flex") {
+  if (!force && currentId === targetId && document.getElementById(targetId)?.style.display === "flex") {
 
     return;
 
@@ -7153,7 +7187,10 @@ async function navigateBackTorus(isFromBrowserBack = false) {
         updateLocalFeedTitle();
       } else {
         const localTitle = localCard ? localCard.querySelector(".video-header h2") : null;
-        if (localTitle) localTitle.innerHTML = "🩺 Doctor Camera";
+        if (localTitle) {
+          const role = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : "doctor");
+          localTitle.innerHTML = (role === "patient") ? "👤 Patient Camera" : "🩺 Doctor Camera";
+        }
       }
 
       if (floatingSelfView) floatingSelfView.classList.remove("show");
@@ -11144,6 +11181,8 @@ async function setAuthenticatedDoctorSession(doctor) {
     localStorage.setItem("userRole", "doctor");
     sessionStorage.removeItem("authenticated_patient");
     sessionStorage.removeItem("authenticated_viewer");
+    localStorage.removeItem("authenticated_patient");
+    localStorage.removeItem("authenticated_viewer");
   } catch (e) { }
 
 
@@ -22508,6 +22547,8 @@ function setAuthenticatedPatientSession(patient) {
     localStorage.setItem("userRole", "patient");
     sessionStorage.removeItem("authenticated_doctor");
     sessionStorage.removeItem("authenticated_viewer");
+    localStorage.removeItem("authenticated_doctor");
+    localStorage.removeItem("authenticated_viewer");
   } catch (e) { }
 
 
@@ -22830,6 +22871,8 @@ function setAuthenticatedViewerSession(viewer, autoJoinCall = false) {
     localStorage.setItem("userRole", "viewer");
     sessionStorage.removeItem("authenticated_doctor");
     sessionStorage.removeItem("authenticated_patient");
+    localStorage.removeItem("authenticated_doctor");
+    localStorage.removeItem("authenticated_patient");
   } catch (e) { }
 
 
@@ -23020,15 +23063,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // Immediately render the requested screen without awaiting background databases
+  // Immediately render the requested screen with force: true to guarantee full lifecycle execution
   if (targetScreen === "doctor-portal-dashboard") {
-    showTorusScreen("doctor-portal-dashboard", false);
+    showTorusScreen("doctor-portal-dashboard", false, { force: true });
+    if (typeof updateSharedPortalHeader === "function") {
+      updateSharedPortalHeader(currentAuthenticatedUser, targetRole);
+    }
     const viewToOpen = targetView || (targetRole === "patient" ? "patient-dashboard" : "dashboard");
     if (typeof switchToPortalSubView === "function") {
       switchToPortalSubView(viewToOpen, false);
     }
   } else if (targetScreen === "app-dashboard") {
-    showTorusScreen("app-dashboard", false);
+    showTorusScreen("app-dashboard", false, { force: true });
     if (typeof updateLocalFeedTitle === "function") {
       updateLocalFeedTitle(targetRole);
     }
@@ -23099,15 +23145,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }, 150);
     }
   } else if (targetScreen && targetScreen !== "role-selection-screen") {
-    showTorusScreen(targetScreen, false);
+    showTorusScreen(targetScreen, false, { force: true });
   } else {
-    showTorusScreen("role-selection-screen", false);
+    showTorusScreen("role-selection-screen", false, { force: true });
   }
 
-  // Remove the early anti-flash CSS guard once target screen is active
-  const antiFlash = document.getElementById("torus-anti-flash");
-  if (antiFlash) {
-    antiFlash.remove();
+  // Remove the early pre-paint CSS guard once target screen is firmly active with inline styles
+  const prepaintStyle = document.getElementById("torus-route-prepaint") || document.getElementById("torus-anti-flash");
+  if (prepaintStyle) {
+    prepaintStyle.remove();
   }
 
   // If settings modal was requested on any screen
@@ -23474,52 +23520,36 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
 
-    if (isDoc) {
-
-      // Clear Doctor session and navigate to Doctor Secure Login
-
-      try {
-
-        sessionStorage.removeItem("authenticated_doctor");
-
-        localStorage.removeItem("authenticated_doctor");
-
-        sessionStorage.removeItem("authenticated_user");
-
-        localStorage.removeItem("authenticated_user");
-
+    // Clear all session and persistent storage keys across roles
+    try {
+      const keysToPurge = [
+        "authenticated_doctor",
+        "authenticated_patient",
+        "authenticated_viewer",
+        "authenticated_user",
+        "torus_active_role",
+        "userRole",
+        "torus_current_screen",
+        "torus_portal_view",
+        "torus_active_modal",
+        "torus_call_in_progress",
+        "torus_active_call_channel",
+        "torus_active_call_role"
+      ];
+      keysToPurge.forEach((k) => {
+        try { sessionStorage.removeItem(k); } catch (_) {}
+        try { localStorage.removeItem(k); } catch (_) {}
+      });
+      if (typeof resetDoctorReportSigningSession === "function") {
         resetDoctorReportSigningSession();
+      }
+    } catch (e) { }
 
-      } catch (e) { }
-
-
-
-      torusScreenHistory = ["role-selection-screen"];
-
+    torusScreenHistory = ["role-selection-screen"];
+    if (isDoc) {
       showTorusScreen("doctor-login-screen");
-
     } else {
-
-      // Clear Patient session and navigate to Patient Secure Login
-
-      try {
-
-        sessionStorage.removeItem("authenticated_patient");
-
-        localStorage.removeItem("authenticated_patient");
-
-        sessionStorage.removeItem("authenticated_user");
-
-        localStorage.removeItem("authenticated_user");
-
-      } catch (e) { }
-
-
-
-      torusScreenHistory = ["role-selection-screen"];
-
       showTorusScreen("patient-login-screen");
-
     }
 
   }

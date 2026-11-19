@@ -83,6 +83,22 @@ class TestTorusRefreshNavigation(unittest.TestCase):
         self.assertIn("window.resolveTorusCurrentRoute =", index_html)
         self.assertIn("window.showTorusScreen =", index_html)
         self.assertIn("window.selectTorusRole =", index_html)
+        # Ensure fragile document.write anti-flash is replaced with head pre-paint style element
+        self.assertNotIn("document.write('<style id=\"torus-anti-flash\">", index_html)
+        self.assertIn("torus-route-prepaint", index_html)
+
+    def test_app_js_role_and_anti_flash_protection(self):
+        """Verify app.js includes strict role resolution, pre-paint cleanup, and forced initial display."""
+        app_js_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "app.js")
+        with open(app_js_path, "r", encoding="utf-8") as f:
+            app_js = f.read()
+
+        self.assertIn("torus-route-prepaint", app_js)
+        self.assertIn("getResolvedActiveRole", app_js)
+        self.assertIn("options.force", app_js)
+        self.assertIn("updateLocalFeedTitle", app_js)
+        # Ensure logout purges cross-role storage
+        self.assertIn("keysToPurge", app_js)
 
 if __name__ == "__main__":
     unittest.main()
