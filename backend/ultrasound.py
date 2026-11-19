@@ -18,38 +18,53 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-MISSING_MODULES = []
+MISSING_MODULES: List[str] = []
 
 try:
-  import cv2
-except ModuleNotFoundError:
+  import cv2  # type: ignore
+except (ModuleNotFoundError, ImportError):
+  cv2: Any = None
   MISSING_MODULES.append("opencv-python")
 
 try:
-  import numpy as np
-except ModuleNotFoundError:
+  import numpy as np  # type: ignore
+except (ModuleNotFoundError, ImportError):
+  np: Any = None
   MISSING_MODULES.append("numpy")
 
 try:
-  import ostb._ostb as ostb
-except ModuleNotFoundError:
+  import ostb._ostb as ostb  # type: ignore
+except (ModuleNotFoundError, ImportError):
+  ostb: Any = None
   MISSING_MODULES.append("ostb")
 
 try:
-  from flask import Flask, Response, request, jsonify
-except ModuleNotFoundError:
+  from flask import Flask, Response, request, jsonify  # type: ignore
+except (ModuleNotFoundError, ImportError):
+  Flask: Any = None
+  Response: Any = None
+  request: Any = None
+  jsonify: Any = None
   MISSING_MODULES.append("flask")
 
 try:
-  import pyautogui
-except ModuleNotFoundError:
+  import pyautogui  # type: ignore
+except (ModuleNotFoundError, ImportError):
+  pyautogui: Any = None
   MISSING_MODULES.append("pyautogui")
 
 try:
-  import win32gui
-  import win32con
-except ModuleNotFoundError:
+  import win32gui  # type: ignore
+  import win32con  # type: ignore
+  import win32api  # type: ignore
+  import win32ui  # type: ignore
+except (ModuleNotFoundError, ImportError):
+  win32gui: Any = None
+  win32con: Any = None
+  win32api: Any = None
+  win32ui: Any = None
   # Check if we are on Windows. Only flag missing if running on Windows.
   if sys.platform.startswith("win"):
     MISSING_MODULES.append("pypiwin32")
@@ -84,13 +99,13 @@ def _load_opensonics_env():
 _load_opensonics_env()
 
 # -------------------- USER CONFIG --------------------
-APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "9f3eb0c721cf4d5e86fe506ccf085fa1"))
-if not APP_ID or APP_ID != "9f3eb0c721cf4d5e86fe506ccf085fa1":
-    APP_ID = "9f3eb0c721cf4d5e86fe506ccf085fa1"
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "f6a036d79c9b4d669bb076d61047528e"))
+if not APP_ID or APP_ID != "f6a036d79c9b4d669bb076d61047528e":
+    APP_ID = "f6a036d79c9b4d669bb076d61047528e"
 
-TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYHiVsU9y/vRch6WhumfWdwd/PNx6usd1i53e3LX/V9m2LDRXYLBMM05NMkg2NzJMTjNJMU21MEtLNTUwS05OM7AwTUs0/FH3N6shkJGBx5mJiZEBAkF8VoaS/KLSYgYGAAYoIb4="))
-if not TOKEN or not TOKEN.startswith("007eJxTYHi"):
-    TOKEN = "007eJxTYHiVsU9y/vRch6WhumfWdwd/PNx6usd1i53e3LX/V9m2LDRXYLBMM05NMkg2NzJMTjNJMU21MEtLNTUwS05OM7AwTUs0/FH3N6shkJGBx5mJiZEBAkF8VoaS/KLSYgYGAAYoIb4="
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYFDqOnCaQVjrQXv3o6q2c+0/g9fe/Wy0s+O95kIXBnNV5WsKDGlmiQbGZinmlsmWSSYpZmaWSUkG5mYpZoYGJuamRhapW6//y2oIZGT4/fAJMyMDBIL4rAwl+UWlxQwMAM4RIl8="))
+if not TOKEN or not TOKEN.startswith("007eJxTY"):
+    TOKEN = "007eJxTYFDqOnCaQVjrQXv3o6q2c+0/g9fe/Wy0s+O95kIXBnNV5WsKDGlmiQbGZinmlsmWSSYpZmaWSUkG5mYpZoYGJuamRhapW6//y2oIZGT4/fAJMyMDBIL4rAwl+UWlxQwMAM4RIl8="
 CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
 UID = int(os.environ.get("AGORA_UID", 5001))
 
@@ -115,7 +130,19 @@ DEPTH_MAX_MM = 100.0
 # -----------------------------------------------------
 
 APP_DIR = Path(__file__).resolve().parent
-app = Flask(__name__)
+if Flask is not None:
+    app = Flask(__name__)
+else:
+    class _DummyFlask:
+        def after_request(self, f: Any) -> Any:
+            return f
+        def route(self, *args: Any, **kwargs: Any) -> Any:
+            def decorator(f: Any) -> Any:
+                return f
+            return decorator
+        def run(self, *args: Any, **kwargs: Any) -> None:
+            pass
+    app = _DummyFlask()
 
 _latest_jpg = None
 _latest_lock = threading.Lock()
@@ -148,7 +175,7 @@ def find_opensonics_control_window() -> int:
                                  and not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"])):
             control_hwnd[0] = hwnd
             return False
-        elif ("Qt6" in cls_name or "Qt5" in cls_name) and title and title not in ["Launcher", "_q_titlebar"]:
+        elif cls_name and ("Qt6" in cls_name or "Qt5" in cls_name) and title and title not in ["Launcher", "_q_titlebar"]:
             if not any(k in t_low for k in ["display window", "focused b-mode", "b-mode", "render", "chrome", "agora", "meet", "torus"]):
                 if not control_hwnd[0]:
                     control_hwnd[0] = hwnd
@@ -218,7 +245,7 @@ def replicate_mouse_event(event_type: str, x_percent: float, y_percent: float) -
         import win32api
     except ImportError:
         # Fallback to pyautogui on non-Windows/development setups
-        import pyautogui
+        import pyautogui  # type: ignore
         pyautogui.FAILSAFE = False
         screen_w, screen_h = pyautogui.size()
         left, top, width, height = 0, 0, screen_w, screen_h
@@ -275,13 +302,13 @@ def diag_log(stage: str, message: str) -> None:
     now_iso = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     print(f"[DIAGNOSTIC {now_iso}] [{stage}] {message}")
 
-_global_ostb_runtime = None
-_global_ostb_config = None
-_curv_module = None
-_is_acquiring = False
-_is_reconfiguring = False
-_orig_start = None
-_orig_stop = None
+_global_ostb_runtime: Any = None
+_global_ostb_config: Any = None
+_curv_module: Any = None
+_is_acquiring: bool = False
+_is_reconfiguring: bool = False
+_orig_start: Any = None
+_orig_stop: Any = None
 
 
 def _watch_module_runtime() -> None:
@@ -302,7 +329,7 @@ def _watch_module_runtime() -> None:
 
 
 try:
-    import ostb._ostb as ostb
+    import ostb._ostb as ostb  # type: ignore
 
     # Hook 1: Intercept AcquisitionRuntime instantiation to capture runtime object
     _orig_runtime_init = ostb.AcquisitionRuntime.__init__
@@ -344,7 +371,8 @@ try:
             _is_frozen = False
             _is_user_stopped = False
             diag_log("ACQUISITION_STATE", "AcquisitionRuntime.start() triggered -> _is_acquiring = True, _is_frozen = False, _is_user_stopped = False")
-        return _orig_start(self, *args, **kwargs)
+        if _orig_start is not None:
+            return _orig_start(self, *args, **kwargs)
     ostb.AcquisitionRuntime.start = _hooked_start
 
     # Hook 5: Intercept stop() to track state
@@ -354,7 +382,8 @@ try:
         if not _is_reconfiguring:
             _is_acquiring = False
             diag_log("ACQUISITION_STATE", "AcquisitionRuntime.stop() triggered -> _is_acquiring = False")
-        return _orig_stop(self, *args, **kwargs)
+        if _orig_stop is not None:
+            return _orig_stop(self, *args, **kwargs)
     ostb.AcquisitionRuntime.stop = _hooked_stop
 
     # Hook 6: Block stop_control_server() - keep runtime alive for streaming
@@ -413,7 +442,7 @@ def is_acquisition_running() -> bool:
     return False
 
 
-def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float = None) -> bool:
+def rebuild_configuration_with_params(new_voltage: float | None = None, new_gain: float | None = None) -> bool:
     """
     Rebuilds the waveform, TX configs, scans, sequence and full AcquisitionConfiguration
     from scratch, then reconfigures hardware immediately and independently of Start/Stop buttons.
@@ -467,15 +496,15 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
 
     with _rebuild_lock:
         try:
-            import ostb._ostb as ostb_mod
+            import ostb._ostb as ostb_mod  # type: ignore
             import math as _math
             m = _curv_module
 
             # Update stored parameters in curv module
             if new_voltage is not None:
-                m._current_voltage = float(new_voltage)
+                setattr(m, "_current_voltage", float(new_voltage))
             if new_gain is not None:
-                m.gain_analog_db = float(new_gain)
+                setattr(m, "gain_analog_db", float(new_gain))
 
             voltage = getattr(m, "_current_voltage", target_v)
             gain = getattr(m, "gain_analog_db", target_g)
@@ -490,7 +519,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             new_waveform.validate()
             if hasattr(new_waveform, "_voltage"):
                 new_waveform._voltage = voltage
-            m.waveform = new_waveform
+            setattr(m, "waveform", new_waveform)
 
             # Rebuild full scan sequence
             new_seq_builder = (ostb_mod.SequenceBuilder()
@@ -543,7 +572,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
                 new_seq_builder.add_scan(scan)
 
             new_seq = new_seq_builder.build()
-            m.seq = new_seq
+            setattr(m, "seq", new_seq)
 
             # Rebuild AcquisitionConfiguration
             new_config = ostb_mod.AcquisitionConfiguration()
@@ -551,7 +580,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             new_config.set_sequence(new_seq)
             new_config.set_processing(m.processing)
             new_config.validate()
-            m.configuration = new_config
+            setattr(m, "configuration", new_config)
             _global_ostb_config = new_config
 
             # Step: Apply to hardware
@@ -581,7 +610,7 @@ def rebuild_configuration_with_params(new_voltage: float = None, new_gain: float
             diag_log("REBUILD_ERROR", f"Error rebuilding configuration: {e}")
             return False
 
-def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = None) -> bool:
+def apply_runtime_voltage_and_gain(new_voltage: float | None = None, new_gain: float | None = None) -> bool:
     """
     Applies voltage and analog gain promptly to hardware acquisition.
     1. Sets parameters immediately in module memory & hardware objects.
@@ -607,7 +636,7 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
             _last_confirmed_voltage = v_val
             _hardware_applied_voltage = v_val
         if _curv_module is not None:
-            _curv_module._current_voltage = v_val
+            setattr(_curv_module, "_current_voltage", v_val)
             if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                 try:
                     _curv_module.waveform.set_negative_voltage(v_val)
@@ -623,7 +652,7 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
             _last_confirmed_gain = g_val
             _hardware_applied_gain = g_val
         if _curv_module is not None:
-            _curv_module.gain_analog_db = g_val
+            setattr(_curv_module, "gain_analog_db", g_val)
             if hasattr(_curv_module, "seq") and hasattr(_curv_module.seq, "scans"):
                 try:
                     for s in _curv_module.seq.scans:
@@ -647,13 +676,13 @@ def apply_runtime_voltage_and_gain(new_voltage: float = None, new_gain: float = 
         success = apply_live_hardware_parameter("gain", float(new_gain)) and success
     return success
 
-def schedule_rebuild(new_voltage: float = None, new_gain: float = None) -> None:
+def schedule_rebuild(new_voltage: float | None = None, new_gain: float | None = None) -> None:
     """Applies voltage/gain promptly to hardware."""
     apply_runtime_voltage_and_gain(new_voltage=new_voltage, new_gain=new_gain)
 
 
 
-def send_ostb_socket_command(name: str, value: any, port: int = 4096) -> bool:
+def send_ostb_socket_command(name: str, value: Any, port: int = 4096) -> bool:
     """
     Sends a direct control command to the OSTB Control Server TCP socket on 127.0.0.1:4096.
     Bypasses GUI pixel coordinates completely and triggers OpenSonics control server directly.
@@ -710,15 +739,14 @@ def _apply_in_process_qt_parameter(name: str, val: float) -> bool:
     applied = False
     try:
         import sys
-        QtWidgets = sys.modules.get("PyQt5.QtWidgets")
         QtWidgets = sys.modules.get("PyQt5.QtWidgets") or sys.modules.get("PyQt6.QtWidgets")
         if QtWidgets is None:
             try:
-                from PyQt5 import QtWidgets
+                from PyQt5 import QtWidgets  # type: ignore
             except ImportError:
                 QtWidgets = None
                 try:
-                    from PyQt6 import QtWidgets
+                    from PyQt6 import QtWidgets  # type: ignore
                 except ImportError:
                     QtWidgets = None
         if QtWidgets is None:
@@ -818,7 +846,7 @@ def apply_live_hardware_parameter(name: str, val: float) -> bool:
         _last_confirmed_voltage = val_f
         _hardware_applied_voltage = val_f
         if _curv_module is not None:
-            _curv_module._current_voltage = val_f
+            setattr(_curv_module, "_current_voltage", val_f)
             if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                 try:
                     _curv_module.waveform.set_negative_voltage(val_f)
@@ -832,7 +860,7 @@ def apply_live_hardware_parameter(name: str, val: float) -> bool:
         _last_confirmed_gain = val_f
         _hardware_applied_gain = val_f
         if _curv_module is not None:
-            _curv_module.gain_analog_db = val_f
+            setattr(_curv_module, "gain_analog_db", val_f)
             if hasattr(_curv_module, "seq") and hasattr(_curv_module.seq, "scans"):
                 try:
                     for s in _curv_module.seq.scans:
@@ -894,7 +922,7 @@ def apply_live_hardware_parameter(name: str, val: float) -> bool:
     return True
 
 
-def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: float = 0.0) -> bool:
+def execute_direct_runtime_command(name: str, value: Any, seq: int = 0, ts: float = 0.0) -> bool:
     """
     Executes an ultrasound acquisition control command.
     Multi-tier architecture:
@@ -948,7 +976,7 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
         else:
             print(f"[Direct OSTB API] Standby voltage preserved -> {val} V (live hardware update not claimed)")
             if _curv_module is not None:
-                _curv_module._current_voltage = val
+                setattr(_curv_module, "_current_voltage", val)
                 if hasattr(_curv_module, "waveform") and hasattr(_curv_module.waveform, "set_negative_voltage"):
                     try:
                         _curv_module.waveform.set_negative_voltage(val)
@@ -971,7 +999,7 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
         else:
             print(f"[Direct OSTB API] Standby gain preserved -> {val} dB (live hardware update not claimed)")
             if _curv_module is not None:
-                _curv_module.gain_analog_db = val
+                setattr(_curv_module, "gain_analog_db", val)
             handled_direct = apply_runtime_voltage_and_gain(new_gain=val)
         # CRITICAL: Return immediately! Never call handle_control_command which sends simulated clicks!
         return handled_direct
@@ -1027,8 +1055,8 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
             _hardware_applied_voltage = _standby_voltage
             _hardware_applied_gain = _standby_gain
             if _curv_module is not None:
-                _curv_module._current_voltage = _standby_voltage
-                _curv_module.gain_analog_db = _standby_gain
+                setattr(_curv_module, "_current_voltage", _standby_voltage)
+                setattr(_curv_module, "gain_analog_db", _standby_gain)
             if _global_ostb_runtime is not None:
                 if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
                     try:
@@ -1084,8 +1112,8 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
         _hardware_applied_voltage = _standby_voltage
         _hardware_applied_gain = _standby_gain
         if _curv_module is not None:
-            _curv_module._current_voltage = _standby_voltage
-            _curv_module.gain_analog_db = _standby_gain
+            setattr(_curv_module, "_current_voltage", _standby_voltage)
+            setattr(_curv_module, "gain_analog_db", _standby_gain)
         if _global_ostb_runtime is not None:
             if hasattr(_global_ostb_runtime, "configure") and _global_ostb_config is not None:
                 try:
@@ -1131,7 +1159,7 @@ def execute_direct_runtime_command(name: str, value: any, seq: int = 0, ts: floa
     gui_result = handle_control_command(name, value)
     return handled_direct or gui_result
 
-def handle_control_command(name: str, value: any) -> bool:
+def handle_control_command(name: str, value: Any) -> bool:
     """
     Handles control commands from doctor side and delivers them directly into OpenSonics NEXUS via PostMessage & TCP socket.
     Coordinates calibrated to NEXUS window layout (640x480 ratio):
@@ -1306,7 +1334,7 @@ def _make_status_frame(
     text: str, w: int = STREAM_CANVAS_W, h: int = STREAM_CANVAS_H
 ) -> bytes:
     try:
-        import cv2
+        import cv2  # type: ignore
         frame = np.zeros((h, w, 3), dtype=np.uint8)
         frame[:] = (20, 22, 28)
         cv2.putText(frame, "Ultrasound -> Agora", (26, 62), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (230, 230, 230), 2)
@@ -1332,7 +1360,7 @@ def _get_latest_jpg() -> bytes:
     return _make_status_frame("Waiting for ultrasound image stream...")
 
 
-def _snapshot_to_gray(snapshot) -> np.ndarray:
+def _snapshot_to_gray(snapshot: Any) -> Any:
     """Convert an OSTB processed-output snapshot to a displayable B-mode frame."""
     shape = tuple(int(size) for size in snapshot.shape)
     if not shape:
@@ -1386,7 +1414,7 @@ def _snapshot_to_gray(snapshot) -> np.ndarray:
     return np.clip((image - low) * (255.0 / (high - low)), 0, 255).astype(np.uint8)
 
 
-def _render_stream_frame(gray: np.ndarray) -> np.ndarray:
+def _render_stream_frame(gray: Any) -> Any:
     """Render the direct image using the same physical geometry as the GUI."""
     canvas_w, canvas_h = STREAM_CANVAS_W, STREAM_CANVAS_H
     left, top = 145, 45
@@ -1458,7 +1486,7 @@ def _render_stream_frame(gray: np.ndarray) -> np.ndarray:
     return frame
 
 
-def capture_render_window() -> np.ndarray:
+def capture_render_window() -> Any:
     """
     Captures the live pixels of the ultrasound render window ('C3.5-128R60C Focused B-Mode')
     using Win32 PrintWindow. Works 100% reliably regardless of OSTB shared memory mapping names.
@@ -1471,7 +1499,7 @@ def capture_render_window() -> np.ndarray:
 
         render_hwnd = 0
 
-        def enum_cb(hwnd, _):
+        def render_enum_cb(hwnd, _):
             nonlocal render_hwnd
             if win32gui.IsWindow(hwnd) and win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
@@ -1484,7 +1512,7 @@ def capture_render_window() -> np.ndarray:
             return True
 
         try:
-            win32gui.EnumWindows(enum_cb, None)
+            win32gui.EnumWindows(render_enum_cb, None)
         except Exception:
             pass
 
@@ -1577,17 +1605,18 @@ def _run_curv_proper_code_thread() -> None:
     print(f"[ultrasound] Importing and executing {ULTRASOUND_SCRIPT} in-process...")
     try:
         spec = importlib.util.spec_from_file_location("curv_proper_module", str(script_path))
-        module = importlib.util.module_from_spec(spec)
-        _curv_module = module
+        if spec is not None and spec.loader is not None:
+            module = importlib.util.module_from_spec(spec)
+            _curv_module = module
 
-        # Start watcher thread to capture runtime immediately when created
-        watcher = threading.Thread(target=_watch_module_runtime, daemon=True)
-        watcher.start()
+            # Start watcher thread to capture runtime immediately when created
+            watcher = threading.Thread(target=_watch_module_runtime, daemon=True)
+            watcher.start()
 
-        spec.loader.exec_module(module)
-        if hasattr(module, "runtime"):
-            _global_ostb_runtime = module.runtime
-            print(f"[ultrasound] >>> ATTACHED _curv_module and _global_ostb_runtime: {module.runtime}")
+            spec.loader.exec_module(module)
+            if hasattr(module, "runtime"):
+                _global_ostb_runtime = module.runtime
+                print(f"[ultrasound] >>> ATTACHED _curv_module and _global_ostb_runtime: {module.runtime}")
     except Exception as exc:
         print(f"[ultrasound] In-process execution info: {exc}")
 
@@ -1622,10 +1651,10 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "9f3eb0c721cf4d5e86fe506ccf085fa1")[:8]
+    clean_app_id = (APP_ID or "f6a036d79c9b4d669bb076d61047528e")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
-        f"{CHANNEL}-control-9f3eb0c7",
+        f"{CHANNEL}-control-f6a036d7",
         f"{CHANNEL}-control"
     ]
     status_topic = f"{CHANNEL}-status-{clean_app_id}"
@@ -1855,7 +1884,7 @@ def get_status():
         "status": status_str,
         "is_frozen": bool(_is_frozen),
         "voltage": voltage,
-        "gain": gain,
+        "gain": gain, 
         "doctor_selected_voltage": float(_doctor_selected_voltage),
         "doctor_selected_gain": float(_doctor_selected_gain),
         "patient_received_voltage": float(_patient_received_voltage),

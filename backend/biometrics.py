@@ -136,6 +136,7 @@ class BiometricHardwareManager:
                 rtscts=False
             )
             time.sleep(0.08)  # Settle time for ST-Link VCP
+        
             return conn
         except Exception:
             return None

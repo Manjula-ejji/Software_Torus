@@ -1532,7 +1532,7 @@ body[data-role="viewer"] #settings-uid-wrapper {
   background-image:
     radial-gradient(circle at 50% 30%, rgba(139, 92, 246, 0.18) 0%, transparent 65%),
     radial-gradient(circle at 50% 0%, #120e29 0%, var(--bg-main) 70%);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 9999;

@@ -100,13 +100,11 @@ def add_cors_headers(response):
 
     response.headers["Access-Control-Allow-Private-Network"] = "true"
 
-    if request.path.startswith("/api/") or request.path.endswith((".html", ".js", ".css")) or request.path in ["/", "/index.html"]:
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
 
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
 
-        response.headers["Pragma"] = "no-cache"
-
-        response.headers["Expires"] = "0"
+    response.headers["Expires"] = "0"
 
     return response
 
@@ -223,9 +221,9 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
     import time
 
-    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "9f3eb0c721cf4d5e86fe506ccf085fa1")).strip()
+    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "f6a036d79c9b4d669bb076d61047528e")).strip()
 
-    clean_app_id = (app_id or "9f3eb0c7")[:8]
+    clean_app_id = (app_id or "f6a036d7")[:8]
 
     channel = os.environ.get("AGORA_CHANNEL", "torus")
 
@@ -233,7 +231,7 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
         f"{channel}-control-{clean_app_id}",
 
-        f"{channel}-control-9f3eb0c7",
+        f"{channel}-control-f6a036d7",
 
         f"{channel}-control"
 
@@ -545,17 +543,17 @@ def api_agora_config():
 
     app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "")).strip()
 
-    if not app_id or app_id != "9f3eb0c721cf4d5e86fe506ccf085fa1":
+    if not app_id or app_id != "f6a036d79c9b4d669bb076d61047528e":
 
-        app_id = "9f3eb0c721cf4d5e86fe506ccf085fa1"
+        app_id = "f6a036d79c9b4d669bb076d61047528e"
 
 
 
     token = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "")).strip()
 
-    if not token or not token.startswith("007eJxTYHi"):
+    if not token or not token.startswith("007eJxTY"):
 
-        token = "007eJxTYHiVsU9y/vRch6WhumfWdwd/PNx6usd1i53e3LX/V9m2LDRXYLBMM05NMkg2NzJMTjNJMU21MEtLNTUwS05OM7AwTUs0/FH3N6shkJGBx5mJiZEBAkF8VoaS/KLSYgYGAAYoIb4="
+        token = "007eJxTYFDqOnCaQVjrQXv3o6q2c+0/g9fe/Wy0s+O95kIXBnNV5WsKDGlmiQbGZinmlsmWSSYpZmaWSUkG5mYpZoYGJuamRhapW6//y2oIZGT4/fAJMyMDBIL4rAwl+UWlxQwMAM4RIl8="
 
 
 

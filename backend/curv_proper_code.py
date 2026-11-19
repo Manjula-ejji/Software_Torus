@@ -2,7 +2,10 @@ from scipy.signal import firwin
 import numpy as np
 import math
 
-import ostb._ostb as ostb
+try:
+    import ostb._ostb as ostb  # type: ignore
+except ModuleNotFoundError:
+    ostb = None
 
 
 ''' --- Parameters --- '''
@@ -11,6 +14,7 @@ frame_count = 16
 sample_factor = 4
 gain_analog_db = 40.0
 time_slot_seconds = 1.0e-3
+_current_voltage = 50.0
 
 active_element_count = 16
 focus_depth_m = 30.0e-3
@@ -32,273 +36,303 @@ taps = firwin(
     fs=sampling_frequency_hz,
 )
 
-''' --- Probe + waveform + trigger + root --- '''
-probe = ostb.ProbeFactory("C3.5-128R60C")
-probe.validate()
+if ostb is None:
+    print("[curv_proper_code] Notice: Running in non-hardware/dev mode. ostb._ostb is not available.")
+    probe = None
+    waveform = None
+    trigger = None
+    root = None
+    seqBuilder = None
+    seq = None
+    rxConfig = None
+    line_count = 0
+    centers = []
+    polar_image_grid = None
+    display_image_grid = None
+    render_window = None
+    tx_apod = None
+    rx_apod = None
+    beamforming_setup = None
+    bp = None
+    das = None
+    tgc = None
+    log = None
+    scanconverter = None
+    clarity = None
+    processes = None
+    bmode_entry = None
+    processing = None
+    configuration = None
+    connection = None
+    runtime = None
+else:
+    ''' --- Probe + waveform + trigger + root --- '''
+    probe = ostb.ProbeFactory("C3.5-128R60C")
+    probe.validate()
 
-waveform = ostb.WaveformFactory.make_unipolar(center_frequency_hz)
-waveform.set_awg(False)
-waveform.set_negative_voltage(50.0)
-waveform.validate()
+    waveform = ostb.WaveformFactory.make_unipolar(center_frequency_hz)
+    waveform.set_awg(False)
+    waveform.set_negative_voltage(50.0)
+    waveform.validate()
 
-trigger = (
-    ostb.TriggerBuilder()
-    .set_mode(ostb.TriggerMode.INTERNAL)
-    .add_output_route(
-        ostb.DigitalOutputPin.DIGITAL_OUTPUT_07,
-        ostb.TriggerSignal.SIGNAL_CYCLE)
-    .build())
-trigger.validate()
+    trigger = (
+        ostb.TriggerBuilder()
+        .set_mode(ostb.TriggerMode.INTERNAL)
+        .add_output_route(
+            ostb.DigitalOutputPin.DIGITAL_OUTPUT_07,
+            ostb.TriggerSignal.SIGNAL_CYCLE)
+        .build())
+    trigger.validate()
 
-root = (
-    ostb.RootBuilder()
-    .set_enable_fmc(True)
-    .set_fmc_element_start(0)
-    .set_fmc_element_stop(probe.element_count - 1)
-    .set_fmc_element_step(1)
-    .set_usb3_disable(True)
-    .set_enable_awg(False)
-    .set_matrix_callback(True)
-    .set_ascan_bit_size(ostb.AscanBitSize.BITS_16)
-    .build())
+    root = (
+        ostb.RootBuilder()
+        .set_enable_fmc(True)
+        .set_fmc_element_start(0)
+        .set_fmc_element_stop(probe.element_count - 1)
+        .set_fmc_element_step(1)
+        .set_usb3_disable(True)
+        .set_enable_awg(False)
+        .set_matrix_callback(True)
+        .set_ascan_bit_size(ostb.AscanBitSize.BITS_16)
+        .build())
 
-''' --- build sequence --- '''
-seqBuilder = (ostb.SequenceBuilder()
-               .set_probe(probe)
-               .set_trigger(trigger)
-               .set_number_of_frames(frame_count))
+    ''' --- build sequence --- '''
+    seqBuilder = (ostb.SequenceBuilder()
+                   .set_probe(probe)
+                   .set_trigger(trigger)
+                   .set_number_of_frames(frame_count))
 
-rxConfig = (ostb.RxConfigBuilder()
-          .set_apodization([1.0] * probe.element_count)
-          .set_gain([0.0] * probe.element_count)
-          .set_focus(ostb.RxFocus.STANDARD)
-          .set_delays([0.0] * probe.element_count)
-          .build(probe.element_count))
+    rxConfig = (ostb.RxConfigBuilder()
+              .set_apodization([1.0] * probe.element_count)
+              .set_gain([0.0] * probe.element_count)
+              .set_focus(ostb.RxFocus.STANDARD)
+              .set_delays([0.0] * probe.element_count)
+              .build(probe.element_count))
 
-line_count = (probe.element_count - active_element_count
-                  + (1 if include_last_aperture else 0))
+    line_count = (probe.element_count - active_element_count
+                      + (1 if include_last_aperture else 0))
 
-centers = []
-for line_idx in range(line_count):
-    start = line_idx
-    apodization = [0.0] * probe.element_count
-    apodization[start: start + active_element_count] = [1.0] * active_element_count
+    centers = []
+    for line_idx in range(line_count):
+        start = line_idx
+        apodization = [0.0] * probe.element_count
+        apodization[start: start + active_element_count] = [1.0] * active_element_count
 
-    # center element index of the active TX aperture
-    center_idx = start + active_element_count // 2 - (
-        1 if (active_element_count % 2 == 0) else 0
+        # center element index of the active TX aperture
+        center_idx = start + active_element_count // 2 - (
+            1 if (active_element_count % 2 == 0) else 0
+        )
+        centers.append(center_idx)
+
+        # convex steering angle and radius from probe geometry
+        azimuth_rad = probe.az_angle[center_idx]
+        radius_m = probe.radius
+
+        # convex focal point calculation
+        rho_m = radius_m + focus_depth_m
+        x_focus_m = rho_m * math.sin(azimuth_rad)
+        z_focus_m = -radius_m + rho_m * math.cos(azimuth_rad)
+
+        ''' --- setup txConfig --- '''
+        txConfig = (ostb.TxConfigBuilder()
+              .set_apodization(apodization)
+              .set_source([0.0, 0.0, 0.0])
+              .set_focus_point([x_focus_m, 0.0, z_focus_m])
+              .set_tx_with_all_elements(False)
+              .set_waveform(waveform)
+              .set_speed_of_sound(speed_of_sound)
+              .compute_delays(probe)
+              .build(probe))
+
+        ''' --- setup scan cycle --- '''
+        scan = (ostb.ScanBuilder()
+                .set_tx(txConfig)
+                .set_rx(rxConfig)
+                .set_process_id(0)
+                .set_scan_id(line_idx)
+                .set_frame_id(0)
+                .set_gain_digital(0.0)
+                .set_gain_analog(gain_analog_db)
+                .set_start(scan_start_s)
+                .set_range(scan_range_s)
+                .set_time_slot(time_slot_seconds)
+                .set_sample_factor(sample_factor)
+                .set_compression_type(ostb.CompressionType.DECIMATION)
+                .set_rectification(ostb.Rectification.SIGNED)
+                .set_beam_correction(0.0)
+                .build(probe.element_count))
+
+        ''' --- add scan to sequence --- '''
+        seqBuilder.add_scan(scan)
+
+    ''' --- build the sequence --- '''
+    seq = seqBuilder.build()
+
+    ''' --- build imaging grid --- '''
+    multi_line_count = 12
+
+    azimuth_axis = np.linspace(probe.az_angle[centers[0]], probe.az_angle[centers[-1]], multi_line_count * line_count)
+    radial_axis = np.linspace(z_min_m + probe.radius, z_max_m + probe.radius, 512).astype(np.float32)
+
+    polar_image_grid = (
+        ostb.ImageGridBuilder()
+        .set_geometry(ostb.ImageGridGeometry.POLAR)
+        .set_layout(ostb.ImageGridLayout.PLANAR_2D)
+        .set_radial_coordinates(radial_axis)
+        .set_azimuth_coordinates(azimuth_axis)
+        .set_elevation_coordinates([0.0])
+        .set_apex([0.0, 0.0, -probe.radius])
+        .build()
     )
-    centers.append(center_idx)
 
-    # convex steering angle and radius from probe geometry
-    azimuth_rad = probe.az_angle[center_idx]
-    radius_m = probe.radius
-
-    # convex focal point calculation
-    rho_m = radius_m + focus_depth_m
-    x_focus_m = rho_m * math.sin(azimuth_rad)
-    z_focus_m = -radius_m + rho_m * math.cos(azimuth_rad)
-
-    ''' --- setup txConfig --- '''
-    txConfig = (ostb.TxConfigBuilder()
-          .set_apodization(apodization)
-          .set_source([0.0, 0.0, 0.0])
-          .set_focus_point([x_focus_m, 0.0, z_focus_m])
-          .set_tx_with_all_elements(False)
-          .set_waveform(waveform)
-          .set_speed_of_sound(speed_of_sound)
-          .compute_delays(probe)
-          .build(probe))
-
-    ''' --- setup scan cycle --- '''
-    scan = (ostb.ScanBuilder()
-            .set_tx(txConfig)
-            .set_rx(rxConfig)
-            .set_process_id(0)
-            .set_scan_id(line_idx)
-            .set_frame_id(0)
-            .set_gain_digital(0.0)
-            .set_gain_analog(gain_analog_db)
-            .set_start(scan_start_s)
-            .set_range(scan_range_s)
-            .set_time_slot(time_slot_seconds)
-            .set_sample_factor(sample_factor)
-            .set_compression_type(ostb.CompressionType.DECIMATION)
-            .set_rectification(ostb.Rectification.SIGNED)
-            .set_beam_correction(0.0)
-            .build(probe.element_count))
-
-    ''' --- add scan to sequence --- '''
-    seqBuilder.add_scan(scan)
-
-''' --- build the sequence --- '''
-seq = seqBuilder.build()
-
-''' --- build imaging grid --- '''
-multi_line_count = 12
-
-azimuth_axis = np.linspace(probe.az_angle[centers[0]], probe.az_angle[centers[-1]], multi_line_count * line_count)
-radial_axis = np.linspace(z_min_m + probe.radius, z_max_m + probe.radius, 512).astype(np.float32)
-
-polar_image_grid = (
-    ostb.ImageGridBuilder()
-    .set_geometry(ostb.ImageGridGeometry.POLAR)
-    .set_layout(ostb.ImageGridLayout.PLANAR_2D)
-    .set_radial_coordinates(radial_axis)
-    .set_azimuth_coordinates(azimuth_axis)
-    .set_elevation_coordinates([0.0])
-    .set_apex([0.0, 0.0, -probe.radius])
-    .build()
-)
-
-polar_bounds = polar_image_grid.bounds
-display_x_coordinates = np.linspace(
-    float(polar_bounds.x_limits[0]),
-    float(polar_bounds.x_limits[1]),
-    512,
-)
-display_z_coordinates = np.linspace(
-    float(polar_bounds.z_limits[0]),
-    float(polar_bounds.z_limits[1]),
-    512,
-)
-
-display_image_grid = (
-    ostb.ImageGridBuilder()
-    .set_geometry(ostb.ImageGridGeometry.RECTANGULAR)
-    .set_layout(ostb.ImageGridLayout.PLANAR_2D)
-    .set_x_coordinates(display_x_coordinates)
-    .set_y_coordinates([0.0])
-    .set_z_coordinates(display_z_coordinates)
-    .build()
-)
-display_image_grid.validate()
-
-''' --- build render window --- '''
-render_window = (
-    ostb.RenderWindowBuilder()
-    .set_type(ostb.RenderWindowType.IMAGE)
-    .set_title("C3.5-128R60C Focused B-Mode")
-    .set_x_label("Lateral")
-    .set_y_label("Depth")
-    .add_image_layer(
-        display_image_grid,
-        process_id=0,
-        colormap=ostb.RenderColormap.GRAY,
-        opacity=1.0,
-        label=str(""),
-        visible=True,
+    polar_bounds = polar_image_grid.bounds
+    display_x_coordinates = np.linspace(
+        float(polar_bounds.x_limits[0]),
+        float(polar_bounds.x_limits[1]),
+        512,
     )
-    .build())
+    display_z_coordinates = np.linspace(
+        float(polar_bounds.z_limits[0]),
+        float(polar_bounds.z_limits[1]),
+        512,
+    )
 
-''' --- post processing pipeline --- '''
-tx_apod = ostb.TxApodizationConfig()
-tx_apod.window = ostb.ApodizationType.FOCUSED
-tx_apod.mla = multi_line_count
-tx_apod.mla_overlap = 6
-tx_apod.validate()
+    display_image_grid = (
+        ostb.ImageGridBuilder()
+        .set_geometry(ostb.ImageGridGeometry.RECTANGULAR)
+        .set_layout(ostb.ImageGridLayout.PLANAR_2D)
+        .set_x_coordinates(display_x_coordinates)
+        .set_y_coordinates([0.0])
+        .set_z_coordinates(display_z_coordinates)
+        .build()
+    )
+    display_image_grid.validate()
 
-rx_apod = ostb.RxApodizationConfig()
-rx_apod.f_number = [1.2, 1.2]
-rx_apod.window = ostb.ApodizationType.RECTANGULAR
-rx_apod.validate()
+    ''' --- build render window --- '''
+    render_window = (
+        ostb.RenderWindowBuilder()
+        .set_type(ostb.RenderWindowType.IMAGE)
+        .set_title("C3.5-128R60C Focused B-Mode")
+        .set_x_label("Lateral")
+        .set_y_label("Depth")
+        .add_image_layer(
+            display_image_grid,
+            process_id=0,
+            colormap=ostb.RenderColormap.GRAY,
+            opacity=1.0,
+            label=str(""),
+            visible=True,
+        )
+        .build())
 
-beamforming_setup = ostb.BeamformingSetup()
-beamforming_setup.speed_of_sound = speed_of_sound
-beamforming_setup.tx_apodization = tx_apod
-beamforming_setup.rx_apodization = rx_apod
-beamforming_setup.validate()
+    ''' --- post processing pipeline --- '''
+    tx_apod = ostb.TxApodizationConfig()
+    tx_apod.window = ostb.ApodizationType.FOCUSED
+    tx_apod.mla = multi_line_count
+    tx_apod.mla_overlap = 6
+    tx_apod.validate()
 
-bp = ostb.BandPassFilterConfig()
-bp.coeffs = [float(x) for x in taps]
+    rx_apod = ostb.RxApodizationConfig()
+    rx_apod.f_number = [1.2, 1.2]
+    rx_apod.window = ostb.ApodizationType.RECTANGULAR
+    rx_apod.validate()
 
-das = ostb.DasBmodeConfig()
-das.beamform.setup = beamforming_setup
+    beamforming_setup = ostb.BeamformingSetup()
+    beamforming_setup.speed_of_sound = speed_of_sound
+    beamforming_setup.tx_apodization = tx_apod
+    beamforming_setup.rx_apodization = rx_apod
+    beamforming_setup.validate()
 
-tgc = ostb.AutoTgcConfig()
-tgc.max_fit_point_count = 256
-tgc.min_gain_near = 0.75
-tgc.min_gain_far = 0.75
-tgc.max_gain_near = 2.0
-tgc.max_gain_far = 8.0
+    bp = ostb.BandPassFilterConfig()
+    bp.coeffs = [float(x) for x in taps]
 
-log = ostb.LogCompressionConfig()
-log.gain_db = 50
-log.dynamic_range_db = 60
-log.epsilon = 1.0e-6
+    das = ostb.DasBmodeConfig()
+    das.beamform.setup = beamforming_setup
 
-scanconverter = ostb.ScanConversionConfig()
-scanconverter.output_sample_count = 512
-scanconverter.output_line_count = 512
-scanconverter.background_value = 0.0
+    tgc = ostb.AutoTgcConfig()
+    tgc.max_fit_point_count = 256
+    tgc.min_gain_near = 0.75
+    tgc.min_gain_far = 0.75
+    tgc.max_gain_near = 2.0
+    tgc.max_gain_far = 8.0
 
-clarity = ostb.ClarityConfig()
-clarity.iteration_count = 15
-clarity.lambda_ = 0.25
-clarity.sigma_x = 6.0
-clarity.sigma_y = 6.0
-clarity.sigma_i = 15.0
-clarity.reject = 3.0
+    log = ostb.LogCompressionConfig()
+    log.gain_db = 50
+    log.dynamic_range_db = 60
+    log.epsilon = 1.0e-6
 
-pb = ostb.ProcessBuilder()
-pb.add_band_pass_filter(bp)
-pb.add_das_bmode_beamform(das)
-pb.add_auto_tgc(tgc)
-pb.add_log_compression(log)
-pb.add_scan_conversion(scanconverter)
-pb.add_clarity(clarity)
-processes = pb.build()
-processes.validate()
+    scanconverter = ostb.ScanConversionConfig()
+    scanconverter.output_sample_count = 512
+    scanconverter.output_line_count = 512
+    scanconverter.background_value = 0.0
 
+    clarity = ostb.ClarityConfig()
+    clarity.iteration_count = 15
+    clarity.lambda_ = 0.25
+    clarity.sigma_x = 6.0
+    clarity.sigma_y = 6.0
+    clarity.sigma_i = 15.0
+    clarity.reject = 3.0
 
-bmode_entry = ostb.ProcessPipelineEntry()
-bmode_entry.image_grid = polar_image_grid
-bmode_entry.processes = processes
-
-processing = ostb.AcquisitionProcessingConfig()
-processing.set_enable_beamforming(True)
-processing.set_enable_display(True)
-processing.set_image_grid(polar_image_grid)
-processing.set_render_windows([render_window])
-processing.set_process_pipeline(0, bmode_entry)
-processing.validate()
-
-
-configuration = ostb.AcquisitionConfiguration()
-configuration.set_root(root)
-configuration.set_sequence(seq)
-configuration.set_processing(processing)
-configuration.validate()
-
-connection = ostb.SystemConnectionSettings()
-connection.set_ip_address("192.168.1.11")
-connection.set_port(4096)
-connection.set_connect_timeout_ms(10000)
-connection.set_hardware_type(ostb.HardwareType.OEM_PA_MAX)
-connection.validate()
+    pb = ostb.ProcessBuilder()
+    pb.add_band_pass_filter(bp)
+    pb.add_das_bmode_beamform(das)
+    pb.add_auto_tgc(tgc)
+    pb.add_log_compression(log)
+    pb.add_scan_conversion(scanconverter)
+    pb.add_clarity(clarity)
+    processes = pb.build()
+    processes.validate()
 
 
-runtime = ostb.AcquisitionRuntime()
-print("Connecting to Hardware...", end="")
-runtime.connect(connection)
-print(" OK")
-print("Writing Hardware Configuration...", end="")
-runtime.configure(configuration)
-print(" OK")
+    bmode_entry = ostb.ProcessPipelineEntry()
+    bmode_entry.image_grid = polar_image_grid
+    bmode_entry.processes = processes
 
-runtime.start_control_server()
-runtime.run_controller()
+    processing = ostb.AcquisitionProcessingConfig()
+    processing.set_enable_beamforming(True)
+    processing.set_enable_display(True)
+    processing.set_image_grid(polar_image_grid)
+    processing.set_render_windows([render_window])
+    processing.set_process_pipeline(0, bmode_entry)
+    processing.validate()
 
-print("Saving Acquired Data...", end="")
-ostb.save_acquisition_archive_hdf5(
-    configuration,
-    "capture_focused_curvilinear.h5",
-    include_rf_data=True,
-    include_process_output_data=True,
-)
-runtime.stop_control_server()
-runtime.disconnect()
-print("Done.")
+
+    configuration = ostb.AcquisitionConfiguration()
+    configuration.set_root(root)
+    configuration.set_sequence(seq)
+    configuration.set_processing(processing)
+    configuration.validate()
+
+    connection = ostb.SystemConnectionSettings()
+    connection.set_ip_address("192.168.1.11")
+    connection.set_port(4096)
+    connection.set_connect_timeout_ms(10000)
+    connection.set_hardware_type(ostb.HardwareType.OEM_PA_MAX)
+    connection.validate()
+
+
+    runtime = ostb.AcquisitionRuntime()
+    print("Connecting to Hardware...", end="")
+    runtime.connect(connection)
+    print(" OK")
+    print("Writing Hardware Configuration...", end="")
+    runtime.configure(configuration)
+    print(" OK")
+
+    runtime.start_control_server()
+    runtime.run_controller()
+
+    print("Saving Acquired Data...", end="")
+    ostb.save_acquisition_archive_hdf5(
+        configuration,
+        "capture_focused_curvilinear.h5",
+        include_rf_data=True,
+        include_process_output_data=True,
+    )
+    runtime.stop_control_server()
+    runtime.disconnect()
+    print("Done.")
 
 
 def get_current_status():
@@ -309,7 +343,7 @@ def get_current_status():
     except Exception:
         is_running = True
 
-    v = float(_current_voltage if "_current_voltage" in globals() else (getattr(waveform, "_voltage", 50.0) if "waveform" in globals() and hasattr(waveform, "_voltage") else 50.0))
+    v = float(_current_voltage if "_current_voltage" in globals() else (getattr(waveform, "_voltage", 50.0) if "waveform" in globals() and waveform is not None and hasattr(waveform, "_voltage") else 50.0))
     g = float(gain_analog_db if "gain_analog_db" in globals() else 40.0)
 
     return {
@@ -328,13 +362,14 @@ def set_voltage(val: float) -> bool:
     try:
         val = max(0.0, min(50.0, float(val)))
         _current_voltage = val
-        if "waveform" in globals() and hasattr(waveform, "set_negative_voltage"):
+        if "waveform" in globals() and waveform is not None and hasattr(waveform, "set_negative_voltage"):
             try:
                 waveform.set_negative_voltage(val)
             except Exception:
                 pass
         try:
             import backend.ultrasound as us
+            us.handle_control_command("voltage", val)
             return us.apply_runtime_voltage_and_gain(new_voltage=val)
         except Exception:
             return True
@@ -351,6 +386,7 @@ def set_gain(val: float) -> bool:
         gain_analog_db = val
         try:
             import backend.ultrasound as us
+            us.handle_control_command("gain", val)
             return us.apply_runtime_voltage_and_gain(new_gain=val)
         except Exception:
             return True
