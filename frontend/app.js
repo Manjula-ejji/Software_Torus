@@ -6837,6 +6837,11 @@ window.switchToPortalSubView = switchToPortalSubView;
 
 function showTorusScreen(targetId, recordHistory = true, options = {}) {
 
+  ["torus-route-prepaint", "torus-prepaint-style", "torus-anti-flash"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
+
   const currentId = getCurrentVisibleScreenId();
   const force = (options && options.force === true);
 
@@ -7326,6 +7331,11 @@ window.navigateBackTorus = navigateBackTorus;
 // Role Selection screen card click & navigation handler
 
 function selectTorusRole(selectedRole, selectedUid = "") {
+
+  ["torus-route-prepaint", "torus-prepaint-style", "torus-anti-flash"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
 
   const role = (selectedRole || "").toLowerCase().trim();
 
@@ -23151,10 +23161,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Remove the early pre-paint CSS guard once target screen is firmly active with inline styles
-  const prepaintStyle = document.getElementById("torus-route-prepaint") || document.getElementById("torus-anti-flash");
-  if (prepaintStyle) {
-    prepaintStyle.remove();
-  }
+  ["torus-route-prepaint", "torus-prepaint-style", "torus-anti-flash"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
 
   // If settings modal was requested on any screen
   if (targetModal === "settings") {

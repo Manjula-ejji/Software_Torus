@@ -218,6 +218,10 @@
     };
 
     window.showTorusScreen = function (targetId, recordHistory) {
+      ["torus-route-prepaint", "torus-prepaint-style", "torus-anti-flash"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.remove();
+      });
       window.TORUS_ALL_SCREENS.forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.style.display = "none";
@@ -244,6 +248,10 @@
     };
 
     window.selectTorusRole = function (role, uid) {
+      ["torus-route-prepaint", "torus-prepaint-style", "torus-anti-flash"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.remove();
+      });
       var r = (role || "").toLowerCase().trim();
       var roleInput = document.getElementById("role");
       var uidInput = document.getElementById("uid");
@@ -308,7 +316,7 @@
       if (!r || !r.screen) return;
 
       var styleEl = document.createElement("style");
-      styleEl.id = "torus-prepaint-style";
+      styleEl.id = "torus-route-prepaint";
 
       var css = "";
       // Hide all screens
@@ -360,7 +368,7 @@
     rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=143" />
   <link rel="stylesheet" href="css/notifications-chat.css?v=140" />
-  <style id="torus-route-prepaint">
+  <style>
     :root {
       --bg-main: #060B18;
       --bg-surface: #0E1628;
