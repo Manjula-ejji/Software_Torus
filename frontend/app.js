@@ -28,13 +28,13 @@ function connectDoctorMQTT(appId, channel) {
 
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
 
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "f6a036d79c9b4d669bb076d61047528e" : "")
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "cf136a322cf74d449aba8c6695441d3b" : "")
 
-    || "f6a036d79c9b4d669bb076d61047528e";
+    || "cf136a322cf74d449aba8c6695441d3b";
 
-  if (!targetAppId || targetAppId !== "f6a036d79c9b4d669bb076d61047528e") {
+  if (!targetAppId || targetAppId !== "cf136a322cf74d449aba8c6695441d3b") {
 
-    targetAppId = "f6a036d79c9b4d669bb076d61047528e";
+    targetAppId = "cf136a322cf74d449aba8c6695441d3b";
 
   }
 
@@ -57,8 +57,8 @@ function connectDoctorMQTT(appId, channel) {
   const allControlTopics = [
 
     doctorControlTopic,
-    `${targetChannel}-control-f6a036d7`,
-    `torus-control-f6a036d7`,
+    `${targetChannel}-control-cf136a32`,
+    `torus-control-cf136a32`,
     `${targetChannel}-control`
 
   ];
@@ -66,7 +66,7 @@ function connectDoctorMQTT(appId, channel) {
   const allStatusTopics = [
 
     doctorStatusTopic,
-    `${targetChannel}-status-f6a036d7`,
+    `${targetChannel}-status-cf136a32`,
     `${targetChannel}-status`
 
   ];
@@ -148,8 +148,8 @@ function connectDoctorMQTT(appId, channel) {
           const payload = pendingMqttPayloads.shift();
 
           const pubTops = Array.from(new Set([doctorControlTopic,
-            `${targetChannel}-control-f6a036d7`,
-            `torus-control-f6a036d7`,
+            `${targetChannel}-control-cf136a32`,
+            `torus-control-cf136a32`,
             `${targetChannel}-control`]));
 
           pubTops.forEach(t => doctorMqttClient.publish(t, payload));
@@ -505,7 +505,7 @@ function sendControlCommand(name, value) {
   const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
   const pubTopics = Array.from(new Set([
     doctorControlTopic,
-    `${targetChannel}-control-f6a036d7`,
+    `${targetChannel}-control-cf136a32`,
     `${targetChannel}-control`
   ])).filter(Boolean);
 
@@ -2873,9 +2873,9 @@ async function joinCall() {
 
 
 
-  if (!appId || appId !== "f6a036d79c9b4d669bb076d61047528e") {
+  if (!appId || appId !== "cf136a322cf74d449aba8c6695441d3b") {
 
-    appId = "f6a036d79c9b4d669bb076d61047528e";
+    appId = "cf136a322cf74d449aba8c6695441d3b";
 
     if (appIdInput) appIdInput.value = appId;
 
@@ -11072,9 +11072,24 @@ window.resetDoctorReportSigningSession = resetDoctorReportSigningSession;
 
 async function setAuthenticatedDoctorSession(doctor) {
 
-  currentAuthenticatedUser = doctor;
-
+  const doctorData = { ...doctor, role: "doctor" };
+  currentAuthenticatedUser = doctorData;
+  currentAuthenticatedRole = "doctor";
   resetDoctorReportSigningSession();
+
+  try {
+    sessionStorage.setItem("authenticated_doctor", JSON.stringify(doctorData));
+    localStorage.setItem("authenticated_doctor", JSON.stringify(doctorData));
+    sessionStorage.setItem("torus_active_role", "doctor");
+    localStorage.setItem("torus_active_role", "doctor");
+    sessionStorage.setItem("userRole", "doctor");
+    localStorage.setItem("userRole", "doctor");
+    sessionStorage.setItem("torus_current_screen", "doctor-portal-dashboard");
+    sessionStorage.removeItem("authenticated_patient");
+    sessionStorage.removeItem("authenticated_viewer");
+    localStorage.removeItem("authenticated_patient");
+    localStorage.removeItem("authenticated_viewer");
+  } catch (e) { }
 
 
 
@@ -11130,7 +11145,7 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   // Connect Doctor MQTT
 
-  connectDoctorMQTT(appIdInput ? appIdInput.value : "f6a036d79c9b4d669bb076d61047528e", channelInput ? channelInput.value : "torus");
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "cf136a322cf74d449aba8c6695441d3b", channelInput ? channelInput.value : "torus");
 
 
 
@@ -23184,11 +23199,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Initialize SQLite database in the background without blocking the UI
-  try {
-    await initSQLiteDatabase();
-  } catch (dbErr) {
+  initSQLiteDatabase().catch((dbErr) => {
     console.warn("[TORUS Init] Background SQLite database initialization warning:", dbErr);
-  }
+  });
 
 
 
@@ -23705,45 +23718,92 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Secure Login Form Submission
   const loginForm = document.getElementById("doctor-login-form");
   const loginBtn = document.getElementById("doctor-login-btn");
+  let isDoctorLoginInProgress = false;
 
-  const handleDoctorLoginSubmit = async (e) => {
-    if (e) e.preventDefault();
+  window.handleDoctorLoginSubmit = async function (e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (isDoctorLoginInProgress) return false;
+
     hideAlertMessage("doctor-login-alert");
 
     const emailVal = document.getElementById("doctor-email-input")?.value?.trim() || "";
     const passVal = document.getElementById("doctor-password-input")?.value || "";
 
     if (!emailVal || !passVal) {
-      showAlertMessage("doctor-login-alert", "Please fill in all fields.");
-      return;
+      showAlertMessage("doctor-login-alert", "Please enter both Email/User ID and Password.");
+      return false;
     }
 
-    if (loginBtn) {
-      loginBtn.disabled = true;
+    isDoctorLoginInProgress = true;
+    const btn = loginBtn || document.getElementById("doctor-login-btn");
+    let originalBtnHtml = "";
+    if (btn) {
+      originalBtnHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.style.opacity = "0.78";
+      btn.style.pointerEvents = "none";
+      const spanEl = btn.querySelector("span");
+      if (spanEl) spanEl.textContent = "Verifying Credentials...";
     }
 
     try {
       const res = await authenticateDoctorAccount(emailVal, passVal);
       if (res && res.success && res.doctor) {
-        setAuthenticatedDoctorSession(res.doctor);
+        await setAuthenticatedDoctorSession(res.doctor);
       } else {
         showAlertMessage("doctor-login-alert", res?.error || "Invalid email/UID or password.");
+        if (btn) {
+          btn.disabled = false;
+          btn.style.opacity = "";
+          btn.style.pointerEvents = "";
+          if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+        }
       }
     } catch (err) {
       console.error("[Doctor Login Error]", err);
-      showAlertMessage("doctor-login-alert", "Authentication error. Please try again.");
-    } finally {
-      if (loginBtn) {
-        loginBtn.disabled = false;
+      showAlertMessage("doctor-login-alert", "Authentication failed: " + (err?.message || "Please check server connectivity."));
+      if (btn) {
+        btn.disabled = false;
+        btn.style.opacity = "";
+        btn.style.pointerEvents = "";
+        if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
       }
+    } finally {
+      isDoctorLoginInProgress = false;
     }
+    return false;
   };
+  const handleDoctorLoginSubmit = window.handleDoctorLoginSubmit;
 
   if (loginForm) {
-    loginForm.addEventListener("submit", handleDoctorLoginSubmit);
+    loginForm.onsubmit = (e) => {
+      if (e) e.preventDefault();
+      handleDoctorLoginSubmit(e);
+      return false;
+    };
+    loginForm.addEventListener("submit", (e) => {
+      if (e) e.preventDefault();
+      handleDoctorLoginSubmit(e);
+    });
   }
   if (loginBtn) {
-    loginBtn.addEventListener("click", handleDoctorLoginSubmit);
+    loginBtn.addEventListener("click", (e) => {
+      if (e) e.preventDefault();
+      handleDoctorLoginSubmit(e);
+    });
+  }
+
+  const docPassInput = document.getElementById("doctor-password-input");
+  if (docPassInput) {
+    docPassInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleDoctorLoginSubmit(e);
+      }
+    });
   }
 
   // ============================================================

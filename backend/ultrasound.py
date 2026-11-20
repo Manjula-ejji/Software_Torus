@@ -99,13 +99,13 @@ def _load_opensonics_env():
 _load_opensonics_env()
 
 # -------------------- USER CONFIG --------------------
-APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "f6a036d79c9b4d669bb076d61047528e"))
-if not APP_ID or APP_ID != "f6a036d79c9b4d669bb076d61047528e":
-    APP_ID = "f6a036d79c9b4d669bb076d61047528e"
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "cf136a322cf74d449aba8c6695441d3b"))
+if not APP_ID or APP_ID != "cf136a322cf74d449aba8c6695441d3b":
+    APP_ID = "cf136a322cf74d449aba8c6695441d3b"
 
-TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYFDqOnCaQVjrQXv3o6q2c+0/g9fe/Wy0s+O95kIXBnNV5WsKDGlmiQbGZinmlsmWSSYpZmaWSUkG5mYpZoYGJuamRhapW6//y2oIZGT4/fAJMyMDBIL4rAwl+UWlxQwMAM4RIl8="))
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYFi84eApj/OTQj70XTCaXT5tSsvElAus6s57pu39eUpZyZVFgSE5zdDYLNHYyCg5zdwkxcTEMjEp0SLZzMzS1MTEMMU4af3l/1kNgYwMbquWsDIyQCCIz8pQkl9UWszAAAAF7CId"))
 if not TOKEN or not TOKEN.startswith("007eJxTY"):
-    TOKEN = "007eJxTYFDqOnCaQVjrQXv3o6q2c+0/g9fe/Wy0s+O95kIXBnNV5WsKDGlmiQbGZinmlsmWSSYpZmaWSUkG5mYpZoYGJuamRhapW6//y2oIZGT4/fAJMyMDBIL4rAwl+UWlxQwMAM4RIl8="
+    TOKEN = "007eJxTYFi84eApj/OTQj70XTCaXT5tSsvElAus6s57pu39eUpZyZVFgSE5zdDYLNHYyCg5zdwkxcTEMjEp0SLZzMzS1MTEMMU4af3l/1kNgYwMbquWsDIyQCCIz8pQkl9UWszAAAAF7CId"
 CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
 UID = int(os.environ.get("AGORA_UID", 5001))
 
@@ -1651,10 +1651,10 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "f6a036d79c9b4d669bb076d61047528e")[:8]
+    clean_app_id = (APP_ID or "cf136a322cf74d449aba8c6695441d3b")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
-        f"{CHANNEL}-control-f6a036d7",
+        f"{CHANNEL}-control-cf136a32",
         f"{CHANNEL}-control"
     ]
     status_topic = f"{CHANNEL}-status-{clean_app_id}"

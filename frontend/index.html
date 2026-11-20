@@ -607,7 +607,7 @@
 
       <div id="doctor-login-alert" class="login-alert" style="display: none;"></div>
 
-      <form id="doctor-login-form" class="doctor-login-form" onsubmit="return false;">
+      <form id="doctor-login-form" class="doctor-login-form" onsubmit="if(typeof handleDoctorLoginSubmit==='function'){handleDoctorLoginSubmit(event);}return false;">
         <div class="form-group">
           <label for="doctor-email-input" class="form-label">Email / User ID</label>
           <input type="text" id="doctor-email-input" class="form-input" placeholder="Enter your registered email or UID"
@@ -637,7 +637,7 @@
         </div>
 
         <div class="login-actions">
-          <button type="submit" id="doctor-login-btn" class="btn btn-primary login-main-btn">
+          <button type="button" id="doctor-login-btn" class="btn btn-primary login-main-btn" onclick="if(typeof handleDoctorLoginSubmit==='function'){handleDoctorLoginSubmit(event);}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -1115,7 +1115,7 @@
         </div>
 
         <div class="login-actions">
-          <button type="submit" id="patient-login-btn" class="btn btn-primary login-main-btn">
+          <button type="button" id="patient-login-btn" class="btn btn-primary login-main-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -1595,7 +1595,7 @@
         </div>
 
         <div class="login-actions">
-          <button type="submit" id="viewer-login-btn" class="btn btn-primary login-main-btn">
+          <button type="button" id="viewer-login-btn" class="btn btn-primary login-main-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -4558,7 +4558,7 @@
             <!-- Row 1: App ID (Full width) -->
             <label class="full-width">
               <span>App ID</span>
-              <input id="appId" type="text" placeholder="Enter Agora App ID" value="f6a036d79c9b4d669bb076d61047528e"
+              <input id="appId" type="text" placeholder="Enter Agora App ID" value="cf136a322cf74d449aba8c6695441d3b"
                 spellcheck="false" />
             </label>
 
@@ -5122,8 +5122,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="html2canvas.min.js"></script>
-  <script src="notifications-chat.js?v=140"></script>
-  <script src="app.js?v=123"></script>
+  <script src="notifications-chat.js?v=141"></script>
+  <script src="app.js?v=128"></script>
 </body>
 
 </html>
