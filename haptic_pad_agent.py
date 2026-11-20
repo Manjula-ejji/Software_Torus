@@ -62,17 +62,41 @@ def log(msg: str):
 
 def find_haptic_port() -> str | None:
     try:
-        # First priority: STMicroelectronics / ST-Link / STM32
+        # Determine biometric port to avoid hijacking fingerprint scanner
+        bio_port = None
+        try:
+            req = urllib.request.Request("http://127.0.0.1:5000/api/biometrics/status")
+            with urllib.request.urlopen(req, timeout=0.6) as resp:
+                b_data = json.loads(resp.read().decode())
+                if b_data.get("connected"):
+                    bio_port = b_data.get("port")
+        except Exception:
+            pass
+
+        # First priority: STMicroelectronics / ST-Link / STM32 (excluding biometric port & Bluetooth)
         for p in serial.tools.list_ports.comports():
+            dev = p.device
+            if bio_port and dev == bio_port:
+                continue
             hwid = (p.hwid or "").lower()
             desc = (p.description or "").lower()
+            if "bth" in hwid or "bluetooth" in desc:
+                continue
             vid = p.vid
             if (vid == ST_VID_INT) or (ST_VID_HEX in hwid) or any(d in desc for d in ST_DESCRIPTIONS):
-                return p.device
-        # Second priority: any available COM port
+                return dev
+
+        # Second priority: any other available COM port (excluding biometric port & Bluetooth)
         for p in serial.tools.list_ports.comports():
-            if p.device:
-                return p.device
+            dev = p.device
+            if bio_port and dev == bio_port:
+                continue
+            hwid = (p.hwid or "").lower()
+            desc = (p.description or "").lower()
+            if "bth" in hwid or "bluetooth" in desc:
+                continue
+            if dev:
+                return dev
     except Exception:
         pass
     return None
@@ -229,14 +253,42 @@ class HapticPadAgent:
                 time.sleep(1.5)
                 continue
 
+            # Require genuine telemetry packet before declaring connected
+            valid_logged = False
+            first_packet = None
+            t_probe = time.time() + 1.2
+            while time.time() < t_probe and self.running:
+                try:
+                    raw = self.ser.readline().decode("utf-8", errors="ignore").strip()
+                    if raw and ("JX:" in raw or "JY:" in raw or "JZ:" in raw):
+                        pkt = parse_packet(raw)
+                        if pkt:
+                            first_packet = pkt
+                            break
+                except Exception:
+                    break
+
+            if not first_packet:
+                log(f"[HAPTIC] Device on {port} did not provide valid telemetry. Disconnecting.")
+                try:
+                    self.ser.close()
+                except Exception:
+                    pass
+                self.ser = None
+                self.current_port = None
+                with self.lock:
+                    self.is_connected = False
+                time.sleep(1.5)
+                continue
+
             with self.lock:
                 self.is_connected = True
+                self.latest_telemetry = first_packet
+                self.packets_rx += 1
 
-            if self.send_backend_report(True):
+            if self.send_backend_report(True, first_packet):
                 log("[HAPTIC] Backend connection established")
             log("[HAPTIC] Device status: CONNECTED")
-
-            valid_logged = False
 
             while self.running:
                 try:

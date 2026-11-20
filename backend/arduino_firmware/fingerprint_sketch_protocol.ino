@@ -32,11 +32,11 @@
 HardwareSerial fpSerial(PA10, PA9);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&fpSerial);
 
-const unsigned long FIRST_SCAN_TIMEOUT_MS = 20000;
-const unsigned long REMOVE_TIMEOUT_MS = 10000;
-const unsigned long SECOND_SCAN_TIMEOUT_MS = 20000;
-const unsigned long VERIFY_TIMEOUT_MS = 15000;
-const unsigned long PROMPT_INTERVAL_MS = 1000;
+const unsigned long FIRST_SCAN_TIMEOUT_MS = 3500;
+const unsigned long REMOVE_TIMEOUT_MS = 1500;
+const unsigned long SECOND_SCAN_TIMEOUT_MS = 3000;
+const unsigned long VERIFY_TIMEOUT_MS = 3500;
+const unsigned long PROMPT_INTERVAL_MS = 500;
 
 void setup() {
   Serial.begin(115200);
@@ -109,92 +109,82 @@ void loop() {
 }
 
 // ════════════════════════════════════════
-// REGISTER FINGERPRINT
+// REGISTER FINGERPRINT (6 STAGES)
 // ════════════════════════════════════════
 void registerFingerprint(uint8_t id) {
   int p = -1;
-  unsigned long startMs = 0;
-  unsigned long lastPromptMs = 0;
+  const int TOTAL_STAGES = 6;
+  const int stagePercentages[6] = {16, 33, 50, 66, 83, 100};
+  const unsigned long STAGE_TIMEOUT_MS = 1800;
+  const unsigned long LIFT_TIMEOUT_MS = 1200;
+  const unsigned long TOTAL_MAX_MS = 9500;
 
-  // STEP 1: First scan
-  Serial.println("Place finger");
-  startMs = millis();
-  lastPromptMs = startMs;
+  unsigned long totalStartMs = millis();
+  Serial.print("Starting enrollment for ID ");
+  Serial.print(id);
+  Serial.println(".");
 
-  while (p != FINGERPRINT_OK) {
-    p = finger.getImage();
-    if (p == FINGERPRINT_OK) {
-      // Image taken, continue
-    } else if (p == FINGERPRINT_NOFINGER) {
-      if (millis() - lastPromptMs >= PROMPT_INTERVAL_MS) {
-        Serial.println("Place finger");
-        lastPromptMs = millis();
-      }
-      delay(50);
-    } else {
-      Serial.println("ERROR: Could not read");
-      return;
-    }
-
-    if (millis() - startMs >= FIRST_SCAN_TIMEOUT_MS) {
+  for (int stage = 1; stage <= TOTAL_STAGES; stage++) {
+    if (millis() - totalStartMs >= TOTAL_MAX_MS) {
       Serial.println("ERROR: First scan timeout");
       return;
     }
-  }
 
-  p = finger.image2Tz(1);
-  if (p != FINGERPRINT_OK) {
-    Serial.println("ERROR: Bad image");
-    return;
-  }
-
-  // STEP 2: Remove finger
-  p = 0;
-  startMs = millis();
-  Serial.println("Remove finger");
-  while (p != FINGERPRINT_NOFINGER) {
-    p = finger.getImage();
-    if (millis() - startMs >= REMOVE_TIMEOUT_MS) {
-      Serial.println("ERROR: Remove finger timeout");
-      return;
-    }
-  }
-  delay(1000);
-
-  // STEP 3: Second scan
-  p = -1;
-  Serial.println("Place again to confirm");
-  startMs = millis();
-  lastPromptMs = startMs;
-
-  while (p != FINGERPRINT_OK) {
-    p = finger.getImage();
-    if (p == FINGERPRINT_OK) {
-      // Image taken, continue
-    } else if (p == FINGERPRINT_NOFINGER) {
-      if (millis() - lastPromptMs >= PROMPT_INTERVAL_MS) {
-        Serial.println("Place again to confirm");
-        lastPromptMs = millis();
-      }
-      delay(50);
+    if (stage == 1) {
+      Serial.println("Place finger");
     } else {
-      Serial.println("ERROR: Could not read");
+      Serial.print("Place again to confirm (Capture ");
+      Serial.print(stage);
+      Serial.println("/6)");
+    }
+
+    p = -1;
+    unsigned long touchStart = millis();
+    while (p != FINGERPRINT_OK) {
+      if (millis() - touchStart >= STAGE_TIMEOUT_MS || (millis() - totalStartMs >= TOTAL_MAX_MS)) {
+        Serial.println("ERROR: First scan timeout");
+        return;
+      }
+      p = finger.getImage();
+      if (p == FINGERPRINT_NOFINGER) {
+        delay(15);
+        continue;
+      } else if (p != FINGERPRINT_OK) {
+        Serial.println("ERROR: Could not read");
+        return;
+      }
+    }
+
+    uint8_t bufferId = (stage % 2 == 1) ? 1 : 2;
+    p = finger.image2Tz(bufferId);
+    if (p != FINGERPRINT_OK) {
+      Serial.println("ERROR: Bad image");
       return;
     }
 
-    if (millis() - startMs >= SECOND_SCAN_TIMEOUT_MS) {
-      Serial.println("ERROR: Second scan timeout");
-      return;
+    Serial.print("Enrollment status: progress ");
+    Serial.print(stagePercentages[stage - 1]);
+    Serial.print("%, capture stage ");
+    Serial.print(stage);
+    Serial.println(".");
+
+    if (stage < TOTAL_STAGES) {
+      Serial.println("Remove finger");
+      delay(40);
+      unsigned long liftStart = millis();
+      p = 0;
+      while (p != FINGERPRINT_NOFINGER) {
+        if (millis() - liftStart >= LIFT_TIMEOUT_MS) {
+          break;
+        }
+        p = finger.getImage();
+        delay(15);
+      }
+      delay(30);
     }
   }
 
-  p = finger.image2Tz(2);
-  if (p != FINGERPRINT_OK) {
-    Serial.println("ERROR: Bad image");
-    return;
-  }
-
-  // STEP 4: Compare and save
+  // STEP: Compare and save
   p = finger.createModel();
   if (p == FINGERPRINT_ENROLLMISMATCH) {
     Serial.println("Fingerprints did not match");
@@ -207,6 +197,8 @@ void registerFingerprint(uint8_t id) {
   p = finger.storeModel(id);
   if (p == FINGERPRINT_OK) {
     Serial.println("Saved");
+    Serial.print("ENROLLMENT SUCCESS: fingerprint saved as ID ");
+    Serial.println(id);
   } else {
     Serial.println("ERROR: Could not save");
   }

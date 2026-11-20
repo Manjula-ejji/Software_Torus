@@ -51,6 +51,11 @@ def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
 
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        pass
 
     return conn
 
@@ -4447,86 +4452,54 @@ MAX_BIOMETRIC_SLOTS = 59  # Maximum number of concurrent registered fingerprints
 
 
 def _slot_label_to_int(slot_label: str) -> int:
-
-    """Convert 'R5' -> 5. Returns 0 on failure."""
-
+    """Convert 'R5' -> 5, 'R0' -> 0. Returns -1 on failure."""
     try:
-
-        return int(slot_label.lstrip("Rr"))
-
+        if not slot_label:
+            return -1
+        s = str(slot_label).strip()
+        if s.upper().startswith("R"):
+            return int(s[1:])
+        return int(s)
     except (ValueError, AttributeError):
-
-        return 0
+        return -1
 
 
 
 def _slot_int_to_label(slot_int: int) -> str | None:
-
-    """Convert 5 -> 'R5'. Returns None if out of bounds (1..MAX_BIOMETRIC_SLOTS)."""
-
-    if isinstance(slot_int, int) and 1 <= slot_int <= MAX_BIOMETRIC_SLOTS:
-
+    """Convert 5 -> 'R5'. Returns None if out of bounds (0..MAX_BIOMETRIC_SLOTS)."""
+    if isinstance(slot_int, int) and 0 <= slot_int <= MAX_BIOMETRIC_SLOTS:
         return f"R{slot_int}"
-
     return None
 
 
 
 def get_next_available_biometric_slot() -> str | None:
-
     """
-
     Finds the lowest-numbered fingerprint slot (R1-R59) not currently in use.
-
     Queries the database for all ACTIVE registrations, finds occupied slots,
-
     and returns the first free slot label (e.g. 'R1', 'R2', ...).
 
-
-
     Returns:
-
         str: Slot label like 'R1' if available.
-
         None: If all MAX_BIOMETRIC_SLOTS slots are occupied.
-
     """
-
     conn = get_db()
-
     cursor = conn.cursor()
-
     cursor.execute(
-
         "SELECT fingerprint_slot FROM doctor_biometrics WHERE is_active = 1 AND fingerprint_slot IS NOT NULL"
-
     )
-
     rows = cursor.fetchall()
-
     conn.close()
 
-
-
     occupied_ints = set()
-
     for row in rows:
-
         n = _slot_label_to_int(row["fingerprint_slot"])
-
-        if n > 0:
-
+        if n >= 0:
             occupied_ints.add(n)
 
-
-
     for slot_num in range(1, MAX_BIOMETRIC_SLOTS + 1):
-
         if slot_num not in occupied_ints:
-
             return _slot_int_to_label(slot_num)
-
-
 
     return None  # All slots full
 
@@ -4631,17 +4604,11 @@ def register_doctor_biometric(
     # 1. Validate slot label format
 
     slot_num = _slot_label_to_int(fingerprint_slot)
-
-    if slot_num < 1 or slot_num > MAX_BIOMETRIC_SLOTS:
-
+    if slot_num < 0 or slot_num > MAX_BIOMETRIC_SLOTS:
         conn.close()
-
         return {
-
             "success": False,
-
-            "error": f"Invalid fingerprint slot '{fingerprint_slot}'. Must be R1 through R{MAX_BIOMETRIC_SLOTS}."
-
+            "error": f"Invalid fingerprint slot '{fingerprint_slot}'. Must be R0 through R{MAX_BIOMETRIC_SLOTS}."
         }
 
 

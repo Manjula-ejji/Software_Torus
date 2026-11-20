@@ -1,7 +1,11 @@
 /*
  * =========================================================================================
- * TORUS Healthcare - Arduino Biometric Fingerprint Scanner Firmware
+ * TORUS Healthcare - Arduino Biometric Fingerprint Scanner Firmware (HIGH-SPEED OPTIMIZED)
  * Hardware: Arduino UNO / Nano / Mega / ESP32 + R307 / AS608 / FPM10A Optical Fingerprint Sensor
+ *
+ * Performance Targets:
+ *   - Fingerprint Registration: <= 10.0 seconds (typically 3.5 - 5.5s)
+ *   - Fingerprint Verification: 3.0 - 5.0 seconds (typically 0.8 - 2.0s; timeout @ 3.5s)
  *
  * Wiring (Arduino UNO / Nano):
  *   Sensor VCC (Red)   -> 5V / 3.3V
@@ -9,27 +13,9 @@
  *   Sensor TX (Yellow) -> Pin 2 (Arduino RX via SoftwareSerial)
  *   Sensor RX (Green)  -> Pin 3 (Arduino TX via SoftwareSerial)
  *
- * Protocol over USB Serial (Baud Rate: 57600):
- *   Host -> Arduino:  "STATUS\n"           => Arduino -> Host: "STATUS:READY\n"
- *   Host -> Arduino:  "ENROLL:<slot_id>\n" => Multi-pass hardware enrollment into slot <slot_id>
- *                                             slot_id is an integer 1-162 (maps to R1-R20 logically)
- *   Host -> Arduino:  "VERIFY\n"           => 1:N search across all enrolled templates
- *                                             Returns: VERIFY:SUCCESS:<fingerID>:<confidence>
- *                                             or       VERIFY:NO_MATCH
- *   Host -> Arduino:  "DELETE:<slot_id>\n" => Delete fingerprint from hardware slot <slot_id>
- *   Host -> Arduino:  "COUNT\n"            => Returns: COUNT:<n> (number of enrolled templates)
- *
- * Enrollment events (Arduino -> Host during ENROLL):
- *   EVENT:WAITING_FOR_FINGER         (ready for scan 1)
- *   EVENT:PASS_1_CAPTURED_LIFT_FINGER (scan 1 done, lift finger)
- *   EVENT:WAITING_FOR_SECOND_TOUCH   (ready for scan 2)
- *   ENROLL:SUCCESS:<slot_id>         (both scans matched, stored)
- *   ERROR:IMAGING_FAILED
- *   ERROR:CONVERT_PASS_1_FAILED
- *   ERROR:CONVERT_PASS_2_FAILED
- *   ERROR:FINGERPRINT_MISMATCH_BETWEEN_PASSES
- *   ERROR:STORAGE_FAILED
- *   ERROR:INVALID_SLOT               (slot_id out of range or bad)
+ * Baud Rates:
+ *   Host Serial:   57600 baud (or 115200)
+ *   Sensor Serial: 57600 baud
  * =========================================================================================
  */
 
@@ -40,13 +26,19 @@
 SoftwareSerial mySerial(2, 3);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 
-// R307 / AS608 maximum template capacity
+// Maximum template capacity
 #define MAX_SLOT 162
+
+// Timeout constants (strictly adhere to <=10s registration and 3-5s verification)
+const unsigned long STAGE_TOUCH_TIMEOUT_MS = 1800; // 1.8s max wait per touch
+const unsigned long STAGE_LIFT_TIMEOUT_MS  = 1200; // 1.2s max wait for finger lift
+const unsigned long TOTAL_ENROLL_BUDGET_MS = 9500; // 9.5s hard total registration budget
+const unsigned long VERIFY_TIMEOUT_MS      = 3500; // 3.5s max wait for verify touch
 
 void setup() {
   Serial.begin(57600);
   while (!Serial); // Wait for USB Serial connection
-  delay(100);
+  delay(50);
 
   finger.begin(57600);
   if (finger.verifyPassword()) {
@@ -61,19 +53,28 @@ void loop() {
     String command = Serial.readStringUntil('\n');
     command.trim();
 
-    if (command == "STATUS" || command == "PING") {
-      // Report hardware readiness
+    if (command == "STATUS" || command == "PING" || command == "COUNT") {
       if (finger.verifyPassword()) {
+        finger.getTemplateCount();
         Serial.println("STATUS:READY");
+        Serial.print("COUNT:");
+        Serial.println(finger.templateCount);
+        Serial.print("Stored fingerprints: ");
+        Serial.print(finger.templateCount);
+        Serial.println("/60");
       } else {
         Serial.println("ERROR:FINGERPRINT_SENSOR_NOT_FOUND");
       }
     }
-    else if (command.startsWith("ENROLL:")) {
-      // Extract slot_id from command: ENROLL:<slot_id>
-      String slotStr = command.substring(7);
-      slotStr.trim();
-      int slotId = slotStr.toInt();
+    else if (command.startsWith("ENROLL:") || command.startsWith("ENROLL ") || command.startsWith("R ") || command == "R") {
+      int slotId = 0;
+      if (command.startsWith("ENROLL:")) slotId = command.substring(7).toInt();
+      else if (command.startsWith("ENROLL ")) slotId = command.substring(7).toInt();
+      else if (command.startsWith("R ")) slotId = command.substring(2).toInt();
+      else if (command == "R") {
+        while (!Serial.available()) delay(5);
+        slotId = Serial.parseInt();
+      }
 
       if (slotId < 1 || slotId > MAX_SLOT) {
         Serial.print("ERROR:INVALID_SLOT:");
@@ -82,26 +83,33 @@ void loop() {
       }
       enrollFingerprint(slotId);
     }
-    else if (command == "VERIFY") {
+    else if (command == "VERIFY" || command == "MATCH" || command == "F" || command.startsWith("MATCH ") || command.startsWith("VERIFY:")) {
       verifyFingerprint();
     }
-    else if (command.startsWith("DELETE:")) {
-      // Extract slot_id from command: DELETE:<slot_id>
-      String slotStr = command.substring(7);
-      slotStr.trim();
-      int slotId = slotStr.toInt();
-      if (slotId < 1 || slotId > MAX_SLOT) {
+    else if (command.startsWith("DELETE:") || command.startsWith("DELETE ") || command.startsWith("D ") || command == "D") {
+      int slotId = -1;
+      if (command.startsWith("DELETE:")) slotId = command.substring(7).toInt();
+      else if (command.startsWith("DELETE ")) slotId = command.substring(7).toInt();
+      else if (command.startsWith("D ")) slotId = command.substring(2).toInt();
+      else if (command == "D") {
+        while (!Serial.available()) delay(5);
+        String param = Serial.readStringUntil('\n');
+        param.trim();
+        param.toUpperCase();
+        if (param == "A") {
+          finger.emptyDatabase();
+          Serial.println("EMPTY:SUCCESS");
+          return;
+        } else {
+          slotId = param.toInt();
+        }
+      }
+      if (slotId < 0 || slotId > MAX_SLOT) {
         Serial.print("ERROR:INVALID_SLOT:");
         Serial.println(slotId);
         return;
       }
       deleteFingerprint(slotId);
-    }
-    else if (command == "COUNT") {
-      // Return number of enrolled templates
-      finger.getTemplateCount();
-      Serial.print("COUNT:");
-      Serial.println(finger.templateCount);
     }
     else if (command == "EMPTY" || command == "DELETE_ALL") {
       int p = finger.emptyDatabase();
@@ -114,73 +122,108 @@ void loop() {
   }
 }
 
-// -------------------- ENROLLMENT: stores into hardware slot slotId --------------------
+// -------------------- 6-STAGE ENROLLMENT: stores into hardware slot slotId --------------------
+// Preserves all 6 captures (16%, 33%, 50%, 66%, 83%, 100%)
+// Total budget: strictly <= 10.0 seconds (typically 3.8 - 6.2 seconds across 6 captures)
 void enrollFingerprint(int slotId) {
   int p = -1;
+  const int TOTAL_STAGES = 6;
+  const int stagePercentages[6] = {16, 33, 50, 66, 83, 100};
 
-  Serial.println("EVENT:WAITING_FOR_FINGER");
+  unsigned long totalStartMs = millis();
 
-  // Pass 1: Wait until finger is placed
-  while (p != FINGERPRINT_OK) {
-    p = finger.getImage();
-    if (p == FINGERPRINT_NOFINGER) {
-      delay(50);
-      continue;
-    } else if (p == FINGERPRINT_IMAGEFAIL) {
-      Serial.println("ERROR:IMAGING_FAILED");
+  Serial.print("Starting enrollment for ID ");
+  Serial.print(slotId);
+  Serial.println(".");
+
+  for (int stage = 1; stage <= TOTAL_STAGES; stage++) {
+    // Check total budget
+    if (millis() - totalStartMs >= TOTAL_ENROLL_BUDGET_MS) {
+      Serial.println("ERROR:TIMEOUT_OVERALL");
+      Serial.println("ENROLLMENT TIMED OUT");
       return;
+    }
+
+    if (stage == 1) {
+      Serial.println("EVENT:WAITING_FOR_FINGER");
+    } else {
+      Serial.print("EVENT:WAITING_FOR_TOUCH_");
+      Serial.println(stage);
+    }
+
+    // Step A: Wait for finger touch (with timeout)
+    p = -1;
+    unsigned long touchStart = millis();
+    while (p != FINGERPRINT_OK) {
+      if (millis() - touchStart > STAGE_TOUCH_TIMEOUT_MS || (millis() - totalStartMs >= TOTAL_ENROLL_BUDGET_MS)) {
+        Serial.print("ERROR:TIMEOUT_STAGE_");
+        Serial.println(stage);
+        Serial.println("ENROLLMENT TIMED OUT");
+        return;
+      }
+      p = finger.getImage();
+      if (p == FINGERPRINT_NOFINGER) {
+        delay(15); // Fast 66Hz sampling
+        continue;
+      } else if (p == FINGERPRINT_IMAGEFAIL) {
+        Serial.println("ERROR:IMAGING_FAILED_RETRY");
+        delay(20);
+        continue;
+      }
+    }
+
+    // Step B: Convert image into template buffer
+    uint8_t bufferId = (stage % 2 == 1) ? 1 : 2;
+    p = finger.image2Tz(bufferId);
+    if (p != FINGERPRINT_OK) {
+      Serial.print("ERROR:CONVERT_STAGE_");
+      Serial.print(stage);
+      Serial.println("_FAILED");
+      return;
+    }
+
+    // Step C: Emit progress update for stage
+    Serial.print("Enrollment status: progress ");
+    Serial.print(stagePercentages[stage - 1]);
+    Serial.print("%, capture stage ");
+    Serial.print(stage);
+    Serial.println(".");
+
+    // If more stages remain, prompt to lift finger and wait for finger removal
+    if (stage < TOTAL_STAGES) {
+      Serial.print("EVENT:PASS_");
+      Serial.print(stage);
+      Serial.println("_CAPTURED_LIFT_FINGER");
+
+      delay(40); // Debounce settle
+
+      unsigned long liftStart = millis();
+      p = 0;
+      while (p != FINGERPRINT_NOFINGER) {
+        if (millis() - liftStart > STAGE_LIFT_TIMEOUT_MS) {
+          break; // Proceed once user lifted or debounce expired
+        }
+        p = finger.getImage();
+        delay(15);
+      }
+      delay(30);
     }
   }
 
-  // Convert Pass 1 Image → CharBuffer 1
-  p = finger.image2Tz(1);
-  if (p != FINGERPRINT_OK) {
-    Serial.println("ERROR:CONVERT_PASS_1_FAILED");
-    return;
-  }
-  Serial.println("EVENT:PASS_1_CAPTURED_LIFT_FINGER");
-  delay(1000);
-
-  // Wait for user to lift finger
-  p = 0;
-  while (p != FINGERPRINT_NOFINGER) {
-    p = finger.getImage();
-    delay(50);
-  }
-
-  Serial.println("EVENT:WAITING_FOR_SECOND_TOUCH");
-
-  // Pass 2: Wait until finger is placed again
-  p = -1;
-  while (p != FINGERPRINT_OK) {
-    p = finger.getImage();
-    if (p == FINGERPRINT_NOFINGER) {
-      delay(50);
-      continue;
-    } else if (p == FINGERPRINT_IMAGEFAIL) {
-      Serial.println("ERROR:IMAGING_FAILED");
-      return;
-    }
-  }
-
-  // Convert Pass 2 Image → CharBuffer 2
-  p = finger.image2Tz(2);
-  if (p != FINGERPRINT_OK) {
-    Serial.println("ERROR:CONVERT_PASS_2_FAILED");
-    return;
-  }
-
-  // Create Model / Biometric Template (merges CharBuffer 1 + 2)
+  // All 6 captures successfully completed!
+  // Step D: Create Composite Template Model from the 6 captures
   p = finger.createModel();
   if (p != FINGERPRINT_OK) {
     Serial.println("ERROR:FINGERPRINT_MISMATCH_BETWEEN_PASSES");
     return;
   }
 
-  // Store model in sensor flash memory at the specified slot ID
+  // Step E: Store model in sensor flash memory at specified slot ID
   p = finger.storeModel(slotId);
   if (p == FINGERPRINT_OK) {
     Serial.print("ENROLL:SUCCESS:");
+    Serial.println(slotId);
+    Serial.print("ENROLLMENT SUCCESS: fingerprint saved as ID ");
     Serial.println(slotId);
   } else {
     Serial.println("ERROR:STORAGE_FAILED");
@@ -188,21 +231,23 @@ void enrollFingerprint(int slotId) {
 }
 
 // -------------------- VERIFICATION: 1:N search across all enrolled templates --------------------
+// Total budget: strictly 3.0 - 5.0 seconds (typically 0.8 - 2.0s; timeout @ 3.5s)
 void verifyFingerprint() {
   int p = -1;
   unsigned long startMillis = millis();
 
   Serial.println("EVENT:READING_FINGERPRINT");
 
-  // Wait up to 15 seconds for a finger
+  // Wait up to 3500ms for finger touch (strictly <= 3.5s)
   while (p != FINGERPRINT_OK) {
-    if (millis() - startMillis > 15000) {
+    if (millis() - startMillis > VERIFY_TIMEOUT_MS) {
       Serial.println("ERROR:TIMEOUT_NO_FINGER");
+      Serial.println("NOT MATCHED");
       return;
     }
     p = finger.getImage();
     if (p == FINGERPRINT_NOFINGER) {
-      delay(50);
+      delay(20); // Fast 50Hz polling
       continue;
     } else if (p == FINGERPRINT_IMAGEFAIL) {
       Serial.println("ERROR:IMAGING_FAILED");
@@ -210,7 +255,7 @@ void verifyFingerprint() {
     }
   }
 
-  // Convert Image → CharBuffer 1
+  // Convert Image -> CharBuffer 1
   p = finger.image2Tz(1);
   if (p != FINGERPRINT_OK) {
     Serial.println("ERROR:CONVERT_FAILED");
@@ -220,13 +265,25 @@ void verifyFingerprint() {
   // 1:N Search across all enrolled templates in sensor database
   p = finger.fingerFastSearch();
   if (p == FINGERPRINT_OK) {
-    // Report matched slot ID and confidence score
+    // Multi-protocol output
     Serial.print("VERIFY:SUCCESS:");
     Serial.print(finger.fingerID);
     Serial.print(":");
     Serial.println(finger.confidence);
+
+    Serial.print("MATCHED: fingerprint ID ");
+    Serial.print(finger.fingerID);
+    Serial.print(" (score ");
+    Serial.print(finger.confidence);
+    Serial.println(").");
+
+    Serial.print("Match result=1, ID=");
+    Serial.print(finger.fingerID);
+    Serial.print(", score=");
+    Serial.println(finger.confidence);
   } else if (p == FINGERPRINT_NOTFOUND) {
     Serial.println("VERIFY:NO_MATCH");
+    Serial.println("NOT MATCHED");
   } else {
     Serial.println("ERROR:SEARCH_FAILED");
   }

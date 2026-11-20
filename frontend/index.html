@@ -46,48 +46,82 @@
     window.TORUS_PATH_MAP = {
       // Doctor Portal & subviews
       "/doctor-dashboard": { screen: "doctor-portal-dashboard", role: "doctor", view: "dashboard" },
+      "/doctor_dashboard": { screen: "doctor-portal-dashboard", role: "doctor", view: "dashboard" },
       "/doctor-portal-dashboard": { screen: "doctor-portal-dashboard", role: "doctor", view: "dashboard" },
+      "/doctor_portal_dashboard": { screen: "doctor-portal-dashboard", role: "doctor", view: "dashboard" },
       "/doctor-profile": { screen: "doctor-portal-dashboard", role: "doctor", view: "doctor-profile" },
+      "/doctor_profile": { screen: "doctor-portal-dashboard", role: "doctor", view: "doctor-profile" },
       "/doctor-activity-log": { screen: "doctor-portal-dashboard", role: "doctor", view: "activity-log" },
+      "/doctor_activity_log": { screen: "doctor-portal-dashboard", role: "doctor", view: "activity-log" },
       "/doctor-insights": { screen: "doctor-portal-dashboard", role: "doctor", view: "insights" },
+      "/doctor_insights": { screen: "doctor-portal-dashboard", role: "doctor", view: "insights" },
       "/doctor-reports": { screen: "doctor-portal-dashboard", role: "doctor", view: "patient-reports" },
+      "/doctor_reports": { screen: "doctor-portal-dashboard", role: "doctor", view: "patient-reports" },
       "/doctor-history": { screen: "doctor-portal-dashboard", role: "doctor", view: "history" },
+      "/doctor_history": { screen: "doctor-portal-dashboard", role: "doctor", view: "history" },
 
       // Patient Portal & subviews
       "/patient-dashboard": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-dashboard" },
+      "/patient_dashboard": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-dashboard" },
       "/patient-portal-dashboard": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-dashboard" },
+      "/patient_portal_dashboard": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-dashboard" },
       "/patient-profile": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-profile" },
+      "/patient_profile": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-profile" },
       "/patient-appointments": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-appointments" },
+      "/patient_appointments": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-appointments" },
       "/patient-diagnostic-reports": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-diagnostic-reports" },
+      "/patient_diagnostic_reports": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-diagnostic-reports" },
       "/patient-history": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-history" },
+      "/patient_history": { screen: "doctor-portal-dashboard", role: "patient", view: "patient-history" },
 
       // Video Consultation & Acquisition & Reports
       "/video-consultation": { screen: "app-dashboard", role: null, modal: null },
+      "/video_consultation": { screen: "app-dashboard", role: null, modal: null },
       "/app-dashboard": { screen: "app-dashboard", role: null, modal: null },
+      "/app_dashboard": { screen: "app-dashboard", role: null, modal: null },
       "/ultrasound-acquisition": { screen: "app-dashboard", role: "doctor", modal: "controls" },
+      "/ultrasound_acquisition": { screen: "app-dashboard", role: "doctor", modal: "controls" },
       "/generate-report": { screen: "app-dashboard", role: "doctor", modal: "report" },
+      "/generate_report": { screen: "app-dashboard", role: "doctor", modal: "report" },
       "/settings": { modal: "settings" },
       "/user-profile": { screen: "doctor-portal-dashboard", view: "doctor-profile" },
+      "/user_profile": { screen: "doctor-portal-dashboard", view: "doctor-profile" },
 
       // Auth & Registration Screens
       "/role-selection": { screen: "role-selection-screen" },
+      "/role_selection": { screen: "role-selection-screen" },
       "/doctor-login": { screen: "doctor-login-screen", role: "doctor" },
+      "/doctor_login": { screen: "doctor-login-screen", role: "doctor" },
       "/doctor-register": { screen: "doctor-register-screen", role: "doctor" },
+      "/doctor_register": { screen: "doctor-register-screen", role: "doctor" },
       "/doctor-forgot": { screen: "doctor-forgot-screen", role: "doctor" },
+      "/doctor_forgot": { screen: "doctor-forgot-screen", role: "doctor" },
       "/doctor-biometrics": { screen: "doctor-biometric-screen", role: "doctor" },
+      "/doctor_biometrics": { screen: "doctor-biometric-screen", role: "doctor" },
       "/doctor-biometric": { screen: "doctor-biometric-screen", role: "doctor" },
+      "/doctor_biometric": { screen: "doctor-biometric-screen", role: "doctor" },
       "/doctor-bio-register": { screen: "doctor-bio-register-screen", role: "doctor" },
+      "/doctor_bio_register": { screen: "doctor-bio-register-screen", role: "doctor" },
 
       "/patient-login": { screen: "patient-login-screen", role: "patient" },
+      "/patient_login": { screen: "patient-login-screen", role: "patient" },
       "/patient-register": { screen: "patient-register-screen", role: "patient" },
+      "/patient_register": { screen: "patient-register-screen", role: "patient" },
       "/patient-forgot": { screen: "patient-forgot-screen", role: "patient" },
+      "/patient_forgot": { screen: "patient-forgot-screen", role: "patient" },
       "/patient-clinical-registration": { screen: "patient-clinical-registration-screen", role: "patient" },
+      "/patient_clinical_registration": { screen: "patient-clinical-registration-screen", role: "patient" },
 
       "/viewer-login": { screen: "viewer-login-screen", role: "viewer" },
+      "/viewer_login": { screen: "viewer-login-screen", role: "viewer" },
       "/viewer-register": { screen: "viewer-register-screen", role: "viewer" },
+      "/viewer_register": { screen: "viewer-register-screen", role: "viewer" },
       "/viewer-forgot": { screen: "viewer-forgot-screen", role: "viewer" },
+      "/viewer_forgot": { screen: "viewer-forgot-screen", role: "viewer" },
       "/viewer-dashboard": { screen: "join-session-screen", role: "viewer" },
-      "/join-session": { screen: "join-session-screen", role: "viewer" }
+      "/viewer_dashboard": { screen: "join-session-screen", role: "viewer" },
+      "/join-session": { screen: "join-session-screen", role: "viewer" },
+      "/join_session": { screen: "join-session-screen", role: "viewer" }
     };
 
     window.getTorusPathForScreenAndRole = function (screenId, role, view, modal) {
@@ -139,7 +173,8 @@
       var roleParam = urlParams.get("role");
 
       var rawPath = (window.location.pathname || "").toLowerCase().replace(/\/+$/, "") || "/";
-      var matchedRoute = window.TORUS_PATH_MAP[rawPath] || null;
+      var normalizedPath = rawPath.replace(/_/g, "-");
+      var matchedRoute = window.TORUS_PATH_MAP[rawPath] || window.TORUS_PATH_MAP[normalizedPath] || null;
 
       var storedScreen = null;
       var storedView = null;
@@ -188,22 +223,22 @@
 
       // Resolve Modal
       var modal = modalParam || (matchedRoute ? matchedRoute.modal : null);
-      if (!modal && (rawPath === "/settings" || modalParam === "settings")) {
+      if (!modal && (normalizedPath === "/settings" || modalParam === "settings")) {
         modal = "settings";
       }
 
-      // Special route overrides
-      if (rawPath === "/video-consultation" || rawPath === "/app-dashboard") {
+      // Special route overrides (supporting both hyphens and underscores)
+      if (normalizedPath === "/video-consultation" || normalizedPath === "/app-dashboard") {
         screen = "app-dashboard";
         modal = null;
-      } else if (rawPath === "/user-profile") {
+      } else if (normalizedPath === "/user-profile") {
         screen = "doctor-portal-dashboard";
         view = (role === "patient") ? "patient-profile" : "doctor-profile";
-      } else if (rawPath === "/doctor-dashboard" || rawPath === "/doctor-portal-dashboard") {
+      } else if (normalizedPath === "/doctor-dashboard" || normalizedPath === "/doctor-portal-dashboard") {
         screen = "doctor-portal-dashboard";
         role = "doctor";
         if (!view || view === "patient-dashboard") view = "dashboard";
-      } else if (rawPath === "/patient-dashboard" || rawPath === "/patient-portal-dashboard") {
+      } else if (normalizedPath === "/patient-dashboard" || normalizedPath === "/patient-portal-dashboard") {
         screen = "doctor-portal-dashboard";
         role = "patient";
         if (!view || view === "dashboard") view = "patient-dashboard";
@@ -234,6 +269,29 @@
       try {
         sessionStorage.setItem("torus_current_screen", targetId);
       } catch (_) {}
+
+      // If portal dashboard is shown, ensure active subview is displayed
+      if (targetId === "doctor-portal-dashboard") {
+        var activeRole = sessionStorage.getItem("torus_active_role") || "doctor";
+        var isDoc = (activeRole !== "patient");
+        var docContent = document.getElementById("doctorDashboardContent");
+        var patContent = document.getElementById("patientDashboardContent");
+        var adhocBtn = document.getElementById("docDashAdhocScanBtn");
+        if (adhocBtn) adhocBtn.style.display = isDoc ? "inline-flex" : "none";
+        if (isDoc) {
+          if (docContent) docContent.style.display = "flex";
+          if (patContent) patContent.style.display = "none";
+          if (typeof renderDoctorDashboard === "function") {
+            try { renderDoctorDashboard(); } catch (_) {}
+          }
+        } else {
+          if (docContent) docContent.style.display = "none";
+          if (patContent) patContent.style.display = "flex";
+          if (typeof renderPatientDashboard === "function") {
+            try { renderPatientDashboard(window.currentAuthenticatedUser); } catch (_) {}
+          }
+        }
+      }
 
       if (recordHistory !== false && window.history && window.history.pushState) {
         try {
@@ -307,6 +365,224 @@
 
     window.navigateBackToRoleSelection = function () {
       window.showTorusScreen("role-selection-screen");
+    };
+
+    window.handleDoctorLoginSubmit = async function (e) {
+      if (e) {
+        try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+      }
+      var emailEl = document.getElementById("doctor-email-input");
+      var passEl = document.getElementById("doctor-password-input");
+      var email = (emailEl ? emailEl.value : "").trim();
+      var pass = passEl ? passEl.value : "";
+
+      var alertEl = document.getElementById("doctor-login-alert");
+      if (alertEl) alertEl.style.display = "none";
+
+      if (!email || !pass) {
+        if (alertEl) {
+          alertEl.textContent = "Please enter both Email/User ID and Password.";
+          alertEl.className = "login-alert alert-error";
+          alertEl.style.display = "block";
+        }
+        return false;
+      }
+
+      var btn = document.getElementById("doctor-login-btn");
+      var originalBtnHtml = "";
+      if (btn) {
+        originalBtnHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.style.opacity = "0.78";
+        var spanEl = btn.querySelector("span");
+        if (spanEl) spanEl.textContent = "Verifying Credentials...";
+      }
+
+      try {
+        var res = null;
+        if (typeof authenticateDoctorAccount === "function") {
+          res = await authenticateDoctorAccount(email, pass);
+        } else {
+          var fRes = await fetch("/api/doctors/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ login_id: email, password: pass, role: "doctor" })
+          });
+          res = await fRes.json();
+        }
+
+        if (res && res.success && res.doctor) {
+          var docData = Object.assign({}, res.doctor, { role: "doctor" });
+          try {
+            sessionStorage.setItem("authenticated_doctor", JSON.stringify(docData));
+            localStorage.setItem("authenticated_doctor", JSON.stringify(docData));
+            sessionStorage.setItem("torus_active_role", "doctor");
+            localStorage.setItem("torus_active_role", "doctor");
+            sessionStorage.setItem("userRole", "doctor");
+            localStorage.setItem("userRole", "doctor");
+            sessionStorage.setItem("torus_current_screen", "doctor-portal-dashboard");
+            sessionStorage.setItem("torus_portal_view", "dashboard");
+            sessionStorage.removeItem("authenticated_patient");
+            sessionStorage.removeItem("authenticated_viewer");
+            localStorage.removeItem("authenticated_patient");
+            localStorage.removeItem("authenticated_viewer");
+          } catch (_) {}
+
+          if (typeof setAuthenticatedDoctorSession === "function") {
+            try { await setAuthenticatedDoctorSession(res.doctor); } catch (_) {}
+          }
+
+          window.showTorusScreen("doctor-portal-dashboard", true);
+          var docContent = document.getElementById("doctorDashboardContent");
+          var patContent = document.getElementById("patientDashboardContent");
+          var adhocBtn = document.getElementById("docDashAdhocScanBtn");
+          if (adhocBtn) adhocBtn.style.display = "inline-flex";
+          if (docContent) docContent.style.display = "flex";
+          if (patContent) patContent.style.display = "none";
+          if (typeof renderDoctorDashboard === "function") {
+            try { renderDoctorDashboard(); } catch (_) {}
+          }
+          if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = "";
+            if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+          }
+        } else {
+          var errMsg = (res && res.error) ? res.error : "Invalid email/UID or password.";
+          if (alertEl) {
+            alertEl.textContent = errMsg;
+            alertEl.className = "login-alert alert-error";
+            alertEl.style.display = "block";
+          }
+          if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = "";
+            if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+          }
+        }
+      } catch (err) {
+        console.error("[Doctor Login Error]", err);
+        if (alertEl) {
+          alertEl.textContent = "Authentication failed: " + (err ? err.message : "Please check server connection.");
+          alertEl.className = "login-alert alert-error";
+          alertEl.style.display = "block";
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.style.opacity = "";
+          if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+        }
+      }
+      return false;
+    };
+
+    window.handlePatientLoginSubmit = async function (e) {
+      if (e) {
+        try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+      }
+      var emailEl = document.getElementById("patient-email-input");
+      var passEl = document.getElementById("patient-password-input");
+      var email = (emailEl ? emailEl.value : "").trim();
+      var pass = passEl ? passEl.value : "";
+
+      var alertEl = document.getElementById("patient-login-alert");
+      if (alertEl) alertEl.style.display = "none";
+
+      if (!email || !pass) {
+        if (alertEl) {
+          alertEl.textContent = "Please enter both Email/Patient ID and Password.";
+          alertEl.className = "login-alert alert-error";
+          alertEl.style.display = "block";
+        }
+        return false;
+      }
+
+      var btn = document.getElementById("patient-login-btn");
+      var originalBtnHtml = "";
+      if (btn) {
+        originalBtnHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.style.opacity = "0.78";
+        var spanEl = btn.querySelector("span");
+        if (spanEl) spanEl.textContent = "Verifying Credentials...";
+      }
+
+      try {
+        var res = null;
+        if (typeof authenticatePatientAccount === "function") {
+          res = await authenticatePatientAccount(email, pass);
+        } else {
+          var fRes = await fetch("/api/patients/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ login_id: email, password: pass, role: "patient" })
+          });
+          res = await fRes.json();
+        }
+
+        if (res && res.success && res.patient) {
+          var patData = Object.assign({}, res.patient, { role: "patient" });
+          try {
+            sessionStorage.setItem("authenticated_patient", JSON.stringify(patData));
+            localStorage.setItem("authenticated_patient", JSON.stringify(patData));
+            sessionStorage.setItem("torus_active_role", "patient");
+            localStorage.setItem("torus_active_role", "patient");
+            sessionStorage.setItem("userRole", "patient");
+            localStorage.setItem("userRole", "patient");
+            sessionStorage.setItem("torus_current_screen", "doctor-portal-dashboard");
+            sessionStorage.setItem("torus_portal_view", "patient-dashboard");
+            sessionStorage.removeItem("authenticated_doctor");
+            sessionStorage.removeItem("authenticated_viewer");
+            localStorage.removeItem("authenticated_doctor");
+            localStorage.removeItem("authenticated_viewer");
+          } catch (_) {}
+
+          if (typeof setAuthenticatedPatientSession === "function") {
+            try { setAuthenticatedPatientSession(res.patient); } catch (_) {}
+          }
+
+          window.showTorusScreen("doctor-portal-dashboard", true);
+          var docContent = document.getElementById("doctorDashboardContent");
+          var patContent = document.getElementById("patientDashboardContent");
+          var adhocBtn = document.getElementById("docDashAdhocScanBtn");
+          if (adhocBtn) adhocBtn.style.display = "none";
+          if (docContent) docContent.style.display = "none";
+          if (patContent) patContent.style.display = "flex";
+          if (typeof renderPatientDashboard === "function") {
+            try { renderPatientDashboard(patData); } catch (_) {}
+          }
+          if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = "";
+            if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+          }
+        } else {
+          var errMsg = (res && res.error) ? res.error : "Invalid email/Patient ID or password.";
+          if (alertEl) {
+            alertEl.textContent = errMsg;
+            alertEl.className = "login-alert alert-error";
+            alertEl.style.display = "block";
+          }
+          if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = "";
+            if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+          }
+        }
+      } catch (err) {
+        console.error("[Patient Login Error]", err);
+        if (alertEl) {
+          alertEl.textContent = "Authentication failed: " + (err ? err.message : "Please check server connection.");
+          alertEl.className = "login-alert alert-error";
+          alertEl.style.display = "block";
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.style.opacity = "";
+          if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+        }
+      }
+      return false;
     };
 
     // Synchronous Pre-Paint Style Generation (Executes before any external script or DOM paint)
@@ -1037,10 +1313,13 @@
         </div>
 
         <div class="bio-reg-progress-row" style="justify-content: center; margin-bottom: 14px;">
-          <div class="bio-dots-indicator" id="bio-reg-dots" style="margin: 0 auto;">
-            <span class="bio-dot active"></span>
-            <span class="bio-dot"></span>
-            <span class="bio-dot"></span>
+          <div class="bio-dots-indicator" id="bio-reg-dots" style="margin: 0 auto; gap: 8px;">
+            <span class="bio-dot active" title="Stage 1 (16%)"></span>
+            <span class="bio-dot" title="Stage 2 (33%)"></span>
+            <span class="bio-dot" title="Stage 3 (50%)"></span>
+            <span class="bio-dot" title="Stage 4 (66%)"></span>
+            <span class="bio-dot" title="Stage 5 (83%)"></span>
+            <span class="bio-dot" title="Stage 6 (100%)"></span>
           </div>
         </div>
 
@@ -1083,7 +1362,7 @@
       <div id="patient-login-alert" class="login-alert" style="display: none;"></div>
 
 
-      <form id="patient-login-form" class="doctor-login-form" onsubmit="return false;">
+      <form id="patient-login-form" class="doctor-login-form" onsubmit="if(typeof handlePatientLoginSubmit==='function'){handlePatientLoginSubmit(event);}return false;">
         <div class="form-group">
           <label for="patient-email-input" class="form-label">Email / User ID</label>
           <input type="text" id="patient-email-input" class="form-input"
@@ -1115,7 +1394,7 @@
         </div>
 
         <div class="login-actions">
-          <button type="button" id="patient-login-btn" class="btn btn-primary login-main-btn">
+          <button type="button" id="patient-login-btn" class="btn btn-primary login-main-btn" onclick="if(typeof handlePatientLoginSubmit==='function'){handlePatientLoginSubmit(event);}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -5122,8 +5401,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="html2canvas.min.js"></script>
-  <script src="notifications-chat.js?v=141"></script>
-  <script src="app.js?v=128"></script>
+  <script src="notifications-chat.js?v=160"></script>
+  <script src="app.js?v=160"></script>
 </body>
 
 </html>

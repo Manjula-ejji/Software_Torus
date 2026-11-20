@@ -6846,9 +6846,20 @@ function showTorusScreen(targetId, recordHistory = true, options = {}) {
   const force = (options && options.force === true);
 
   if (!force && currentId === targetId && document.getElementById(targetId)?.style.display === "flex") {
-
+    // Ensure dashboard subview content is visible even on early return
+    if (targetId === "doctor-portal-dashboard") {
+      const isDoc = isCurrentDoctorRole();
+      const docContent = document.getElementById("doctorDashboardContent");
+      const patContent = document.getElementById("patientDashboardContent");
+      if (isDoc && docContent && docContent.style.display === "none") {
+        docContent.style.display = "flex";
+        if (typeof renderDoctorDashboard === "function") renderDoctorDashboard();
+      } else if (!isDoc && patContent && patContent.style.display === "none") {
+        patContent.style.display = "flex";
+        if (typeof renderPatientDashboard === "function") renderPatientDashboard(currentAuthenticatedUser);
+      }
+    }
     return;
-
   }
 
 
@@ -11244,7 +11255,10 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   }
 
-  showTorusScreen("doctor-portal-dashboard");
+  showTorusScreen("doctor-portal-dashboard", false, { force: true });
+  if (typeof switchToPortalSubView === "function") {
+    switchToPortalSubView("dashboard", false);
+  }
 
 
 
@@ -17217,9 +17231,11 @@ window.openPatientClinicalRegistration = openPatientClinicalRegistration;
 
 
 function closePatientClinicalRegistration() {
-
-  showTorusScreen("doctor-portal-dashboard");
-
+  const isDoc = isCurrentDoctorRole();
+  showTorusScreen("doctor-portal-dashboard", false, { force: true });
+  if (typeof switchToPortalSubView === "function") {
+    switchToPortalSubView(isDoc ? "dashboard" : "patient-dashboard", false);
+  }
 }
 
 window.closePatientClinicalRegistration = closePatientClinicalRegistration;
@@ -22658,7 +22674,10 @@ function setAuthenticatedPatientSession(patient) {
 
   // Show the shared TORUS Dashboard Shell
 
-  showTorusScreen("doctor-portal-dashboard");
+  showTorusScreen("doctor-portal-dashboard", false, { force: true });
+  if (typeof switchToPortalSubView === "function") {
+    switchToPortalSubView("patient-dashboard", false);
+  }
 
 
 
@@ -26086,15 +26105,18 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (pInfo && pInfo.in_progress) {
               const stage = pInfo.stage || 0;
               const pct = pInfo.progress || 0;
-              if (stage > 0) {
-                if (bioRegStepTitle) bioRegStepTitle.textContent = `Capturing Fingerprint (${stage}/6)`;
+              if (stage >= 6) {
+                if (bioRegStepTitle) bioRegStepTitle.textContent = "All 6 Captures Recorded (100%)";
+                if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Saving template to secure hardware...";
+              } else if (stage > 0) {
+                if (bioRegStepTitle) bioRegStepTitle.textContent = `Capturing Fingerprint (${stage}/6 - ${pct}%)`;
                 if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || `Capture stage ${stage} of 6 recorded (${pct}%). Lift and place same finger again.`;
               } else {
                 if (bioRegStepTitle) bioRegStepTitle.textContent = "Place Finger on Scanner";
                 if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Starting enrollment. Place your finger on the scanner.";
               }
               dots.forEach((dot, idx) => {
-                dot.className = idx <= Math.floor((stage * dots.length) / 6) ? "bio-dot active" : "bio-dot";
+                dot.className = idx < stage ? "bio-dot active" : "bio-dot";
               });
             }
           }

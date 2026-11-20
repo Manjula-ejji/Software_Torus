@@ -784,45 +784,28 @@ def _forward_cloud_haptic_report(connected: bool, port: str = None, telemetry: d
 
 
 def find_candidate_ports() -> list[tuple[str, bool]]:
-
     """
-
     Scans system serial ports and identifies STMicroelectronics / STM32 hardware dynamically.
-
     Returns a list of tuples: (port_device_path, is_stm32_hardware).
-
     Does NOT hardcode any specific COM port (e.g. COM5 or COM6).
-
     """
-
     st_ports = []
-
     other_ports = []
-
     try:
-
         for p in serial.tools.list_ports.comports():
-
             hwid = (p.hwid or "").lower()
-
             desc = (p.description or "").lower()
-
             vid = p.vid
-
+            # Skip virtual Bluetooth serial links to avoid Windows semaphore timeouts
+            if "bth" in hwid or "bluetooth" in desc:
+                continue
             is_st = (vid == ST_VID_INT) or (ST_VID_HEX in hwid) or any(d in desc for d in ST_DESCRIPTIONS)
-
             if is_st:
-
                 st_ports.append((p.device, True))
-
             else:
-
                 other_ports.append((p.device, False))
-
     except Exception:
-
         pass
-
     return st_ports + other_ports
 
 
@@ -867,6 +850,15 @@ class LocalHapticPadMonitor(threading.Thread):
 
 
 
+            # Fingerprint scanner protection: determine active biometric port
+            bio_port = None
+            try:
+                import biometrics
+                if getattr(getattr(biometrics, "hardware_manager", None), "is_connected", False):
+                    bio_port = biometrics.hardware_manager.serial_port
+            except Exception:
+                pass
+
             candidate_ports = find_candidate_ports()
 
             found_port = None
@@ -874,6 +866,12 @@ class LocalHapticPadMonitor(threading.Thread):
             
 
             for port_name, is_st in candidate_ports:
+
+                # Fingerprint scanner protection: never hijack the biometric scanner port or STLink port
+                if bio_port and port_name == bio_port:
+                    continue
+                if is_st:
+                    continue
 
                 ser = None
 
@@ -896,13 +894,6 @@ class LocalHapticPadMonitor(threading.Thread):
                     first_packet = None
 
                     has_haptic_data = False
-
-                    
-
-                    # Fingerprint scanner protection: never hijack the biometric scanner port
-                    if hasattr(biometrics, "hardware_manager") and biometrics.hardware_manager.is_connected and biometrics.hardware_manager.serial_port == port_name:
-                        ser.close()
-                        continue
 
                     # Require genuine Haptic Pad telemetry (JX, JY, JZ) before claiming port
                     t_end = time.time() + (0.4 if is_st else 0.8)
@@ -978,9 +969,15 @@ class LocalHapticPadMonitor(threading.Thread):
 
 
             if not found_port:
-
-                time.sleep(2.0)
-
+                # No physical Haptic Pad is currently transmitting genuine telemetry
+                with haptic_state_lock:
+                    if haptic_device_state.get("source") == "local_monitor":
+                        haptic_device_state["connected"] = False
+                        haptic_device_state["status"] = "NOT_CONNECTED"
+                        haptic_device_state["device"] = None
+                        haptic_device_state["port"] = None
+                        haptic_device_state["telemetry"] = {}
+                time.sleep(1.0)
                 continue
 
 
@@ -1020,10 +1017,10 @@ class LocalHapticPadMonitor(threading.Thread):
                                 haptic_device_state["telemetry"] = pkt
 
                     else:
-
-                        with haptic_state_lock:
-
-                            haptic_device_state["last_heartbeat"] = now
+                        # Device is silent: check whether heartbeat timeout has elapsed
+                        if (now - haptic_device_state["last_packet_time"]) > HAPTIC_HEARTBEAT_TIMEOUT:
+                            print(f"[HAPTIC HARDWARE] Heartbeat timeout on {self.active_port}: device stopped responding.", flush=True)
+                            break
 
 
 
@@ -1118,20 +1115,44 @@ def verify_agent_auth():
 
 
 def get_verified_haptic_status():
-
     now = time.time()
-
     with haptic_state_lock:
-
         if haptic_device_state["connected"]:
-
             if (now - haptic_device_state["last_heartbeat"]) > HAPTIC_HEARTBEAT_TIMEOUT:
-
                 haptic_device_state["connected"] = False
-
                 haptic_device_state["status"] = "NOT_CONNECTED"
-
                 haptic_device_state["device"] = None
+                haptic_device_state["port"] = None
+                haptic_device_state["telemetry"] = {}
+                haptic_device_state["source"] = None
+            elif haptic_device_state.get("source") in ("external_agent", "local_monitor"):
+                return dict(haptic_device_state)
+
+        # Check physical STM32 Doctor Station Haptic Pad hardware
+        if not haptic_device_state["connected"] or haptic_device_state.get("source") == "stm32_hardware":
+            try:
+                import biometrics
+                bio_hw = getattr(biometrics, "hardware_manager", None)
+                if bio_hw:
+                    active_ports = [p.device for p in serial.tools.list_ports.comports()] if hasattr(serial.tools.list_ports, "comports") else []
+                    bio_stat = bio_hw.get_status()
+                    if bio_stat.get("connected") and bio_hw.serial_port and (bio_hw.serial_port in active_ports):
+                        haptic_device_state["connected"] = True
+                        haptic_device_state["status"] = "CONNECTED"
+                        haptic_device_state["port"] = bio_hw.serial_port
+                        haptic_device_state["device"] = "STM32 Haptic Pad"
+                        haptic_device_state["source"] = "stm32_hardware"
+                        haptic_device_state["last_heartbeat"] = now
+                        haptic_device_state["last_packet_time"] = now
+                    else:
+                        if haptic_device_state.get("source") == "stm32_hardware" or not haptic_device_state.get("source"):
+                            haptic_device_state["connected"] = False
+                            haptic_device_state["status"] = "NOT_CONNECTED"
+                            haptic_device_state["device"] = None
+                            haptic_device_state["port"] = None
+                            haptic_device_state["source"] = None
+            except Exception:
+                pass
 
         return dict(haptic_device_state)
 
@@ -4091,7 +4112,7 @@ def api_biometrics_enroll():
 
         }), 400
 
-    res = biometrics.hardware_manager.enroll_fingerprint(identifier)
+    res = biometrics.hardware_manager.enroll_fingerprint(identifier, timeout_seconds=60.0)
 
     duration_ms = round((time.perf_counter() - t_perf) * 1000, 1)
 
@@ -4153,7 +4174,7 @@ def api_biometrics_verify():
 
     print(f"\n[API REQUEST] [{t_start.isoformat()}] POST /api/biometrics/verify identifier={identifier}", flush=True)
 
-    res = biometrics.hardware_manager.verify_fingerprint(identifier)
+    res = biometrics.hardware_manager.verify_fingerprint(identifier, timeout_seconds=12.0)
 
     duration_ms = round((time.perf_counter() - t_perf) * 1000, 1)
 
@@ -4222,9 +4243,13 @@ def api_biometrics_delete():
         return jsonify({"success": False, "error": "Identifier (email or UID) is required."}), 400
 
     res = database.delete_doctor_biometric(identifier)
+    if res.get("success") and res.get("freed_slot"):
+        try:
+            biometrics.hardware_manager.delete_slot(res["freed_slot"])
+        except Exception:
+            pass
 
     status_code = 200 if res.get("success") else 400
-
     return jsonify(res), status_code
 
 
@@ -4823,40 +4848,74 @@ def mock_socketio_handler(path=""):
 
 SPA_CLIENT_ROUTES = [
     "/doctor-dashboard",
+    "/doctor_dashboard",
     "/patient-dashboard",
+    "/patient_dashboard",
     "/viewer-dashboard",
+    "/viewer_dashboard",
     "/video-consultation",
+    "/video_consultation",
     "/ultrasound-acquisition",
+    "/ultrasound_acquisition",
     "/generate-report",
+    "/generate_report",
     "/doctor-login",
+    "/doctor_login",
     "/doctor-register",
+    "/doctor_register",
     "/doctor-forgot",
+    "/doctor_forgot",
     "/doctor-biometrics",
+    "/doctor_biometrics",
     "/doctor-bio-register",
+    "/doctor_bio_register",
     "/patient-login",
+    "/patient_login",
     "/patient-register",
+    "/patient_register",
     "/patient-forgot",
+    "/patient_forgot",
     "/patient-clinical-registration",
+    "/patient_clinical_registration",
     "/viewer-login",
+    "/viewer_login",
     "/viewer-register",
+    "/viewer_register",
     "/viewer-forgot",
+    "/viewer_forgot",
     "/join-session",
+    "/join_session",
     "/app-dashboard",
+    "/app_dashboard",
     "/doctor-portal-dashboard",
+    "/doctor_portal_dashboard",
     "/patient-portal-dashboard",
+    "/patient_portal_dashboard",
     "/doctor-profile",
+    "/doctor_profile",
     "/doctor-activity-log",
+    "/doctor_activity_log",
     "/doctor-insights",
+    "/doctor_insights",
     "/doctor-reports",
+    "/doctor_reports",
     "/doctor-history",
+    "/doctor_history",
     "/patient-profile",
+    "/patient_profile",
     "/patient-appointments",
+    "/patient_appointments",
     "/patient-diagnostic-reports",
+    "/patient_diagnostic_reports",
     "/patient-history",
+    "/patient_history",
     "/settings",
     "/user-profile",
+    "/user_profile",
     "/doctor-biometric",
-    "/role-selection"
+    "/doctor_biometric",
+    "/role-selection",
+    "/role_selection"
 ]
 
 @app.route("/")
