@@ -187,6 +187,10 @@
 
       // Resolve Role with strict precedence:
       var role = roleParam || (matchedRoute ? matchedRoute.role : null) || storedRole;
+      var hasAuth = !!(sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor") ||
+        sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient") ||
+        sessionStorage.getItem("authenticated_viewer") || localStorage.getItem("authenticated_viewer"));
+
       if (!role) {
         if (sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor")) {
           role = "doctor";
@@ -199,20 +203,31 @@
         }
       }
 
+      // Protected Route Guard for Video Consultation & Clinical Acquisition
+      var isConsultationPath = (normalizedPath === "/video-consultation" || normalizedPath === "/app-dashboard" || normalizedPath === "/ultrasound-acquisition");
+      var isDirectRoot = (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html" || rawPath === "/frontend" || rawPath === "/frontend/index.html");
+
       // Resolve Screen with strict precedence:
       var screen = screenParam || (matchedRoute ? matchedRoute.screen : null);
-      if (!screen) {
-        if (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html" || rawPath === "/frontend" || rawPath === "/frontend/index.html") {
-          var hasAuth = !!(sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor") ||
-            sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient"));
-          if (storedScreen && storedScreen !== "role-selection-screen" && hasAuth) {
+      if (isConsultationPath && !hasAuth) {
+        // Direct unauthenticated navigation to video consultation -> securely redirect to role selection
+        screen = "role-selection-screen";
+      } else if (!screen) {
+        if (isDirectRoot) {
+          // On root landing, NEVER auto-open video-consultation room.
+          // Consultation requires explicit session join or examination start from the portal.
+          if (storedScreen && storedScreen !== "role-selection-screen" && storedScreen !== "app-dashboard" && hasAuth) {
             screen = storedScreen;
           } else {
             screen = "role-selection-screen";
           }
         } else {
-          screen = storedScreen || "role-selection-screen";
+          screen = (storedScreen !== "app-dashboard" || hasAuth) ? (storedScreen || "role-selection-screen") : "role-selection-screen";
         }
+      }
+
+      if (isDirectRoot && screen === "app-dashboard") {
+        screen = hasAuth ? "doctor-portal-dashboard" : "role-selection-screen";
       }
 
       // Resolve View
@@ -229,8 +244,13 @@
 
       // Special route overrides (supporting both hyphens and underscores)
       if (normalizedPath === "/video-consultation" || normalizedPath === "/app-dashboard") {
-        screen = "app-dashboard";
-        modal = null;
+        if (!hasAuth) {
+          screen = "role-selection-screen";
+          modal = null;
+        } else {
+          screen = "app-dashboard";
+          modal = null;
+        }
       } else if (normalizedPath === "/user-profile") {
         screen = "doctor-portal-dashboard";
         view = (role === "patient") ? "patient-profile" : "doctor-profile";

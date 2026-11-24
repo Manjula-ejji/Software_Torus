@@ -778,22 +778,21 @@ let OFFICIAL_TOKEN_VALUE = "";
 async function fetchAgoraConfiguration() {
 
   const host = window.location.hostname || "127.0.0.1";
+  const isHttps = window.location.protocol === "https:";
 
-  const endpoints = [
-
-    "/api/agora/config",
-
-    "http://127.0.0.1:5000/api/agora/config",
-
-    "http://localhost:5000/api/agora/config",
-
-    `http://${host}:5000/api/agora/config`,
-
-    "http://127.0.0.1:3000/api/agora/config",
-
-    "http://localhost:3000/api/agora/config"
-
-  ];
+  const endpoints = isHttps
+    ? [
+      "/api/agora/config",
+      `${window.location.origin}/api/agora/config`
+    ]
+    : [
+      "/api/agora/config",
+      "http://127.0.0.1:5000/api/agora/config",
+      "http://localhost:5000/api/agora/config",
+      `http://${host}:5000/api/agora/config`,
+      "http://127.0.0.1:3000/api/agora/config",
+      "http://localhost:3000/api/agora/config"
+    ];
 
 
 
@@ -1547,13 +1546,13 @@ function setStatus(message) {
 
     stateClass = "connecting";
 
-  } else if (msgLower.includes("failed") || msgLower.includes("error") || msgLower.includes("enter")) {
+  } else if (msgLower.includes("failed") || msgLower.includes("error")) {
 
     displayText = "Video Call • Error";
 
     stateClass = "error";
 
-  } else if (msgLower.includes("leave") || msgLower.includes("disconnect") || msgLower.includes("not connected") || msgLower === "") {
+  } else if (msgLower.includes("enter") || msgLower.includes("leave") || msgLower.includes("disconnect") || msgLower.includes("not connected") || msgLower === "") {
 
     displayText = "Video Call: Standby";
 
@@ -6485,6 +6484,10 @@ function resolveTorusCurrentRoute() {
     storedRole = (typeof getResolvedActiveRole === "function" ? getResolvedActiveRole() : null) || sessionStorage.getItem("torus_active_role");
   } catch (_) { }
 
+  const hasAuth = !!(sessionStorage.getItem("authenticated_doctor") || localStorage.getItem("authenticated_doctor") ||
+    sessionStorage.getItem("authenticated_patient") || localStorage.getItem("authenticated_patient") ||
+    sessionStorage.getItem("authenticated_viewer") || localStorage.getItem("authenticated_viewer"));
+
   // Resolve Role with strict precedence:
   // 1. Explicit query param (?role=...)
   // 2. Matched route role (e.g. /doctor-dashboard -> doctor, /patient-dashboard -> patient)
@@ -6511,18 +6514,30 @@ function resolveTorusCurrentRoute() {
     }
   }
 
+  const isConsultationPath = (rawPath === "/video-consultation" || rawPath === "/app-dashboard" || rawPath === "/ultrasound-acquisition");
+  const isDirectRoot = (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html" || rawPath === "/frontend" || rawPath === "/frontend/index.html");
+
   // Resolve Screen with strict precedence
   let screen = screenParam || (matchedRoute ? matchedRoute.screen : null);
-  if (!screen) {
-    if (rawPath === "/" || rawPath === "/role-selection" || rawPath === "/index.html") {
-      if (storedScreen && storedScreen !== "role-selection-screen" && (sessionStorage.getItem("authenticated_doctor") || sessionStorage.getItem("authenticated_patient"))) {
+  if (isConsultationPath && !hasAuth) {
+    // Direct unauthenticated navigation to video consultation -> securely redirect to role selection
+    screen = "role-selection-screen";
+  } else if (!screen) {
+    if (isDirectRoot) {
+      // On root landing, NEVER auto-open video-consultation room.
+      // Consultation requires explicit session join or examination start from the portal.
+      if (storedScreen && storedScreen !== "role-selection-screen" && storedScreen !== "app-dashboard" && hasAuth) {
         screen = storedScreen;
       } else {
         screen = "role-selection-screen";
       }
     } else {
-      screen = storedScreen || "role-selection-screen";
+      screen = (storedScreen !== "app-dashboard" || hasAuth) ? (storedScreen || "role-selection-screen") : "role-selection-screen";
     }
+  }
+
+  if (isDirectRoot && screen === "app-dashboard") {
+    screen = hasAuth ? "doctor-portal-dashboard" : "role-selection-screen";
   }
 
   // Resolve View
@@ -6548,8 +6563,13 @@ function resolveTorusCurrentRoute() {
 
   // Special route overrides
   if (rawPath === "/video-consultation" || rawPath === "/app-dashboard") {
-    screen = "app-dashboard";
-    modal = null;
+    if (!hasAuth) {
+      screen = "role-selection-screen";
+      modal = null;
+    } else {
+      screen = "app-dashboard";
+      modal = null;
+    }
   } else if (rawPath === "/user-profile") {
     screen = "doctor-portal-dashboard";
     view = (role === "patient") ? "patient-profile" : "doctor-profile";
@@ -10554,42 +10574,32 @@ function validateMobileFormat(mobile) {
 async function callBackendAPI(endpoint, payload, method = "POST") {
 
   const host = window.location.hostname || "127.0.0.1";
+  const isHttps = window.location.protocol === "https:";
+  const isHosted = isHttps || window.location.port === "" || (host !== "127.0.0.1" && host !== "localhost");
 
-  const isDirectBackend = window.location.port === "5000" || window.location.port === "3000";
-
-  const candidateUrls = isDirectBackend
-
+  // On production / hosted HTTPS (e.g. Render), relative endpoint MUST be the primary candidate
+  const candidateUrls = isHosted
     ? [
-
       endpoint,
-
-      `http://127.0.0.1:5000${endpoint}`,
-
-      `http://localhost:5000${endpoint}`,
-
-      `http://${host}:5000${endpoint}`,
-
-      `http://127.0.0.1:3000${endpoint}`,
-
-      `http://localhost:3000${endpoint}`
-
+      `${window.location.origin}${endpoint}`
     ]
-
-    : [
-
-      `http://127.0.0.1:5000${endpoint}`,
-
-      `http://localhost:5000${endpoint}`,
-
-      `http://${host}:5000${endpoint}`,
-
-      `http://127.0.0.1:3000${endpoint}`,
-
-      `http://localhost:3000${endpoint}`,
-
-      endpoint
-
-    ];
+    : (window.location.port === "5000" || window.location.port === "3000")
+      ? [
+        endpoint,
+        `http://127.0.0.1:5000${endpoint}`,
+        `http://localhost:5000${endpoint}`,
+        `http://${host}:5000${endpoint}`,
+        `http://127.0.0.1:3000${endpoint}`,
+        `http://localhost:3000${endpoint}`
+      ]
+      : [
+        endpoint,
+        `http://127.0.0.1:5000${endpoint}`,
+        `http://localhost:5000${endpoint}`,
+        `http://${host}:5000${endpoint}`,
+        `http://127.0.0.1:3000${endpoint}`,
+        `http://localhost:3000${endpoint}`
+      ];
 
 
 
@@ -23123,10 +23133,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateLocalFeedTitle(targetRole);
     }
 
-    const wasCallInProgress = sessionStorage.getItem("torus_call_in_progress") === "true" ||
-      (window.history.state && window.history.state.inCall === true) ||
+    const wasCallInProgress = (sessionStorage.getItem("torus_call_in_progress") === "true" ||
       returnFromReport === "true" ||
-      urlParams.get("rejoin") === "true";
+      urlParams.get("rejoin") === "true") && hasAuth;
 
     if (wasCallInProgress) {
       console.log("[TORUS Call] Active consultation call detected on reload. Initializing reconnection...");
@@ -23161,8 +23170,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             await joinCall();
           }
         } catch (err) {
-          console.error("[TORUS Call] Call reconnection error:", err);
-          setStatus("Video Call • Error");
+          console.warn("[TORUS Call] Call reconnection error:", err);
+          setStatus("Not connected");
           updateCallExaminationControls(false);
           if (typeof updateLocalFeedTitle === "function") {
             updateLocalFeedTitle(targetRole);
@@ -23176,6 +23185,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateLocalFeedTitle(targetRole);
       }
       updateCallExaminationControls(false);
+      setStatus("Not connected");
     }
 
     // If modal requested (e.g. /ultrasound-acquisition, /generate-report, /settings)
