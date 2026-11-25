@@ -28,13 +28,13 @@ function connectDoctorMQTT(appId, channel) {
 
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
 
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "e38b9a28f0f24fd7839939af97361cb2" : "")
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "6b706196744b487ea1402d829b714459" : "")
 
-    || "e38b9a28f0f24fd7839939af97361cb2";
+    || "6b706196744b487ea1402d829b714459";
 
-  if (!targetAppId || targetAppId !== "e38b9a28f0f24fd7839939af97361cb2") {
+  if (!targetAppId || targetAppId !== "6b706196744b487ea1402d829b714459") {
 
-    targetAppId = "e38b9a28f0f24fd7839939af97361cb2";
+    targetAppId = "6b706196744b487ea1402d829b714459";
 
   }
 
@@ -57,8 +57,8 @@ function connectDoctorMQTT(appId, channel) {
   const allControlTopics = [
 
     doctorControlTopic,
-    `${targetChannel}-control-e38b9a28`,
-    `torus-control-e38b9a28`,
+    `${targetChannel}-control-6b706196`,
+    `torus-control-6b706196`,
     `${targetChannel}-control`
 
   ];
@@ -66,7 +66,7 @@ function connectDoctorMQTT(appId, channel) {
   const allStatusTopics = [
 
     doctorStatusTopic,
-    `${targetChannel}-status-e38b9a28`,
+    `${targetChannel}-status-6b706196`,
     `${targetChannel}-status`
 
   ];
@@ -148,8 +148,8 @@ function connectDoctorMQTT(appId, channel) {
           const payload = pendingMqttPayloads.shift();
 
           const pubTops = Array.from(new Set([doctorControlTopic,
-            `${targetChannel}-control-e38b9a28`,
-            `torus-control-e38b9a28`,
+            `${targetChannel}-control-6b706196`,
+            `torus-control-6b706196`,
             `${targetChannel}-control`]));
 
           pubTops.forEach(t => doctorMqttClient.publish(t, payload));
@@ -505,7 +505,7 @@ function sendControlCommand(name, value) {
   const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
   const pubTopics = Array.from(new Set([
     doctorControlTopic,
-    `${targetChannel}-control-e38b9a28`,
+    `${targetChannel}-control-6b706196`,
     `${targetChannel}-control`
   ])).filter(Boolean);
 
@@ -771,12 +771,8 @@ roleInput.addEventListener("change", () => {
 
 let OFFICIAL_TOKEN_VALUE = "";
 
-
-
 // Dynamically fetch Agora configuration from the backend environment
-
 async function fetchAgoraConfiguration() {
-
   const host = window.location.hostname || "127.0.0.1";
   const isHttps = window.location.protocol === "https:";
 
@@ -794,62 +790,37 @@ async function fetchAgoraConfiguration() {
       "http://localhost:3000/api/agora/config"
     ];
 
-
-
   for (const url of endpoints) {
-
     try {
-
       const resp = await fetch(url, { method: "GET" });
-
       if (resp.ok) {
-
         const data = await resp.json();
-
-        if (data.token) {
-
-          OFFICIAL_TOKEN_VALUE = data.token;
-
+        if (data.token && typeof data.token === "string" && data.token.trim()) {
+          OFFICIAL_TOKEN_VALUE = data.token.trim();
           const tokenInputEl = document.getElementById("token");
-
           if (tokenInputEl) {
-
-            tokenInputEl.value = data.token;
-
+            tokenInputEl.value = OFFICIAL_TOKEN_VALUE;
           }
-
         }
 
         if (data.appId && typeof appIdInput !== "undefined" && appIdInput) {
-
           if (!appIdInput.value.trim() || appIdInput.value.trim() !== data.appId) {
-
             appIdInput.value = data.appId;
-
           }
-
         }
 
         if (data.channel && typeof channelInput !== "undefined" && channelInput && !channelInput.value.trim()) {
-
           channelInput.value = data.channel;
-
         }
 
         return data;
-
       }
-
     } catch (e) {
-
       // Continue next endpoint
-
     }
-
   }
 
   return null;
-
 }
 
 
@@ -2872,9 +2843,9 @@ async function joinCall() {
 
 
 
-  if (!appId || appId !== "e38b9a28f0f24fd7839939af97361cb2") {
+  if (!appId || appId !== "6b706196744b487ea1402d829b714459") {
 
-    appId = "e38b9a28f0f24fd7839939af97361cb2";
+    appId = "6b706196744b487ea1402d829b714459";
 
     if (appIdInput) appIdInput.value = appId;
 
@@ -2882,46 +2853,25 @@ async function joinCall() {
 
 
 
-  if (!tokenText || (OFFICIAL_TOKEN_VALUE && tokenText !== OFFICIAL_TOKEN_VALUE)) {
-
-    if (OFFICIAL_TOKEN_VALUE) {
-
-      tokenText = OFFICIAL_TOKEN_VALUE;
-
-      tokenInput.value = OFFICIAL_TOKEN_VALUE;
-
-    }
-
+  if (!tokenText && OFFICIAL_TOKEN_VALUE) {
+    tokenText = OFFICIAL_TOKEN_VALUE;
+    if (tokenInput) tokenInput.value = OFFICIAL_TOKEN_VALUE;
   }
 
   if (!tokenText) {
-
     const config = await fetchAgoraConfiguration();
-
     if (config && config.token) {
-
       tokenText = config.token;
-
-      tokenInput.value = config.token;
-
+      if (tokenInput) tokenInput.value = config.token;
     }
-
     if (config && config.appId && !appId) {
-
       appId = config.appId;
-
-      appIdInput.value = config.appId;
-
+      if (appIdInput) appIdInput.value = config.appId;
     }
-
     if (config && config.channel && !channel) {
-
       channel = config.channel;
-
-      channelInput.value = config.channel;
-
+      if (channelInput) channelInput.value = config.channel;
     }
-
   }
 
   const token = tokenText || null;
@@ -4691,28 +4641,24 @@ async function syncDoctorControlsFromPatientState() {
   try {
 
     const host = window.location.hostname || "127.0.0.1";
+    const isHttps = window.location.protocol === "https:";
 
-    const urls = [
-
-      "http://127.0.0.1:8000/api/status",
-
-      "http://localhost:8000/api/status",
-
-      `http://${host}:8000/api/status`,
-
-      "http://127.0.0.1:5000/api/status",
-
-      "http://localhost:5000/api/status",
-
-      `http://${host}:5000/api/status`,
-
-      "http://127.0.0.1:3000/api/status",
-
-      "http://localhost:3000/api/status",
-
-      "/api/status"
-
-    ];
+    const urls = isHttps
+      ? [
+        "/api/status",
+        `${window.location.origin}/api/status`
+      ]
+      : [
+        "/api/status",
+        "http://127.0.0.1:8000/api/status",
+        "http://localhost:8000/api/status",
+        `http://${host}:8000/api/status`,
+        "http://127.0.0.1:5000/api/status",
+        "http://localhost:5000/api/status",
+        `http://${host}:5000/api/status`,
+        "http://127.0.0.1:3000/api/status",
+        "http://localhost:3000/api/status"
+      ];
 
     let data = null;
 
@@ -11166,7 +11112,7 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   // Connect Doctor MQTT
 
-  connectDoctorMQTT(appIdInput ? appIdInput.value : "e38b9a28f0f24fd7839939af97361cb2", channelInput ? channelInput.value : "torus");
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "6b706196744b487ea1402d829b714459", channelInput ? channelInput.value : "torus");
 
 
 
@@ -19124,22 +19070,21 @@ async function bindHapticSessionAPI(session) {
 
 
   const host = window.location.hostname || "127.0.0.1";
+  const isHttps = window.location.protocol === "https:";
 
-  const urls = [
-
-    "http://127.0.0.1:5000/api/haptic-pad/session/bind",
-
-    "http://localhost:5000/api/haptic-pad/session/bind",
-
-    `http://${host}:5000/api/haptic-pad/session/bind`,
-
-    "http://127.0.0.1:3000/api/haptic-pad/session/bind",
-
-    "http://localhost:3000/api/haptic-pad/session/bind",
-
-    "/api/haptic-pad/session/bind"
-
-  ];
+  const urls = isHttps
+    ? [
+      "/api/haptic-pad/session/bind",
+      `${window.location.origin}/api/haptic-pad/session/bind`
+    ]
+    : [
+      "/api/haptic-pad/session/bind",
+      "http://127.0.0.1:5000/api/haptic-pad/session/bind",
+      "http://localhost:5000/api/haptic-pad/session/bind",
+      `http://${host}:5000/api/haptic-pad/session/bind`,
+      "http://127.0.0.1:3000/api/haptic-pad/session/bind",
+      "http://localhost:3000/api/haptic-pad/session/bind"
+    ];
 
 
 
@@ -19194,22 +19139,21 @@ async function unbindHapticSessionAPI(sessionId = null) {
   const payload = { session_id: sessionId || window.currentActiveConsultationSessionId || null };
 
   const host = window.location.hostname || "127.0.0.1";
+  const isHttps = window.location.protocol === "https:";
 
-  const urls = [
-
-    "http://127.0.0.1:5000/api/haptic-pad/session/unbind",
-
-    "http://localhost:5000/api/haptic-pad/session/unbind",
-
-    `http://${host}:5000/api/haptic-pad/session/unbind`,
-
-    "http://127.0.0.1:3000/api/haptic-pad/session/unbind",
-
-    "http://localhost:3000/api/haptic-pad/session/unbind",
-
-    "/api/haptic-pad/session/unbind"
-
-  ];
+  const urls = isHttps
+    ? [
+      "/api/haptic-pad/session/unbind",
+      `${window.location.origin}/api/haptic-pad/session/unbind`
+    ]
+    : [
+      "/api/haptic-pad/session/unbind",
+      "http://127.0.0.1:5000/api/haptic-pad/session/unbind",
+      "http://localhost:5000/api/haptic-pad/session/unbind",
+      `http://${host}:5000/api/haptic-pad/session/unbind`,
+      "http://127.0.0.1:3000/api/haptic-pad/session/unbind",
+      "http://localhost:3000/api/haptic-pad/session/unbind"
+    ];
 
 
 
@@ -19284,22 +19228,21 @@ const PatientHapticService = {
 
 
     const host = window.location.hostname || "127.0.0.1";
+    const isHttps = window.location.protocol === "https:";
 
-    const baseUrls = [
-
-      "http://127.0.0.1:5000/api/haptic-pad/patient/telemetry",
-
-      "http://localhost:5000/api/haptic-pad/patient/telemetry",
-
-      `http://${host}:5000/api/haptic-pad/patient/telemetry`,
-
-      "http://127.0.0.1:3000/api/haptic-pad/patient/telemetry",
-
-      "http://localhost:3000/api/haptic-pad/patient/telemetry",
-
-      "/api/haptic-pad/patient/telemetry"
-
-    ];
+    const baseUrls = isHttps
+      ? [
+        "/api/haptic-pad/patient/telemetry",
+        `${window.location.origin}/api/haptic-pad/patient/telemetry`
+      ]
+      : [
+        "/api/haptic-pad/patient/telemetry",
+        "http://127.0.0.1:5000/api/haptic-pad/patient/telemetry",
+        "http://localhost:5000/api/haptic-pad/patient/telemetry",
+        `http://${host}:5000/api/haptic-pad/patient/telemetry`,
+        "http://127.0.0.1:3000/api/haptic-pad/patient/telemetry",
+        "http://localhost:3000/api/haptic-pad/patient/telemetry"
+      ];
 
 
 

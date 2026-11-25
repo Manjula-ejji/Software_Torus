@@ -20,6 +20,10 @@ import re
 
 import json
 
+import base64
+
+import zlib
+
 from pathlib import Path
 
 import datetime
@@ -221,9 +225,9 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
     import time
 
-    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "e38b9a28f0f24fd7839939af97361cb2")).strip()
+    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "6b706196744b487ea1402d829b714459")).strip()
 
-    clean_app_id = (app_id or "e38b9a28")[:8]
+    clean_app_id = (app_id or "6b706196")[:8]
 
     channel = os.environ.get("AGORA_CHANNEL", "torus")
 
@@ -231,7 +235,7 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
         f"{channel}-control-{clean_app_id}",
 
-        f"{channel}-control-e38b9a28",
+        f"{channel}-control-6b706196",
 
         f"{channel}-control"
 
@@ -531,42 +535,38 @@ def api_remote_input():
 
 
 
+CANONICAL_AGORA_APP_ID = "6b706196744b487ea1402d829b714459"
+CANONICAL_AGORA_TOKEN = "007eJxTYHh9xy71ZWn/r4nNvGwZ1ytesNjvPHshTmXHaiU7z4L771kUGMySzA3MDC3NzE1MkkwszFMTDU0MjFIsjCyTzA1NTEwt/2WyZTcEMjLY7trCwAiFID4rQ0l+UWkxAwMAk/0f2w=="
+
+def is_valid_agora_token_for_appid(token: str, app_id: str) -> bool:
+    """Validates that an Agora RTC token is structurally valid and signed for the target App ID."""
+    if not token or not isinstance(token, str) or not token.startswith("007eJxTY"):
+        return False
+    try:
+        raw = base64.b64decode(token[3:] + "=" * (-len(token[3:]) % 4))
+        decomp = zlib.decompress(raw)
+        return app_id.encode("utf-8") in decomp
+    except Exception:
+        return False
+
 @app.route("/api/agora/config", methods=["GET", "OPTIONS"])
-
 def api_agora_config():
-
     if request.method == "OPTIONS":
-
         return Response(status=204)
-
     database.load_env_file()
-
     app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "")).strip()
-
-    if not app_id or app_id != "e38b9a28f0f24fd7839939af97361cb2":
-
-        app_id = "e38b9a28f0f24fd7839939af97361cb2"
-
-
+    if not app_id or app_id != CANONICAL_AGORA_APP_ID:
+        app_id = CANONICAL_AGORA_APP_ID
 
     token = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "")).strip()
+    if not is_valid_agora_token_for_appid(token, app_id):
+        token = CANONICAL_AGORA_TOKEN
 
-    if not token or not token.startswith("007eJxTY"):
-
-        token = "007eJxTYEiW1lO9fP3h97L+yP4nKtEnJbNOupqY/tklrTPF1t81o1+BIdXYIsky0cgizSDNyCQtxdzC2NLS2DIxzdLc2MwwOcmIS4g1uyGQkUFuTjALIwMEgvisDCX5RaXFDAwA98IdMQ=="
-
-
-
-    channel = os.environ.get("AGORA_CHANNEL", "torus").strip()
-
+    channel = os.environ.get("AGORA_CHANNEL", "torus").strip() or "torus"
     return jsonify({
-
         "appId": app_id,
-
         "token": token,
-
         "channel": channel
-
     })
 
 

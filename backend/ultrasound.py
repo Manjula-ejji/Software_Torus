@@ -74,6 +74,22 @@ if MISSING_MODULES:
   print(f"[ultrasound] Notice: Running in non-hardware/dev mode. Modules not loaded: {pkgs}")
 
 import os
+import base64
+import zlib
+
+CANONICAL_AGORA_APP_ID = "6b706196744b487ea1402d829b714459"
+CANONICAL_AGORA_TOKEN = "007eJxTYHh9xy71ZWn/r4nNvGwZ1ytesNjvPHshTmXHaiU7z4L771kUGMySzA3MDC3NzE1MkkwszFMTDU0MjFIsjCyTzA1NTEwt/2WyZTcEMjLY7trCwAiFID4rQ0l+UWkxAwMAk/0f2w=="
+
+def is_valid_agora_token_for_appid(token: str, app_id: str) -> bool:
+    """Validates that an Agora RTC token is structurally valid and signed for the target App ID."""
+    if not token or not isinstance(token, str) or not token.startswith("007eJxTY"):
+        return False
+    try:
+        raw = base64.b64decode(token[3:] + "=" * (-len(token[3:]) % 4))
+        decomp = zlib.decompress(raw)
+        return app_id.encode("utf-8") in decomp
+    except Exception:
+        return False
 
 def _load_opensonics_env():
     candidates = [
@@ -99,13 +115,13 @@ def _load_opensonics_env():
 _load_opensonics_env()
 
 # -------------------- USER CONFIG --------------------
-APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "e38b9a28f0f24fd7839939af97361cb2"))
-if not APP_ID or APP_ID != "e38b9a28f0f24fd7839939af97361cb2":
-    APP_ID = "e38b9a28f0f24fd7839939af97361cb2"
+APP_ID = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", CANONICAL_AGORA_APP_ID)).strip()
+if not APP_ID or APP_ID != CANONICAL_AGORA_APP_ID:
+    APP_ID = CANONICAL_AGORA_APP_ID
 
-TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", "007eJxTYEiW1lO9fP3h97L+yP4nKtEnJbNOupqY/tklrTPF1t81o1+BIdXYIsky0cgizSDNyCQtxdzC2NLS2DIxzdLc2MwwOcmIS4g1uyGQkUFuTjALIwMEgvisDCX5RaXFDAwA98IdMQ=="))
-if not TOKEN or not TOKEN.startswith("007eJxTY"):
-    TOKEN = "007eJxTYEiW1lO9fP3h97L+yP4nKtEnJbNOupqY/tklrTPF1t81o1+BIdXYIsky0cgizSDNyCQtxdzC2NLS2DIxzdLc2MwwOcmIS4g1uyGQkUFuTjALIwMEgvisDCX5RaXFDAwA98IdMQ=="
+TOKEN = os.environ.get("OPENSONICS_TOKEN", os.environ.get("AGORA_TOKEN", CANONICAL_AGORA_TOKEN)).strip()
+if not is_valid_agora_token_for_appid(TOKEN, APP_ID):
+    TOKEN = CANONICAL_AGORA_TOKEN
 CHANNEL = os.environ.get("AGORA_CHANNEL", "torus")
 UID = int(os.environ.get("AGORA_UID", 5001))
 
@@ -1550,7 +1566,12 @@ def capture_render_window() -> Any:
 
 
 def _process_output_loop() -> None:
-    reader = ostb.ProcessOutputSnapshotReader()
+    reader = None
+    if ostb is not None and hasattr(ostb, "ProcessOutputSnapshotReader"):
+        try:
+            reader = ostb.ProcessOutputSnapshotReader()
+        except Exception:
+            reader = None
     interval = max(0.02, 1.0 / max(1, FPS))
     opened_logged = False
     last_error = None
@@ -1559,7 +1580,7 @@ def _process_output_loop() -> None:
             frame = None
 
             # 1. Try Direct OSTB Shared Memory Reader
-            if reader.is_open or reader.open(PROCESS_OUTPUT_MAPPING):
+            if reader is not None and (getattr(reader, "is_open", False) or reader.open(PROCESS_OUTPUT_MAPPING)):
                 try:
                     ok, snapshot = reader.read_latest()
                     if ok and not snapshot.empty:
@@ -1586,7 +1607,11 @@ def _process_output_loop() -> None:
 
             time.sleep(interval)
     finally:
-        reader.close()
+        if reader is not None and hasattr(reader, "close"):
+            try:
+                reader.close()
+            except Exception:
+                pass
 
 
 def _run_curv_proper_code_thread() -> None:
@@ -1651,10 +1676,10 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "e38b9a28f0f24fd7839939af97361cb2")[:8]
+    clean_app_id = (APP_ID or "6b706196744b487ea1402d829b714459")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
-        f"{CHANNEL}-control-e38b9a28",
+        f"{CHANNEL}-control-6b706196",
         f"{CHANNEL}-control"
     ]
     status_topic = f"{CHANNEL}-status-{clean_app_id}"
