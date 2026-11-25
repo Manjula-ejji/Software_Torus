@@ -183,7 +183,7 @@
         storedScreen = sessionStorage.getItem("torus_current_screen");
         storedView = sessionStorage.getItem("torus_portal_view");
         storedRole = sessionStorage.getItem("torus_active_role") || localStorage.getItem("torus_active_role");
-      } catch (_) {}
+      } catch (_) { }
 
       // Resolve Role with strict precedence:
       var role = roleParam || (matchedRoute ? matchedRoute.role : null) || storedRole;
@@ -288,7 +288,7 @@
       }
       try {
         sessionStorage.setItem("torus_current_screen", targetId);
-      } catch (_) {}
+      } catch (_) { }
 
       // If portal dashboard is shown, ensure active subview is displayed
       if (targetId === "doctor-portal-dashboard") {
@@ -302,13 +302,13 @@
           if (docContent) docContent.style.display = "flex";
           if (patContent) patContent.style.display = "none";
           if (typeof renderDoctorDashboard === "function") {
-            try { renderDoctorDashboard(); } catch (_) {}
+            try { renderDoctorDashboard(); } catch (_) { }
           }
         } else {
           if (docContent) docContent.style.display = "none";
           if (patContent) patContent.style.display = "flex";
           if (typeof renderPatientDashboard === "function") {
-            try { renderPatientDashboard(window.currentAuthenticatedUser); } catch (_) {}
+            try { renderPatientDashboard(window.currentAuthenticatedUser); } catch (_) { }
           }
         }
       }
@@ -321,7 +321,7 @@
           if (targetPath && window.location.pathname !== targetPath) {
             window.history.pushState({ torusScreen: targetId, role: activeRole, view: activeView }, "", targetPath);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     };
 
@@ -336,7 +336,7 @@
       try {
         sessionStorage.setItem("torus_active_role", r);
         localStorage.setItem("torus_active_role", r);
-      } catch (_) {}
+      } catch (_) { }
 
       if (r === "doctor") {
         if (roleInput) roleInput.value = "doctor";
@@ -347,7 +347,7 @@
         if (docEmail && !docEmail.value) docEmail.value = "admin@gmail.com";
         window.showTorusScreen("doctor-login-screen");
         if (window.history && window.history.pushState && window.location.pathname !== "/doctor-login") {
-          try { window.history.pushState({ torusScreen: "doctor-login-screen", role: "doctor" }, "", "/doctor-login"); } catch (_) {}
+          try { window.history.pushState({ torusScreen: "doctor-login-screen", role: "doctor" }, "", "/doctor-login"); } catch (_) { }
         }
         return;
       }
@@ -361,7 +361,7 @@
         if (patEmail && !patEmail.value) patEmail.value = "patient@gmail.com";
         window.showTorusScreen("patient-login-screen");
         if (window.history && window.history.pushState && window.location.pathname !== "/patient-login") {
-          try { window.history.pushState({ torusScreen: "patient-login-screen", role: "patient" }, "", "/patient-login"); } catch (_) {}
+          try { window.history.pushState({ torusScreen: "patient-login-screen", role: "patient" }, "", "/patient-login"); } catch (_) { }
         }
         return;
       }
@@ -375,7 +375,7 @@
         if (viewerEmailInput && !viewerEmailInput.value) viewerEmailInput.value = "user@gmail.com";
         window.showTorusScreen("viewer-login-screen");
         if (window.history && window.history.pushState && window.location.pathname !== "/viewer-login") {
-          try { window.history.pushState({ torusScreen: "viewer-login-screen", role: "viewer" }, "", "/viewer-login"); } catch (_) {}
+          try { window.history.pushState({ torusScreen: "viewer-login-screen", role: "viewer" }, "", "/viewer-login"); } catch (_) { }
         }
         return;
       }
@@ -389,7 +389,7 @@
 
     window.handleDoctorLoginSubmit = async function (e) {
       if (e) {
-        try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+        try { e.preventDefault(); e.stopPropagation(); } catch (_) { }
       }
       var emailEl = document.getElementById("doctor-email-input");
       var passEl = document.getElementById("doctor-password-input");
@@ -446,10 +446,10 @@
             sessionStorage.removeItem("authenticated_viewer");
             localStorage.removeItem("authenticated_patient");
             localStorage.removeItem("authenticated_viewer");
-          } catch (_) {}
+          } catch (_) { }
 
           if (typeof setAuthenticatedDoctorSession === "function") {
-            try { await setAuthenticatedDoctorSession(res.doctor); } catch (_) {}
+            try { await setAuthenticatedDoctorSession(res.doctor); } catch (_) { }
           }
 
           window.showTorusScreen("doctor-portal-dashboard", true);
@@ -460,7 +460,7 @@
           if (docContent) docContent.style.display = "flex";
           if (patContent) patContent.style.display = "none";
           if (typeof renderDoctorDashboard === "function") {
-            try { renderDoctorDashboard(); } catch (_) {}
+            try { renderDoctorDashboard(); } catch (_) { }
           }
           if (btn) {
             btn.disabled = false;
@@ -498,7 +498,7 @@
 
     window.handlePatientLoginSubmit = async function (e) {
       if (e) {
-        try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+        try { e.preventDefault(); e.stopPropagation(); } catch (_) { }
       }
       var emailEl = document.getElementById("patient-email-input");
       var passEl = document.getElementById("patient-password-input");
@@ -555,10 +555,10 @@
             sessionStorage.removeItem("authenticated_viewer");
             localStorage.removeItem("authenticated_doctor");
             localStorage.removeItem("authenticated_viewer");
-          } catch (_) {}
+          } catch (_) { }
 
           if (typeof setAuthenticatedPatientSession === "function") {
-            try { setAuthenticatedPatientSession(res.patient); } catch (_) {}
+            try { setAuthenticatedPatientSession(res.patient); } catch (_) { }
           }
 
           window.showTorusScreen("doctor-portal-dashboard", true);
@@ -569,7 +569,7 @@
           if (docContent) docContent.style.display = "none";
           if (patContent) patContent.style.display = "flex";
           if (typeof renderPatientDashboard === "function") {
-            try { renderPatientDashboard(patData); } catch (_) {}
+            try { renderPatientDashboard(patData); } catch (_) { }
           }
           if (btn) {
             btn.disabled = false;
@@ -903,7 +903,8 @@
 
       <div id="doctor-login-alert" class="login-alert" style="display: none;"></div>
 
-      <form id="doctor-login-form" class="doctor-login-form" onsubmit="if(typeof handleDoctorLoginSubmit==='function'){handleDoctorLoginSubmit(event);}return false;">
+      <form id="doctor-login-form" class="doctor-login-form"
+        onsubmit="if(typeof handleDoctorLoginSubmit==='function'){handleDoctorLoginSubmit(event);}return false;">
         <div class="form-group">
           <label for="doctor-email-input" class="form-label">Email / User ID</label>
           <input type="text" id="doctor-email-input" class="form-input" placeholder="Enter your registered email or UID"
@@ -933,7 +934,8 @@
         </div>
 
         <div class="login-actions">
-          <button type="button" id="doctor-login-btn" class="btn btn-primary login-main-btn" onclick="if(typeof handleDoctorLoginSubmit==='function'){handleDoctorLoginSubmit(event);}">
+          <button type="button" id="doctor-login-btn" class="btn btn-primary login-main-btn"
+            onclick="if(typeof handleDoctorLoginSubmit==='function'){handleDoctorLoginSubmit(event);}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -1382,7 +1384,8 @@
       <div id="patient-login-alert" class="login-alert" style="display: none;"></div>
 
 
-      <form id="patient-login-form" class="doctor-login-form" onsubmit="if(typeof handlePatientLoginSubmit==='function'){handlePatientLoginSubmit(event);}return false;">
+      <form id="patient-login-form" class="doctor-login-form"
+        onsubmit="if(typeof handlePatientLoginSubmit==='function'){handlePatientLoginSubmit(event);}return false;">
         <div class="form-group">
           <label for="patient-email-input" class="form-label">Email / User ID</label>
           <input type="text" id="patient-email-input" class="form-input"
@@ -1414,7 +1417,8 @@
         </div>
 
         <div class="login-actions">
-          <button type="button" id="patient-login-btn" class="btn btn-primary login-main-btn" onclick="if(typeof handlePatientLoginSubmit==='function'){handlePatientLoginSubmit(event);}">
+          <button type="button" id="patient-login-btn" class="btn btn-primary login-main-btn"
+            onclick="if(typeof handlePatientLoginSubmit==='function'){handlePatientLoginSubmit(event);}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -5068,7 +5072,8 @@
                 <span class="tgc-val-label" id="tgcVal1">50</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="50" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider1" style="background: linear-gradient(to bottom, #2563eb 50%, #e2e8f0 50%);" disabled />
+                    id="tgcSlider1" style="background: linear-gradient(to bottom, #2563eb 50%, #e2e8f0 50%);"
+                    disabled />
                 </div>
               </div>
               <!-- Slider 2 -->
@@ -5076,7 +5081,8 @@
                 <span class="tgc-val-label" id="tgcVal2">12</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="12" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider2" style="background: linear-gradient(to bottom, #2563eb 12%, #e2e8f0 12%);" disabled />
+                    id="tgcSlider2" style="background: linear-gradient(to bottom, #2563eb 12%, #e2e8f0 12%);"
+                    disabled />
                 </div>
               </div>
               <!-- Slider 3 -->
@@ -5092,7 +5098,8 @@
                 <span class="tgc-val-label" id="tgcVal4">77</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="77" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider4" style="background: linear-gradient(to bottom, #2563eb 77%, #e2e8f0 77%);" disabled />
+                    id="tgcSlider4" style="background: linear-gradient(to bottom, #2563eb 77%, #e2e8f0 77%);"
+                    disabled />
                 </div>
               </div>
               <!-- Slider 5 -->
@@ -5100,7 +5107,8 @@
                 <span class="tgc-val-label" id="tgcVal5">90</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="90" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider5" style="background: linear-gradient(to bottom, #2563eb 90%, #e2e8f0 90%);" disabled />
+                    id="tgcSlider5" style="background: linear-gradient(to bottom, #2563eb 90%, #e2e8f0 90%);"
+                    disabled />
                 </div>
               </div>
               <!-- Slider 6 -->
@@ -5108,7 +5116,8 @@
                 <span class="tgc-val-label" id="tgcVal6">30</span>
                 <div class="tgc-slider-wrapper">
                   <input type="range" min="0" max="100" value="30" class="tgc-range-slider" orient="vertical"
-                    id="tgcSlider6" style="background: linear-gradient(to bottom, #2563eb 30%, #e2e8f0 30%);" disabled />
+                    id="tgcSlider6" style="background: linear-gradient(to bottom, #2563eb 30%, #e2e8f0 30%);"
+                    disabled />
                 </div>
               </div>
             </div>
@@ -5421,8 +5430,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="html2canvas.min.js"></script>
-  <script src="notifications-chat.js?v=163"></script>
-  <script src="app.js?v=163"></script>
+  <script src="notifications-chat.js?v=164"></script>
+  <script src="app.js?v=164"></script>
 </body>
 
 </html>

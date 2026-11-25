@@ -8061,6 +8061,10 @@ function syncDoctorPopoutPlayer() {
 
     }
 
+    // Ensure child video respects popoutCard's independent fit mode
+    const isCover = popoutCard.classList.contains("fit-cover");
+    childVideo.style.setProperty("object-fit", isCover ? "cover" : "contain", "important");
+
 
 
     // Mirror zoom transformation classes and aspect ratios
@@ -8203,66 +8207,6 @@ function syncDoctorPopoutControls() {
 
   }
 
-
-
-  // Sync Fit button text and active state
-
-  const childFitBtn = doctorPopoutWindow.document.getElementById("popout-fit-btn");
-
-  if (childFitBtn) {
-
-    if (parentCard.classList.contains("fit-contain")) {
-
-      popoutCard.classList.remove("fit-cover");
-
-      popoutCard.classList.add("fit-contain");
-
-      childFitBtn.textContent = "Fit";
-
-      childFitBtn.classList.remove("active");
-
-    } else {
-
-      popoutCard.classList.remove("fit-contain");
-
-      popoutCard.classList.add("fit-cover");
-
-      childFitBtn.textContent = "Fill";
-
-      childFitBtn.classList.add("active");
-
-    }
-
-  }
-
-
-
-  // Sync Focus button state
-
-  const childPinBtn = doctorPopoutWindow.document.getElementById("popout-pin-btn");
-
-  if (childPinBtn) {
-
-    if (parentCard.classList.contains("pinned")) {
-
-      popoutCard.classList.add("pinned");
-
-      childPinBtn.textContent = "Unfocus";
-
-      childPinBtn.classList.add("active");
-
-    } else {
-
-      popoutCard.classList.remove("pinned");
-
-      childPinBtn.textContent = "Focus";
-
-      childPinBtn.classList.remove("active");
-
-    }
-
-  }
-
 }
 
 
@@ -8306,6 +8250,19 @@ function openDoctorPopoutWindow() {
   <meta charset="UTF-8">
 
   <title>Doctor Camera</title>
+
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #060B18; font-family: Inter, system-ui, -apple-system, sans-serif; }
+    #popout-card { width: 100vw; height: 100vh; margin: 0; border: none; border-radius: 0; box-shadow: none; display: flex; flex-direction: column; background: #060B18; box-sizing: border-box; }
+    #popout-card.pinned { box-shadow: inset 0 0 35px rgba(139, 92, 246, 0.35) !important; }
+    #popout-card.pinned #popout-pin-btn { background: var(--accent, linear-gradient(135deg, #6366f1, #8b5cf6)) !important; color: #fff !important; }
+    #popout-card.fit-cover #popout-fit-btn { background: var(--accent, linear-gradient(135deg, #6366f1, #8b5cf6)) !important; color: #fff !important; }
+    #popout-player { flex: 1 1 auto; width: 100% !important; max-width: 100% !important; height: calc(100vh - 58px) !important; aspect-ratio: auto !important; position: relative; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; box-sizing: border-box; transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+    #popout-player video { width: 100% !important; height: 100% !important; display: block !important; }
+    #popout-card.fit-contain #popout-player video { object-fit: contain !important; }
+    #popout-card.fit-cover #popout-player video { object-fit: cover !important; }
+    #popout-card.pinned #popout-player { border: 2px solid rgba(139, 92, 246, 0.7) !important; box-shadow: inset 0 0 30px rgba(139, 92, 246, 0.4), 0 0 20px rgba(139, 92, 246, 0.25) !important; }
+  </style>
 
 </head>
 
@@ -8381,7 +8338,7 @@ function openDoctorPopoutWindow() {
 
     </div>
 
-    <div id="popout-player" class="remote-player" style="flex: 1; position: relative; overflow: hidden; background: #000;">
+    <div id="popout-player" class="remote-player" style="flex: 1 1 auto; width: 100% !important; max-width: 100% !important; height: calc(100vh - 58px) !important; aspect-ratio: auto !important; position: relative; overflow: hidden; background: #000;">
 
     </div>
 
@@ -8477,23 +8434,121 @@ function openDoctorPopoutWindow() {
 
 
 
-  doc.getElementById("popout-fit-btn").addEventListener("click", () => {
+  const childFitBtn = doc.getElementById("popout-fit-btn");
 
-    const btn = doc.getElementById("popout-fit-btn");
+  const childPinBtn = doc.getElementById("popout-pin-btn");
 
-    toggleFit(popoutCard, btn);
+
+
+  // Initialize Fit button state from parentCard initial state (or default to contain)
+
+  const parentCard = getDoctorCard();
+
+  const initialFitCover = parentCard ? parentCard.classList.contains("fit-cover") : false;
+
+  if (initialFitCover) {
+
+    popoutCard.classList.remove("fit-contain");
+
+    popoutCard.classList.add("fit-cover");
+
+    childFitBtn.textContent = "Fill";
+
+    childFitBtn.classList.add("active");
+
+  } else {
+
+    popoutCard.classList.remove("fit-cover");
+
+    popoutCard.classList.add("fit-contain");
+
+    childFitBtn.textContent = "Fit";
+
+    childFitBtn.classList.remove("active");
+
+  }
+
+
+
+  // Initialize Pin button state (unpinned by default in new window)
+
+  popoutCard.classList.remove("pinned");
+
+  childPinBtn.textContent = "Focus";
+
+  childPinBtn.classList.remove("active");
+
+
+
+  // Fill / Fit handler: operates exclusively on the popup window without touching background dashboard
+
+  childFitBtn.addEventListener("click", () => {
+
+    const isCurrentlyContain = popoutCard.classList.contains("fit-contain");
+
+    if (isCurrentlyContain) {
+
+      popoutCard.classList.remove("fit-contain");
+
+      popoutCard.classList.add("fit-cover");
+
+      childFitBtn.textContent = "Fill";
+
+      childFitBtn.classList.add("active");
+
+    } else {
+
+      popoutCard.classList.remove("fit-cover");
+
+      popoutCard.classList.add("fit-contain");
+
+      childFitBtn.textContent = "Fit";
+
+      childFitBtn.classList.remove("active");
+
+    }
+
+    const popoutVideo = popoutPlayer.querySelector("video");
+
+    if (popoutVideo) {
+
+      popoutVideo.style.setProperty("object-fit", isCurrentlyContain ? "cover" : "contain", "important");
+
+    }
 
   });
 
 
 
-  doc.getElementById("popout-pin-btn").addEventListener("click", () => {
+  // Focus / Unfocus handler: operates exclusively on the popup window without touching background dashboard
 
-    const parentCard = getDoctorCard();
+  childPinBtn.addEventListener("click", () => {
 
-    if (parentCard) {
+    const isCurrentlyPinned = popoutCard.classList.contains("pinned");
 
-      togglePin(parentCard);
+    if (isCurrentlyPinned) {
+
+      popoutCard.classList.remove("pinned");
+
+      childPinBtn.textContent = "Focus";
+
+      childPinBtn.classList.remove("active");
+
+      popoutPlayer.style.removeProperty("box-shadow");
+
+      popoutPlayer.style.removeProperty("border");
+
+    } else {
+
+      popoutCard.classList.add("pinned");
+
+      childPinBtn.textContent = "Unfocus";
+
+      childPinBtn.classList.add("active");
+
+      popoutPlayer.style.setProperty("border", "2px solid rgba(139, 92, 246, 0.7)", "important");
+
+      popoutPlayer.style.setProperty("box-shadow", "inset 0 0 30px rgba(139, 92, 246, 0.4), 0 0 20px rgba(139, 92, 246, 0.25)", "important");
 
     }
 
@@ -8653,6 +8708,10 @@ function syncPopoutPlayer() {
 
     }
 
+    // Ensure child video respects popoutCard's independent fit mode
+    const isCover = popoutCard.classList.contains("fit-cover");
+    childVideo.style.setProperty("object-fit", isCover ? "cover" : "contain", "important");
+
 
 
     // Mirror zoom transformation classes and aspect ratios
@@ -8795,66 +8854,6 @@ function syncPopoutControls() {
 
   }
 
-
-
-  // Sync Fit button text and active state
-
-  const childFitBtn = popoutWindow.document.getElementById("popout-fit-btn");
-
-  if (childFitBtn) {
-
-    if (parentCard.classList.contains("fit-contain")) {
-
-      popoutCard.classList.remove("fit-cover");
-
-      popoutCard.classList.add("fit-contain");
-
-      childFitBtn.textContent = "Fit";
-
-      childFitBtn.classList.remove("active");
-
-    } else {
-
-      popoutCard.classList.remove("fit-contain");
-
-      popoutCard.classList.add("fit-cover");
-
-      childFitBtn.textContent = "Fill";
-
-      childFitBtn.classList.add("active");
-
-    }
-
-  }
-
-
-
-  // Sync Focus button state
-
-  const childPinBtn = popoutWindow.document.getElementById("popout-pin-btn");
-
-  if (childPinBtn) {
-
-    if (parentCard.classList.contains("pinned")) {
-
-      popoutCard.classList.add("pinned");
-
-      childPinBtn.textContent = "Unfocus";
-
-      childPinBtn.classList.add("active");
-
-    } else {
-
-      popoutCard.classList.remove("pinned");
-
-      childPinBtn.textContent = "Focus";
-
-      childPinBtn.classList.remove("active");
-
-    }
-
-  }
-
 }
 
 
@@ -8973,7 +8972,7 @@ function openPopoutWindow() {
 
     </div>
 
-    <div id="popout-player" class="remote-player" style="flex: 1; position: relative; overflow: hidden; background: #000;">
+    <div id="popout-player" class="remote-player" style="flex: 1 1 auto; width: 100% !important; max-width: 100% !important; height: calc(100vh - 58px) !important; aspect-ratio: auto !important; position: relative; overflow: hidden; background: #000;">
 
     </div>
 
@@ -9069,23 +9068,121 @@ function openPopoutWindow() {
 
 
 
-  doc.getElementById("popout-fit-btn").addEventListener("click", () => {
+  const childFitBtn = doc.getElementById("popout-fit-btn");
 
-    const btn = doc.getElementById("popout-fit-btn");
+  const childPinBtn = doc.getElementById("popout-pin-btn");
 
-    toggleFit(popoutCard, btn);
+
+
+  // Initialize Fit button state from parentCard initial state (or default to contain)
+
+  const parentCard = getUltrasoundCard();
+
+  const initialFitCover = parentCard ? parentCard.classList.contains("fit-cover") : false;
+
+  if (initialFitCover) {
+
+    popoutCard.classList.remove("fit-contain");
+
+    popoutCard.classList.add("fit-cover");
+
+    childFitBtn.textContent = "Fill";
+
+    childFitBtn.classList.add("active");
+
+  } else {
+
+    popoutCard.classList.remove("fit-cover");
+
+    popoutCard.classList.add("fit-contain");
+
+    childFitBtn.textContent = "Fit";
+
+    childFitBtn.classList.remove("active");
+
+  }
+
+
+
+  // Initialize Pin button state (unpinned by default in new window)
+
+  popoutCard.classList.remove("pinned");
+
+  childPinBtn.textContent = "Focus";
+
+  childPinBtn.classList.remove("active");
+
+
+
+  // Fill / Fit handler: operates exclusively on the popup window without touching background dashboard
+
+  childFitBtn.addEventListener("click", () => {
+
+    const isCurrentlyContain = popoutCard.classList.contains("fit-contain");
+
+    if (isCurrentlyContain) {
+
+      popoutCard.classList.remove("fit-contain");
+
+      popoutCard.classList.add("fit-cover");
+
+      childFitBtn.textContent = "Fill";
+
+      childFitBtn.classList.add("active");
+
+    } else {
+
+      popoutCard.classList.remove("fit-cover");
+
+      popoutCard.classList.add("fit-contain");
+
+      childFitBtn.textContent = "Fit";
+
+      childFitBtn.classList.remove("active");
+
+    }
+
+    const popoutVideo = popoutPlayer.querySelector("video");
+
+    if (popoutVideo) {
+
+      popoutVideo.style.setProperty("object-fit", isCurrentlyContain ? "cover" : "contain", "important");
+
+    }
 
   });
 
 
 
-  doc.getElementById("popout-pin-btn").addEventListener("click", () => {
+  // Focus / Unfocus handler: operates exclusively on the popup window without touching background dashboard
 
-    const parentCard = getUltrasoundCard();
+  childPinBtn.addEventListener("click", () => {
 
-    if (parentCard) {
+    const isCurrentlyPinned = popoutCard.classList.contains("pinned");
 
-      togglePin(parentCard);
+    if (isCurrentlyPinned) {
+
+      popoutCard.classList.remove("pinned");
+
+      childPinBtn.textContent = "Focus";
+
+      childPinBtn.classList.remove("active");
+
+      popoutPlayer.style.removeProperty("box-shadow");
+
+      popoutPlayer.style.removeProperty("border");
+
+    } else {
+
+      popoutCard.classList.add("pinned");
+
+      childPinBtn.textContent = "Unfocus";
+
+      childPinBtn.classList.add("active");
+
+      popoutPlayer.style.setProperty("border", "2px solid rgba(139, 92, 246, 0.7)", "important");
+
+      popoutPlayer.style.setProperty("box-shadow", "inset 0 0 30px rgba(139, 92, 246, 0.4), 0 0 20px rgba(139, 92, 246, 0.25)", "important");
 
     }
 
@@ -9427,66 +9524,6 @@ function syncPatientPopoutControls() {
 
   }
 
-
-
-  // Sync Fit button text and active state
-
-  const childFitBtn = patientPopoutWindow.document.getElementById("popout-fit-btn");
-
-  if (childFitBtn) {
-
-    if (parentCard.classList.contains("fit-contain")) {
-
-      popoutCard.classList.remove("fit-cover");
-
-      popoutCard.classList.add("fit-contain");
-
-      childFitBtn.textContent = "Fit";
-
-      childFitBtn.classList.remove("active");
-
-    } else {
-
-      popoutCard.classList.remove("fit-contain");
-
-      popoutCard.classList.add("fit-cover");
-
-      childFitBtn.textContent = "Fill";
-
-      childFitBtn.classList.add("active");
-
-    }
-
-  }
-
-
-
-  // Sync Focus button state
-
-  const childPinBtn = patientPopoutWindow.document.getElementById("popout-pin-btn");
-
-  if (childPinBtn) {
-
-    if (parentCard.classList.contains("pinned")) {
-
-      popoutCard.classList.add("pinned");
-
-      childPinBtn.textContent = "Unfocus";
-
-      childPinBtn.classList.add("active");
-
-    } else {
-
-      popoutCard.classList.remove("pinned");
-
-      childPinBtn.textContent = "Focus";
-
-      childPinBtn.classList.remove("active");
-
-    }
-
-  }
-
 }
 
 
@@ -9605,7 +9642,7 @@ function openPatientPopoutWindow() {
 
     </div>
 
-    <div id="popout-player" class="remote-player" style="flex: 1; position: relative; overflow: hidden; background: #000;">
+    <div id="popout-player" class="remote-player" style="flex: 1 1 auto; width: 100% !important; max-width: 100% !important; height: calc(100vh - 58px) !important; aspect-ratio: auto !important; position: relative; overflow: hidden; background: #000;">
 
     </div>
 
@@ -9695,23 +9732,121 @@ function openPatientPopoutWindow() {
 
 
 
-  doc.getElementById("popout-fit-btn").addEventListener("click", () => {
+  const childFitBtn = doc.getElementById("popout-fit-btn");
 
-    const btn = doc.getElementById("popout-fit-btn");
+  const childPinBtn = doc.getElementById("popout-pin-btn");
 
-    toggleFit(popoutCard, btn);
+
+
+  // Initialize Fit button state from parentCard initial state (or default to contain)
+
+  const parentCard = getPatientCard();
+
+  const initialFitCover = parentCard ? parentCard.classList.contains("fit-cover") : false;
+
+  if (initialFitCover) {
+
+    popoutCard.classList.remove("fit-contain");
+
+    popoutCard.classList.add("fit-cover");
+
+    childFitBtn.textContent = "Fill";
+
+    childFitBtn.classList.add("active");
+
+  } else {
+
+    popoutCard.classList.remove("fit-cover");
+
+    popoutCard.classList.add("fit-contain");
+
+    childFitBtn.textContent = "Fit";
+
+    childFitBtn.classList.remove("active");
+
+  }
+
+
+
+  // Initialize Pin button state (unpinned by default in new window)
+
+  popoutCard.classList.remove("pinned");
+
+  childPinBtn.textContent = "Focus";
+
+  childPinBtn.classList.remove("active");
+
+
+
+  // Fill / Fit handler: operates exclusively on the popup window without touching background dashboard
+
+  childFitBtn.addEventListener("click", () => {
+
+    const isCurrentlyContain = popoutCard.classList.contains("fit-contain");
+
+    if (isCurrentlyContain) {
+
+      popoutCard.classList.remove("fit-contain");
+
+      popoutCard.classList.add("fit-cover");
+
+      childFitBtn.textContent = "Fill";
+
+      childFitBtn.classList.add("active");
+
+    } else {
+
+      popoutCard.classList.remove("fit-cover");
+
+      popoutCard.classList.add("fit-contain");
+
+      childFitBtn.textContent = "Fit";
+
+      childFitBtn.classList.remove("active");
+
+    }
+
+    const popoutVideo = popoutPlayer.querySelector("video");
+
+    if (popoutVideo) {
+
+      popoutVideo.style.setProperty("object-fit", isCurrentlyContain ? "cover" : "contain", "important");
+
+    }
 
   });
 
 
 
-  doc.getElementById("popout-pin-btn").addEventListener("click", () => {
+  // Focus / Unfocus handler: operates exclusively on the popup window without touching background dashboard
 
-    const parentCard = getPatientCard();
+  childPinBtn.addEventListener("click", () => {
 
-    if (parentCard) {
+    const isCurrentlyPinned = popoutCard.classList.contains("pinned");
 
-      togglePin(parentCard);
+    if (isCurrentlyPinned) {
+
+      popoutCard.classList.remove("pinned");
+
+      childPinBtn.textContent = "Focus";
+
+      childPinBtn.classList.remove("active");
+
+      popoutPlayer.style.removeProperty("box-shadow");
+
+      popoutPlayer.style.removeProperty("border");
+
+    } else {
+
+      popoutCard.classList.add("pinned");
+
+      childPinBtn.textContent = "Unfocus";
+
+      childPinBtn.classList.add("active");
+
+      popoutPlayer.style.setProperty("border", "2px solid rgba(139, 92, 246, 0.7)", "important");
+
+      popoutPlayer.style.setProperty("box-shadow", "inset 0 0 30px rgba(139, 92, 246, 0.4), 0 0 20px rgba(139, 92, 246, 0.25)", "important");
 
     }
 
