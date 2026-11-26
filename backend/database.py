@@ -4465,10 +4465,13 @@ def _slot_label_to_int(slot_label: str) -> int:
 
 
 
-def _slot_int_to_label(slot_int: int) -> str | None:
-    """Convert 5 -> 'R5'. Returns None if out of bounds (0..MAX_BIOMETRIC_SLOTS)."""
-    if isinstance(slot_int, int) and 0 <= slot_int <= MAX_BIOMETRIC_SLOTS:
-        return f"R{slot_int}"
+def _slot_int_to_label(slot_int: int | str) -> str | None:
+    """Convert 5 or 'R5' or '5' -> 'R5'. Returns None if out of bounds (0..MAX_BIOMETRIC_SLOTS)."""
+    val = slot_int
+    if isinstance(val, str):
+        val = _slot_label_to_int(val)
+    if isinstance(val, int) and 0 <= val <= MAX_BIOMETRIC_SLOTS:
+        return f"R{val}"
     return None
 
 

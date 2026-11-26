@@ -10,3 +10,4 @@ scratch/
 .backup_pre_fix/
 .backup_uncommitted_work/
 recovered_*.css
+backend/.backup_biometric_v5/

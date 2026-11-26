@@ -246,6 +246,7 @@
       if (normalizedPath === "/video-consultation" || normalizedPath === "/app-dashboard") {
         if (!hasAuth) {
           screen = "role-selection-screen";
+
           modal = null;
         } else {
           screen = "app-dashboard";
@@ -379,8 +380,6 @@
         }
         return;
       }
-
-      window.showTorusScreen("role-selection-screen");
     };
 
     window.navigateBackToRoleSelection = function () {
@@ -4905,9 +4904,8 @@
             <!-- Row 4: Token Section (Doctor, Patient, and Viewer sides) -->
             <label id="settings-token-wrapper" class="full-width">
               <span>Token</span>
-              <input id="token" type="text" placeholder="Loaded securely from backend"
-                value=""
-                spellcheck="false" autocomplete="off" />
+              <input id="token" type="text" placeholder="Loaded securely from backend" value="" spellcheck="false"
+                autocomplete="off" />
             </label>
 
             <!-- Compatibility hidden element to preserve existing JS logic without any UI display -->

@@ -11249,6 +11249,36 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   connectDoctorMQTT(appIdInput ? appIdInput.value : "59dc3449de824523a83fba05047c73ad", channelInput ? channelInput.value : "torus");
 
+  // Monitor STM32 Haptic Pad hardware lock / probe-home docking
+  if (!window._hapticSessionPollInterval) {
+    window._padWasUnlocked = false;
+    window._hapticSessionPollInterval = setInterval(async () => {
+      if (!currentAuthenticatedUser || currentAuthenticatedUser.role !== "doctor") {
+        clearInterval(window._hapticSessionPollInterval);
+        window._hapticSessionPollInterval = null;
+        window._padWasUnlocked = false;
+        return;
+      }
+      try {
+        const sessUrl = await getBiometricApiUrl("/api/biometrics/session");
+        const resp = await fetch(sessUrl, { method: "GET" });
+        if (resp.ok) {
+          const sess = await resp.json();
+          if (sess.unlocked) {
+            window._padWasUnlocked = true;
+          } else if (window._padWasUnlocked && sess.connected && sess.unlocked === false) {
+            console.warn("[Biometrics] Haptic Pad locked (probe docked or session timed out).");
+            window._padWasUnlocked = false;
+            clearInterval(window._hapticSessionPollInterval);
+            window._hapticSessionPollInterval = null;
+            handlePortalLogout();
+            showAlertMessage("doctor-biometric-alert", "Haptic Pad was locked (probe placed in home position or session idle timeout). Please verify your fingerprint to continue.", "info");
+          }
+        }
+      } catch (_) {}
+    }, 3000);
+  }
+
 
 
   // Create real backend clinical session and store for Agora Settings
@@ -23626,6 +23656,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     window.currentActiveConsultationSessionId = null;
 
+    // Terminate Haptic Pad hardware session and lock pad
+    if (window._hapticSessionPollInterval) {
+      clearInterval(window._hapticSessionPollInterval);
+      window._hapticSessionPollInterval = null;
+    }
+    window._padWasUnlocked = false;
+    try {
+      getBiometricApiUrl("/api/biometrics/logout").then((u) => {
+        fetch(u, { method: "POST" }).catch(() => {});
+      }).catch(() => {});
+    } catch (_) {}
+
 
 
     // Clear session state
@@ -26191,14 +26233,25 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (sRes.ok) {
             const pInfo = await sRes.json();
             if (pInfo && pInfo.in_progress) {
-              const stage = pInfo.stage || 0;
-              const pct = pInfo.progress || 0;
-              if (stage >= 6) {
+              const stage = pInfo.press || pInfo.stage || 0;
+              const pct = pInfo.progress || pInfo.percent || 0;
+              const step = pInfo.step || "";
+
+              if (step === "lift_finger") {
+                if (bioRegStepTitle) bioRegStepTitle.textContent = `Lift Finger (${stage}/6 - ${pct}%)`;
+                if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Lift your finger before placing it again.";
+              } else if (step === "retry") {
+                if (bioRegStepTitle) bioRegStepTitle.textContent = `Capture Failed - Retry Press (${stage}/6)`;
+                if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Lift and place same finger again firmly.";
+              } else if (step === "saving") {
+                if (bioRegStepTitle) bioRegStepTitle.textContent = "Saving Fingerprint (100%)";
+                if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Writing template to sensor memory...";
+              } else if (stage >= 6) {
                 if (bioRegStepTitle) bioRegStepTitle.textContent = "All 6 Captures Recorded (100%)";
                 if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Saving template to secure hardware...";
               } else if (stage > 0) {
                 if (bioRegStepTitle) bioRegStepTitle.textContent = `Capturing Fingerprint (${stage}/6 - ${pct}%)`;
-                if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || `Capture stage ${stage} of 6 recorded (${pct}%). Lift and place same finger again.`;
+                if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || `Capture stage ${stage} of 6 recorded (${pct}%). Follow sensor LED.`;
               } else {
                 if (bioRegStepTitle) bioRegStepTitle.textContent = "Place Finger on Scanner";
                 if (bioRegStepSubtitle) bioRegStepSubtitle.textContent = pInfo.message || "Starting enrollment. Place your finger on the scanner.";
