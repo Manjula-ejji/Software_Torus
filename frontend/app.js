@@ -28,13 +28,13 @@ function connectDoctorMQTT(appId, channel) {
 
     || (document.getElementById("appId") ? document.getElementById("appId").value.trim() : "")
 
-    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "6b706196744b487ea1402d829b714459" : "")
+    || (typeof OFFICIAL_TOKEN_VALUE !== "undefined" && OFFICIAL_TOKEN_VALUE ? "59dc3449de824523a83fba05047c73ad" : "")
 
-    || "6b706196744b487ea1402d829b714459";
+    || "59dc3449de824523a83fba05047c73ad";
 
-  if (!targetAppId || targetAppId !== "6b706196744b487ea1402d829b714459") {
+  if (!targetAppId || targetAppId !== "59dc3449de824523a83fba05047c73ad") {
 
-    targetAppId = "6b706196744b487ea1402d829b714459";
+    targetAppId = "59dc3449de824523a83fba05047c73ad";
 
   }
 
@@ -57,8 +57,8 @@ function connectDoctorMQTT(appId, channel) {
   const allControlTopics = [
 
     doctorControlTopic,
-    `${targetChannel}-control-6b706196`,
-    `torus-control-6b706196`,
+    `${targetChannel}-control-59dc3449`,
+    `torus-control-59dc3449`,
     `${targetChannel}-control`
 
   ];
@@ -66,7 +66,7 @@ function connectDoctorMQTT(appId, channel) {
   const allStatusTopics = [
 
     doctorStatusTopic,
-    `${targetChannel}-status-6b706196`,
+    `${targetChannel}-status-59dc3449`,
     `${targetChannel}-status`
 
   ];
@@ -148,8 +148,8 @@ function connectDoctorMQTT(appId, channel) {
           const payload = pendingMqttPayloads.shift();
 
           const pubTops = Array.from(new Set([doctorControlTopic,
-            `${targetChannel}-control-6b706196`,
-            `torus-control-6b706196`,
+            `${targetChannel}-control-59dc3449`,
+            `torus-control-59dc3449`,
             `${targetChannel}-control`]));
 
           pubTops.forEach(t => doctorMqttClient.publish(t, payload));
@@ -505,7 +505,7 @@ function sendControlCommand(name, value) {
   const targetChannel = (document.getElementById("channel") ? document.getElementById("channel").value.trim() : "") || "torus";
   const pubTopics = Array.from(new Set([
     doctorControlTopic,
-    `${targetChannel}-control-6b706196`,
+    `${targetChannel}-control-59dc3449`,
     `${targetChannel}-control`
   ])).filter(Boolean);
 
@@ -2843,9 +2843,9 @@ async function joinCall() {
 
 
 
-  if (!appId || appId !== "6b706196744b487ea1402d829b714459") {
+  if (!appId || appId !== "59dc3449de824523a83fba05047c73ad") {
 
-    appId = "6b706196744b487ea1402d829b714459";
+    appId = "59dc3449de824523a83fba05047c73ad";
 
     if (appIdInput) appIdInput.value = appId;
 
@@ -11247,7 +11247,7 @@ async function setAuthenticatedDoctorSession(doctor) {
 
   // Connect Doctor MQTT
 
-  connectDoctorMQTT(appIdInput ? appIdInput.value : "6b706196744b487ea1402d829b714459", channelInput ? channelInput.value : "torus");
+  connectDoctorMQTT(appIdInput ? appIdInput.value : "59dc3449de824523a83fba05047c73ad", channelInput ? channelInput.value : "torus");
 
 
 

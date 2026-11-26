@@ -225,9 +225,9 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
     import time
 
-    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "6b706196744b487ea1402d829b714459")).strip()
+    app_id = os.environ.get("OPENSONICS_APP_ID", os.environ.get("AGORA_APP_ID", "59dc3449de824523a83fba05047c73ad")).strip()
 
-    clean_app_id = (app_id or "6b706196")[:8]
+    clean_app_id = (app_id or "59dc3449")[:8]
 
     channel = os.environ.get("AGORA_CHANNEL", "torus")
 
@@ -235,7 +235,7 @@ def _dispatch_mqtt_control(payload_dict: dict) -> bool:
 
         f"{channel}-control-{clean_app_id}",
 
-        f"{channel}-control-6b706196",
+        f"{channel}-control-59dc3449",
 
         f"{channel}-control"
 
@@ -535,8 +535,8 @@ def api_remote_input():
 
 
 
-CANONICAL_AGORA_APP_ID = "6b706196744b487ea1402d829b714459"
-CANONICAL_AGORA_TOKEN = "007eJxTYHh9xy71ZWn/r4nNvGwZ1ytesNjvPHshTmXHaiU7z4L771kUGMySzA3MDC3NzE1MkkwszFMTDU0MjFIsjCyTzA1NTEwt/2WyZTcEMjLY7trCwAiFID4rQ0l+UWkxAwMAk/0f2w=="
+CANONICAL_AGORA_APP_ID = "59dc3449de824523a83fba05047c73ad"
+CANONICAL_AGORA_TOKEN = "007eJxTYNDbY9GkZdZ699mxi949n7fsevvo1xZXjanTp7kfWpPz68ZEBQZTy5RkYxMTy5RUCyMTUyPjRAvjtKREA1MDE/Nkc+PElA8b2LMbAhkZRPIEWBgZIBDEZ2UoyS8qLWZgAABzLCKv"
 
 def is_valid_agora_token_for_appid(token: str, app_id: str) -> bool:
     """Validates that an Agora RTC token is structurally valid and signed for the target App ID."""

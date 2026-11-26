@@ -77,8 +77,8 @@ import os
 import base64
 import zlib
 
-CANONICAL_AGORA_APP_ID = "6b706196744b487ea1402d829b714459"
-CANONICAL_AGORA_TOKEN = "007eJxTYHh9xy71ZWn/r4nNvGwZ1ytesNjvPHshTmXHaiU7z4L771kUGMySzA3MDC3NzE1MkkwszFMTDU0MjFIsjCyTzA1NTEwt/2WyZTcEMjLY7trCwAiFID4rQ0l+UWkxAwMAk/0f2w=="
+CANONICAL_AGORA_APP_ID = "59dc3449de824523a83fba05047c73ad"
+CANONICAL_AGORA_TOKEN = "007eJxTYNDbY9GkZdZ699mxi949n7fsevvo1xZXjanTp7kfWpPz68ZEBQZTy5RkYxMTy5RUCyMTUyPjRAvjtKREA1MDE/Nkc+PElA8b2LMbAhkZRPIEWBgZIBDEZ2UoyS8qLWZgAABzLCKv"
 
 def is_valid_agora_token_for_appid(token: str, app_id: str) -> bool:
     """Validates that an Agora RTC token is structurally valid and signed for the target App ID."""
@@ -1676,10 +1676,10 @@ def _start_native_mqtt_listener() -> None:
     Connects directly to HiveMQ / EMQX brokers over TCP socket without requiring browser tab.
     Subscribes to all control topics and executes commands immediately on hardware runtime.
     """
-    clean_app_id = (APP_ID or "6b706196744b487ea1402d829b714459")[:8]
+    clean_app_id = (APP_ID or "59dc3449de824523a83fba05047c73ad")[:8]
     control_topics = [
         f"{CHANNEL}-control-{clean_app_id}",
-        f"{CHANNEL}-control-6b706196",
+        f"{CHANNEL}-control-59dc3449",
         f"{CHANNEL}-control"
     ]
     status_topic = f"{CHANNEL}-status-{clean_app_id}"
