@@ -3,11 +3,12 @@ import unittest
 from backend import server, ultrasound
 
 EXPECTED_APP_ID = "59dc3449de824523a83fba05047c73ad"
-EXPECTED_TOKEN = "007eJxTYNDbY9GkZdZ699mxi949n7fsevvo1xZXjanTp7kfWpPz68ZEBQZTy5RkYxMTy5RUCyMTUyPjRAvjtKREA1MDE/Nkc+PElA8b2LMbAhkZRPIEWBgZIBDEZ2UoyS8qLWZgAABzLCKv"
+EXPECTED_TOKEN = "007eJxTYJigXCfCqpndnJz4xuSdhoJcYoqQ+Z2OqkVmCvcfJB9qYFVgMLVMSTY2MbFMSbUwMjE1Mk60ME5LSjQwNTAxTzY3TkzZdpM9uyGQkUFqgx0zIwMEgvisDCX5RaXFDAwAZZMcrg=="
 EXPECTED_CLEAN_APP_ID = "59dc3449"
 
 OLD_APP_IDS = ["6b706196744b487ea1402d829b714459", "e38b9a28f0f24fd7839939af97361cb2", "cf136a322cf74d449aba8c6695441d3b", "f6a036d79c9b4d669bb076d61047528e", "9f3eb0c721cf4d5e86fe506ccf085fa1", "7fdf07a2b99140589bd0881b3ef8c380", "26da1ebca94b427b80177eff6d44ddfa", "af7e44fcb2fd40258594cb87ab4d8e86"]
 OLD_TOKENS = [
+    "007eJxTYNDbY9GkZdZ699mxi949n7fsevvo1xZXjanTp7kfWpPz68ZEBQZTy5RkYxMTy5RUCyMTUyPjRAvjtKREA1MDE/Nkc+PElA8b2LMbAhkZRPIEWBgZIBDEZ2UoyS8qLWZgAABzLCKv",
     "007eJxTYHh9xy71ZWn/r4nNvGwZ1ytesNjvPHshTmXHaiU7z4L771kUGMySzA3MDC3NzE1MkkwszFMTDU0MjFIsjCyTzA1NTEwt/2WyZTcEMjLY7trCwAiFID4rQ0l+UWkxAwMAk/0f2w==",
     "007eJxTYEiW1lO9fP3h97L+yP4nKtEnJbNOupqY/tklrTPF1t81o1+BIdXYIsky0cgizSDNyCQtxdzC2NLS2DIxzdLc2MwwOcmIS4g1uyGQkUFuTjALIwMEgvisDCX5RaXFDAwA98IdMQ==",
     "007eJxTYPB48Lmka53u8lduGbpuB2W2L9XVKNzd/yPp48N7842Elq1XYDBIsTSxNDc3NjM3STKxNDNOtDBMtUw1TEoxN0kzT01OXGq6LqshkJFh9vwbzIwMEAjiszKU5BeVFjMwAADsfiIM",
@@ -34,7 +35,7 @@ class TestAgoraCredentialsUpdate(unittest.TestCase):
 
     def test_api_agora_config_rejects_mismatched_environment_token(self):
         """Verify that when a token generated for an old/different App ID exists in env (e.g. on Render), it falls back to EXPECTED_TOKEN."""
-        bad_token = OLD_TOKENS[0]
+        bad_token = OLD_TOKENS[1]
         orig_agora_tok = os.environ.get("AGORA_TOKEN")
         orig_open_tok = os.environ.get("OPENSONICS_TOKEN")
         try:
@@ -58,7 +59,7 @@ class TestAgoraCredentialsUpdate(unittest.TestCase):
     def test_is_valid_agora_token_for_appid_helper(self):
         """Verify the helper accurately validates token signatures matching App ID."""
         self.assertTrue(server.is_valid_agora_token_for_appid(EXPECTED_TOKEN, EXPECTED_APP_ID))
-        self.assertFalse(server.is_valid_agora_token_for_appid(OLD_TOKENS[0], EXPECTED_APP_ID))
+        self.assertFalse(server.is_valid_agora_token_for_appid(OLD_TOKENS[1], EXPECTED_APP_ID))
         self.assertFalse(server.is_valid_agora_token_for_appid("", EXPECTED_APP_ID))
         self.assertFalse(server.is_valid_agora_token_for_appid("invalid_token", EXPECTED_APP_ID))
 

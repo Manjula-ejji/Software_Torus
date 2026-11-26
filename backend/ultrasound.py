@@ -78,7 +78,7 @@ import base64
 import zlib
 
 CANONICAL_AGORA_APP_ID = "59dc3449de824523a83fba05047c73ad"
-CANONICAL_AGORA_TOKEN = "007eJxTYNDbY9GkZdZ699mxi949n7fsevvo1xZXjanTp7kfWpPz68ZEBQZTy5RkYxMTy5RUCyMTUyPjRAvjtKREA1MDE/Nkc+PElA8b2LMbAhkZRPIEWBgZIBDEZ2UoyS8qLWZgAABzLCKv"
+CANONICAL_AGORA_TOKEN = "007eJxTYJigXCfCqpndnJz4xuSdhoJcYoqQ+Z2OqkVmCvcfJB9qYFVgMLVMSTY2MbFMSbUwMjE1Mk60ME5LSjQwNTAxTzY3TkzZdpM9uyGQkUFqgx0zIwMEgvisDCX5RaXFDAwAZZMcrg=="
 
 def is_valid_agora_token_for_appid(token: str, app_id: str) -> bool:
     """Validates that an Agora RTC token is structurally valid and signed for the target App ID."""
